@@ -1,28 +1,45 @@
 name: aksab_driver
-description: "A new Flutter project."
+description: "A new Flutter project for Aksab Drivers."
 publish_to: 'none'
-
 version: 1.0.0+1
 
 environment:
-  # جعلنا الإصدار يبدأ من 3.1.0 ليتوافق مع معظم بيئات البناء الحديثة
-  sdk: '>=3.1.0 <4.0.0'
+  sdk: '>=3.2.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.8
-  
-  # مكتبات الفايربيز بإصدارات مستقرة ومتوافقة
+  flutter_localizations:
+    sdk: flutter
+
+  # Firebase Core
   firebase_core: ^3.1.1
-  cloud_firestore: ^5.0.2
   firebase_auth: ^5.1.2
-  
-  # مكتبات المساعدة والخريطة
+  cloud_firestore: ^5.0.2
+  firebase_messaging: ^15.0.3
+
+  # UI & Design Tools
   sizer: ^3.1.3
+  font_awesome_flutter: ^10.7.0
+  intl: ^0.20.2
+  google_fonts: ^6.1.0
+  cached_network_image: ^3.3.1
+  image_picker: ^1.0.7
+  lucide_icons: ^0.257.0
+
+  # Location & Maps (ضروري جداً للمندوب)
+  geolocator: ^12.0.0 # تم تثبيته على نسخة مستقرة لحل مشكلة الـ Build
+  geocoding: ^3.0.0
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
-  geolocator: ^13.0.1
+  url_launcher: ^6.3.2
+
+  # Utilities & State
+  provider: ^6.1.2
+  shared_preferences: ^2.5.3
+  permission_handler: ^12.0.1
+  share_plus: ^10.1.4
+  path_provider: ^2.1.3
 
 dev_dependencies:
   flutter_test:
@@ -31,3 +48,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/
