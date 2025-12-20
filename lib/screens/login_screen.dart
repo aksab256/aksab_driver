@@ -9,28 +9,34 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
+  // تم تغيير اسم المتحكم ليعبر عن رقم الهاتف
+  final _phoneController = TextEditingController(); 
   final _passwordController = TextEditingController();
   bool _isLoading = false;
 
   Future<void> _handleLogin() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      _showError("من فضلك أدخل البريد الإلكتروني وكلمة المرور");
+    // التأكد من إدخال البيانات
+    if (_phoneController.text.isEmpty || _passwordController.text.isEmpty) {
+      _showError("من فضلك أدخل رقم الهاتف وكلمة المرور");
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
+      // 💡 تحويل رقم الهاتف إلى "الميل الذكي" للمصادقة
+      String smartEmail = "${_phoneController.text.trim()}@aksab.com";
+
+      // 1. محاولة تسجيل الدخول باستخدام الميل المولد
       UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim(),
+        email: smartEmail,
         password: _passwordController.text,
       );
 
       String uid = userCredential.user!.uid;
       Map<String, dynamic>? userData;
 
-      // البحث في المجموعات الدائمة (بعد الموافقة)
+      // 2. البحث في المجموعات الدائمة (نفس المنطق السابق)
       var repSnap = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       var freeSnap = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       var managerSnap = await FirebaseFirestore.instance.collection('managers').doc(uid).get();
@@ -43,14 +49,16 @@ class _LoginScreenState extends State<LoginScreen> {
         userData = managerSnap.data();
       }
 
+      // 3. التحقق من حالة الحساب (يجب أن يكون approved من الإدارة)
       if (userData != null && userData['status'] == 'approved') {
         _navigateToHome(userData['role'] ?? 'user');
       } else {
+        // إذا لم يكن approved أو غير موجود، يتم تسجيل الخروج فوراً
         await FirebaseAuth.instance.signOut();
         _showError("❌ حسابك قيد المراجعة أو غير مفعل.");
       }
     } on FirebaseAuthException catch (e) {
-      _showError("خطأ: تأكد من صحة البيانات");
+      _showError("فشل الدخول: تأكد من رقم الهاتف وكلمة المرور");
     } finally {
       setState(() => _isLoading = false);
     }
@@ -78,7 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 SizedBox(height: 4.h),
                 Text("تسجيل الدخول", style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold)),
                 SizedBox(height: 5.h),
-                _buildInput(_emailController, "البريد الإلكتروني", Icons.email),
+                // تم تعديل التسمية التوضيحية ونوع لوحة المفاتيح
+                _buildInput(_phoneController, "رقم الهاتف", Icons.phone, type: TextInputType.phone), 
                 _buildInput(_passwordController, "كلمة المرور", Icons.lock, isPass: true),
                 SizedBox(height: 4.h),
                 ElevatedButton(
@@ -100,12 +109,14 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildInput(TextEditingController controller, String label, IconData icon, {bool isPass = false}) {
+  Widget _buildInput(TextEditingController controller, String label, IconData icon, 
+      {bool isPass = false, TextInputType type = TextInputType.text}) {
     return Padding(
       padding: EdgeInsets.only(bottom: 3.h),
       child: TextField(
         controller: controller,
         obscureText: isPass,
+        keyboardType: type,
         textAlign: TextAlign.right,
         decoration: InputDecoration(
           labelText: label,
@@ -116,4 +127,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-
