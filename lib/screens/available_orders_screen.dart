@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sizer/sizer.dart';
+import 'active_order_screen.dart'; // تأكد من وجود هذا الملف في نفس المجلد
 
 class AvailableOrdersScreen extends StatefulWidget {
   const AvailableOrdersScreen({super.key});
@@ -24,13 +25,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     _handleLocationAndData();
   }
 
-  // دالة متكاملة للتحقق من الأذونات ثم جلب البيانات
   Future<void> _handleLocationAndData() async {
     bool serviceEnabled;
     LocationPermission permission;
 
     try {
-      // 1. هل خدمة الـ GPS مفعلة في الجهاز؟
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         setState(() {
@@ -40,10 +39,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         return;
       }
 
-      // 2. التحقق من الإذن (Permission)
       permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
-        // نطلب الإذن لأول مرة
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
           setState(() {
@@ -62,18 +59,16 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         return;
       }
 
-      // 3. إذا وصلنا هنا، الأذونات سليمة.. نجلب الموقع والبيانات
       Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      
       final prefs = await SharedPreferences.getInstance();
       String savedConfig = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
-      
+
       if (mounted) {
         setState(() {
           _myCurrentLocation = pos;
           _myVehicle = savedConfig == 'motorcycleConfig' ? 'motorcycle' : 'jumbo';
           _isGettingLocation = false;
-          _errorMessage = ''; // مسح أي أخطاء سابقة
+          _errorMessage = '';
         });
       }
     } catch (e) {
@@ -88,12 +83,10 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // حالة التحميل
     if (_isGettingLocation) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    // حالة وجود خطأ في الأذونات أو الـ GPS
     if (_errorMessage.isNotEmpty) {
       return Scaffold(
         body: Center(
@@ -125,23 +118,21 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         stream: FirebaseFirestore.instance
             .collection('specialRequests')
             .where('status', isEqualTo: 'pending')
-            .where('vehicleType', isEqualTo: _myVehicle) 
+            .where('vehicleType', isEqualTo: _myVehicle)
             .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
           final docs = snapshot.data!.docs;
-
           final nearbyOrders = docs.where((doc) {
             var data = doc.data() as Map<String, dynamic>;
             GeoPoint? pickupLocation = data['pickupLocation'];
             if (pickupLocation == null || _myCurrentLocation == null) return true;
 
             double distanceInMeters = Geolocator.distanceBetween(
-              _myCurrentLocation!.latitude, _myCurrentLocation!.longitude,
-              pickupLocation.latitude, pickupLocation.longitude
-            );
-            return distanceInMeters <= 15000;
+                _myCurrentLocation!.latitude, _myCurrentLocation!.longitude,
+                pickupLocation.latitude, pickupLocation.longitude);
+            return distanceInMeters <= 15000; // نطاق 15 كم
           }).toList();
 
           if (nearbyOrders.isEmpty) {
@@ -159,48 +150,10 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
-  // ... (نفس دالة _acceptOrder و _buildOrderCard و _calculateDistance و _infoRow السابقة بدون تغيير) ...
-  
-  // دالة حساب المسافة المحدثة لتناسب GeoPoint
-  String _calculateDistance(Map<String, dynamic> data) {
-    GeoPoint? pickup = data['pickupLocation'];
-    if (pickup == null || _myCurrentLocation == null) return "??";
-    double dist = Geolocator.distanceBetween(
-      _myCurrentLocation!.latitude, _myCurrentLocation!.longitude,
-      pickup.latitude, pickup.longitude
-    );
-    return (dist / 1000).toStringAsFixed(1);
-  }
-
-  Future<void> _acceptOrder(BuildContext context, String orderId) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
-    final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
-    try {
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        DocumentSnapshot snapshot = await transaction.get(orderRef);
-        if (!snapshot.exists) throw "الطلب غير موجود!";
-        if (snapshot.get('status') != 'pending') throw "سبقك مندوب آخر!";
-        transaction.update(orderRef, {
-          'status': 'accepted',
-          'driverId': uid,
-          'acceptedAt': FieldValue.serverTimestamp(),
-        });
-      });
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(backgroundColor: Colors.green, content: Text("تم قبول الطلب!")));
-    } catch (e) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text(e.toString())));
-    }
-  }
-
   Widget _buildOrderCard(BuildContext context, String id, Map<String, dynamic> data) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
-      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)]),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)]),
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -226,6 +179,47 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         ),
       ),
     );
+  }
+
+  String _calculateDistance(Map<String, dynamic> data) {
+    GeoPoint? pickup = data['pickupLocation'];
+    if (pickup == null || _myCurrentLocation == null) return "??";
+    double dist = Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pickup.latitude, pickup.longitude);
+    return (dist / 1000).toStringAsFixed(1);
+  }
+
+  Future<void> _acceptOrder(BuildContext context, String orderId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
+
+    final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentSnapshot snapshot = await transaction.get(orderRef);
+        if (!snapshot.exists) throw "الطلب غير موجود!";
+        if (snapshot.get('status') != 'pending') throw "سبقك مندوب آخر!";
+
+        transaction.update(orderRef, {
+          'status': 'accepted',
+          'driverId': uid,
+          'acceptedAt': FieldValue.serverTimestamp(),
+        });
+      });
+
+      Navigator.pop(context); // إغلاق الـ Loading
+
+      // ✅ التوجه لصفحة الخريطة والطلب النشط
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)),
+      );
+
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text(e.toString())));
+    }
   }
 
   Widget _infoRow(IconData icon, String text) {
