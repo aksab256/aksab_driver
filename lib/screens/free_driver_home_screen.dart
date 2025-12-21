@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
 import 'available_orders_screen.dart';
+import 'active_order_screen.dart'; // الصفحة التي صممناها بـ CartoDB
 import 'wallet_screen.dart';
 
 class FreeDriverHomeScreen extends StatefulWidget {
@@ -15,15 +16,43 @@ class FreeDriverHomeScreen extends StatefulWidget {
 class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   bool isOnline = false;
   int _selectedIndex = 0;
-  bool _showHandHint = false; // التحكم في ظهور اليد
+  bool _showHandHint = false;
+  String? _activeOrderId; // لتخزين معرف الطلب النشط إن وجد
 
   @override
   void initState() {
     super.initState();
     _fetchInitialStatus();
+    _listenToActiveOrders(); // البدء في مراقبة الطلبات النشطة
   }
 
-  // جلب الحالة الحالية من Firestore عند فتح التطبيق
+  // مراقبة فورية لأي طلب نشط يخص هذا المندوب
+  void _listenToActiveOrders() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    FirebaseFirestore.instance
+        .collection('specialRequests')
+        .where('driverId', isEqualTo: uid)
+        .where('status', whereIn: ['accepted', 'picked_up'])
+        .snapshots()
+        .listen((snapshot) {
+          if (snapshot.docs.isNotEmpty) {
+            if (mounted) {
+              setState(() {
+                _activeOrderId = snapshot.docs.first.id;
+              });
+            }
+          } else {
+            if (mounted) {
+              setState(() {
+                _activeOrderId = null;
+              });
+            }
+          }
+        });
+  }
+
   void _fetchInitialStatus() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
@@ -43,13 +72,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         'isOnline': value,
         'lastSeen': FieldValue.serverTimestamp(),
       });
-      
       setState(() {
         isOnline = value;
-        if (isOnline) _showHandHint = true; // إظهار اليد عند التفعيل
+        if (isOnline) _showHandHint = true;
       });
-
-      // إخفاء اليد تلقائياً بعد 4 ثواني
       if (isOnline) {
         Future.delayed(const Duration(seconds: 4), () {
           if (mounted) setState(() => _showHandHint = false);
@@ -58,7 +84,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     }
   }
 
-  // رسالة تنبيه عائمة إذا حاول دخول الرادار وهو Offline
   void _showStatusAlert() {
     showDialog(
       context: context,
@@ -68,12 +93,12 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.wifi_off, size: 40.sp, color: Colors.redAccent),
-            SizedBox(height: 15),
+            const SizedBox(height: 15),
             Text("وضع العمل غير نشط", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp)),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             Text("برجاء تفعيل زر الاتصال بالأعلى أولاً لتتمكن من رؤية طلبات الرادار",
                 textAlign: TextAlign.center, style: TextStyle(fontSize: 11.sp, color: Colors.grey[600])),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
               onPressed: () => Navigator.pop(context),
@@ -87,9 +112,12 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // إذا وجد طلب نشط، شاشة "الرادار" تتحول تلقائياً لشاشة "الطلب النشط"
     final List<Widget> _pages = [
       _buildDashboardContent(),
-      const AvailableOrdersScreen(),
+      _activeOrderId != null 
+          ? ActiveOrderScreen(orderId: _activeOrderId!) 
+          : const AvailableOrdersScreen(),
       const Center(child: Text("سجل الطلبات قريباً")),
       const WalletScreen(),
     ];
@@ -99,12 +127,14 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: Text("لوحة التحكم", style: TextStyle(color: Colors.black, fontSize: 16.sp, fontWeight: FontWeight.bold)),
+        title: Text(_activeOrderId != null ? "طلب نشط حالياً" : "لوحة التحكم", 
+            style: TextStyle(color: Colors.black, fontSize: 16.sp, fontWeight: FontWeight.bold)),
         centerTitle: true,
         actions: [
           Row(
             children: [
-              Text(isOnline ? "متصل" : "مختفي", style: TextStyle(color: isOnline ? Colors.green : Colors.red, fontSize: 10.sp, fontWeight: FontWeight.bold)),
+              Text(isOnline ? "متصل" : "مختفي",
+                  style: TextStyle(color: isOnline ? Colors.green : Colors.red, fontSize: 10.sp, fontWeight: FontWeight.bold)),
               Transform.scale(
                 scale: 1.1,
                 child: Switch(
@@ -121,38 +151,18 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       body: Stack(
         children: [
           _pages[_selectedIndex],
-          
-          // 💡 أنيميشن اليد التي تشير للأيقونة
-          if (_showHandHint && _selectedIndex == 0)
+          if (_showHandHint && _selectedIndex == 0 && _activeOrderId == null)
             Positioned(
               bottom: 2.h,
-              left: 25.w, // موضع تقريبي فوق أيقونة الرادار
-              child: TweenAnimationBuilder(
-                tween: Tween<double>(begin: 0, end: 15),
-                duration: const Duration(milliseconds: 600),
-                builder: (context, double value, child) {
-                  return Transform.translate(
-                    offset: Offset(0, -value),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.orange[900], borderRadius: BorderRadius.circular(8)),
-                          child: Text("ابدأ من هنا", style: TextStyle(color: Colors.white, fontSize: 10.sp)),
-                        ),
-                        Icon(Icons.pan_tool_alt, size: 30.sp, color: Colors.orange[900]),
-                      ],
-                    ),
-                  );
-                },
-              ),
+              left: 25.w,
+              child: _buildHandPointer(),
             ),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
-          if (index == 1 && !isOnline) {
+          if (index == 1 && !isOnline && _activeOrderId == null) {
             _showStatusAlert();
             return;
           }
@@ -164,8 +174,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         items: [
           const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "الرئيسية"),
           BottomNavigationBarItem(
-            icon: isOnline ? _buildPulseIcon() : Opacity(opacity: 0.4, child: Icon(Icons.radar)),
-            label: "الرادار",
+            icon: _activeOrderId != null 
+                ? const Icon(Icons.directions_run, color: Colors.green) // أيقونة مختلفة للطلب النشط
+                : (isOnline ? _buildPulseIcon() : Opacity(opacity: 0.4, child: const Icon(Icons.radar))),
+            label: _activeOrderId != null ? "الطلب النشط" : "الرادار",
           ),
           const BottomNavigationBarItem(icon: Icon(Icons.history), label: "طلباتي"),
           const BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: "المحفظة"),
@@ -174,7 +186,29 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // ويدجت أيقونة الرادار التي تنبض (تتوهج)
+  // دالة بناء مؤشر اليد
+  Widget _buildHandPointer() {
+    return TweenAnimationBuilder(
+      tween: Tween<double>(begin: 0, end: 15),
+      duration: const Duration(milliseconds: 600),
+      builder: (context, double value, child) {
+        return Transform.translate(
+          offset: Offset(0, -value),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: Colors.orange[900], borderRadius: BorderRadius.circular(8)),
+                child: Text("ابدأ من هنا", style: TextStyle(color: Colors.white, fontSize: 10.sp)),
+              ),
+              Icon(Icons.pan_tool_alt, size: 30.sp, color: Colors.orange[900]),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildPulseIcon() {
     return TweenAnimationBuilder(
       tween: Tween<double>(begin: 1.0, end: 1.2),
@@ -188,7 +222,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           ),
         );
       },
-      onEnd: () => setState(() {}), // تكرار الأنيميشن
+      onEnd: () => setState(() {}),
     );
   }
 
@@ -197,6 +231,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
+          // إذا كان هناك طلب نشط، نعرض تنبيه في الرئيسية أيضاً
+          if (_activeOrderId != null)
+             _activeOrderBanner(),
+          
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(20),
@@ -235,10 +273,28 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
+  Widget _activeOrderBanner() {
+    return Container(
+      margin: const EdgeInsets.bottom(15),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(color: Colors.orange[900], borderRadius: BorderRadius.circular(15)),
+      child: Row(
+        children: [
+          const Icon(Icons.delivery_dining, color: Colors.white),
+          const SizedBox(width: 10),
+          const Expanded(child: Text("لديك طلب قيد التنفيذ حالياً", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+          TextButton(
+            onPressed: () => setState(() => _selectedIndex = 1),
+            child: const Text("تابعه الآن", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+          )
+        ],
+      ),
+    );
+  }
+
   Widget _statCard(String title, String value, IconData icon, Color color) {
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)]),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [const BoxShadow(color: Colors.black12, blurRadius: 5)]),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sizer/sizer.dart';
-import 'active_order_screen.dart'; // تأكد من وجود هذا الملف في نفس المجلد
+import 'active_order_screen.dart'; // التأكد من وجود ملف التتبع في نفس المجلد
 
 class AvailableOrdersScreen extends StatefulWidget {
   const AvailableOrdersScreen({super.key});
@@ -25,6 +25,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     _handleLocationAndData();
   }
 
+  // دالة التعامل مع الموقع الجغرافي وجلب إعدادات المركبة
   Future<void> _handleLocationAndData() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -32,10 +33,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     try {
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        setState(() {
-          _errorMessage = 'برجاء تفعيل خدمة الموقع (GPS) في هاتفك';
-          _isGettingLocation = false;
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'برجاء تفعيل خدمة الموقع (GPS) في هاتفك';
+            _isGettingLocation = false;
+          });
+        }
         return;
       }
 
@@ -43,19 +46,23 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          setState(() {
-            _errorMessage = 'يجب الموافقة على إذن الموقع لرؤية الطلبات القريبة';
-            _isGettingLocation = false;
-          });
+          if (mounted) {
+            setState(() {
+              _errorMessage = 'يجب الموافقة على إذن الموقع لرؤية الطلبات القريبة';
+              _isGettingLocation = false;
+            });
+          }
           return;
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        setState(() {
-          _errorMessage = 'لقد رفضت إذن الموقع دائماً، برجاء تفعيله من إعدادات الهاتف';
-          _isGettingLocation = false;
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'لقد رفضت إذن الموقع دائماً، برجاء تفعيله من إعدادات الهاتف';
+            _isGettingLocation = false;
+          });
+        }
         return;
       }
 
@@ -96,8 +103,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.location_off, size: 50.sp, color: Colors.red),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 Text(_errorMessage, textAlign: TextAlign.center, style: TextStyle(fontSize: 14.sp)),
+                const SizedBox(height: 10),
                 ElevatedButton(onPressed: _handleLocationAndData, child: const Text("إعادة المحاولة"))
               ],
             ),
@@ -171,9 +179,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             _infoRow(Icons.flag, "إلى: ${data['dropoffAddress'] ?? 'غير محدد'}"),
             const SizedBox(height: 15),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green[800], minimumSize: Size(100.w, 7.h), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green[800],
+                  minimumSize: Size(100.w, 7.h),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
               onPressed: () => _acceptOrder(context, id),
-              child: Text("قبول وتوصيل الطلب", style: TextStyle(fontSize: 14.sp, color: Colors.white, fontWeight: FontWeight.bold)),
+              child: Text("قبول وتوصيل الطلب",
+                  style: TextStyle(fontSize: 14.sp, color: Colors.white, fontWeight: FontWeight.bold)),
             )
           ],
         ),
@@ -188,14 +200,21 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return (dist / 1000).toStringAsFixed(1);
   }
 
+  // دالة قبول الطلب والانتقال المؤمن
   Future<void> _acceptOrder(BuildContext context, String orderId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
+    // 1. إظهار مؤشر التحميل
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => const Center(child: CircularProgressIndicator()),
+    );
 
     final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
     try {
+      // 2. تحديث الحالة في Firestore (Transaction)
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentSnapshot snapshot = await transaction.get(orderRef);
         if (!snapshot.exists) throw "الطلب غير موجود!";
@@ -208,17 +227,23 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         });
       });
 
-      Navigator.pop(context); // إغلاق الـ Loading
+      // 3. إغلاق الـ Loading وتأمين الـ Navigator
+      if (!context.mounted) return;
+      Navigator.pop(context); // إغلاق الـ Dialog
 
-      // ✅ التوجه لصفحة الخريطة والطلب النشط
+      // 4. ✅ الانتقال الفوري لصفحة الخريطة (Replacement لعدم الرجوع للرادار)
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)),
       );
 
     } catch (e) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text(e.toString())));
+      if (context.mounted) {
+        Navigator.pop(context); // إغلاق الـ Loading في حالة الخطأ
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(backgroundColor: Colors.red, content: Text(e.toString()))
+        );
+      }
     }
   }
 

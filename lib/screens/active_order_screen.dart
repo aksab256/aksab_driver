@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
@@ -17,6 +18,7 @@ class ActiveOrderScreen extends StatefulWidget {
 class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   LatLng? _currentLocation;
   final MapController _mapController = MapController();
+  final String? _uid = FirebaseAuth.instance.currentUser?.uid;
 
   @override
   void initState() {
@@ -24,7 +26,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     _startLiveTracking();
   }
 
-  // 1. تتبع موقع المندوب وتحديث الخريطة و Firestore
+  // 1. تتبع الموقع وتحديثه في Firestore ليراه العميل لحظياً
   void _startLiveTracking() {
     Geolocator.getPositionStream(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10),
@@ -33,24 +35,26 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         setState(() {
           _currentLocation = LatLng(position.latitude, position.longitude);
         });
-        // تحديث الموقع في Firestore ليراه العميل
         _updateDriverLocationInFirestore(position);
       }
     });
   }
 
   void _updateDriverLocationInFirestore(Position pos) {
-    FirebaseFirestore.instance.collection('freeDrivers').doc('DRIVER_ID_HERE').update({
-      'location': GeoPoint(pos.latitude, pos.longitude),
-      'lastSeen': FieldValue.serverTimestamp(),
-    });
+    if (_uid != null) {
+      FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
+        'location': GeoPoint(pos.latitude, pos.longitude),
+        'lastSeen': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
-  // 2. دالة لفتح خرائط جوجل الخارجية للملاحة
+  // 2. الملاحة الخارجية (بدون API Key) - تفتح تطبيق الخرائط في موبايل المندوب
   Future<void> _openExternalMap(GeoPoint point) async {
-    final url = 'https://www.google.com/maps/search/?api=1&query=${point.latitude},${point.longitude}';
-    if (await canLaunchUrl(Uri.parse(url))) {
-      await launchUrl(Uri.parse(url));
+    final String url = 'https://www.google.com/maps/search/?api=1&query=${point.latitude},${point.longitude}';
+    final Uri uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
   }
 
@@ -58,15 +62,16 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("تتبع الطلب النشط"),
+        title: Text("تتبع الطلب النشط", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
+        centerTitle: true,
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: CircularProgressIndicator());
 
           var data = snapshot.data!.data() as Map<String, dynamic>;
           GeoPoint pickup = data['pickupLocation'];
@@ -75,7 +80,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
           return Column(
             children: [
-              // قسم الخريطة (CartoDB)
+              // قسم الخريطة (CartoDB المجانية)
               Expanded(
                 flex: 3,
                 child: FlutterMap(
@@ -91,29 +96,25 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                     ),
                     MarkerLayer(
                       markers: [
-                        // ماركر المندوب (أنت)
                         if (_currentLocation != null)
                           Marker(
                             point: _currentLocation!,
-                            child: Icon(Icons.delivery_dining, color: Colors.blue, size: 30.sp),
+                            child: Icon(Icons.delivery_dining, color: Colors.blue, size: 28.sp),
                           ),
-                        // ماركر المتجر (الاستلام)
                         Marker(
                           point: LatLng(pickup.latitude, pickup.longitude),
-                          child: Icon(Icons.store, color: Colors.orange[900], size: 30.sp),
+                          child: Icon(Icons.store, color: Colors.orange[900], size: 28.sp),
                         ),
-                        // ماركر العميل (التسليم)
                         Marker(
                           point: LatLng(dropoff.latitude, dropoff.longitude),
-                          child: Icon(Icons.location_on, color: Colors.red, size: 30.sp),
+                          child: Icon(Icons.location_on, color: Colors.red, size: 28.sp),
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
-
-              // لوحة التحكم السفلية
+              // لوحة التحكم السفلية لتغيير الحالة والملاحة
               _buildControlPanel(status, pickup, dropoff, data['pickupAddress'], data['dropoffAddress']),
             ],
           );
@@ -143,7 +144,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           const SizedBox(height: 20),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: isPickedUp ? Colors.green : Colors.orange[900],
+              backgroundColor: isPickedUp ? Colors.green[700] : Colors.orange[900],
               minimumSize: Size(double.infinity, 7.h),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             ),
@@ -165,15 +166,20 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: TextStyle(color: Colors.grey, fontSize: 10.sp)),
-              Text(address ?? "جاري التحميل...", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.sp)),
+              Text(title, style: TextStyle(color: Colors.grey[600], fontSize: 10.sp)),
+              Text(address ?? "جاري تحديد العنوان...", 
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.sp, overflow: TextOverflow.ellipsis), maxLines: 2),
             ],
           ),
         ),
-        IconButton(
-          onPressed: onNav,
-          icon: Icon(Icons.directions, color: Colors.blue, size: 25.sp),
-          tooltip: "فتح الملاحة الخارجية",
+        const SizedBox(width: 10),
+        InkWell(
+          onTap: onNav,
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.directions, color: Colors.blue[800], size: 22.sp),
+          ),
         )
       ],
     );
@@ -181,13 +187,15 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   void _updateStatus(String currentStatus) async {
     String nextStatus = currentStatus == 'accepted' ? 'picked_up' : 'delivered';
+    
     await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
       'status': nextStatus,
       if (nextStatus == 'delivered') 'completedAt': FieldValue.serverTimestamp(),
     });
 
-    if (nextStatus == 'delivered') {
-      Navigator.pop(context); // العودة بعد الإكمال
+    // إذا انتهى الطلب بنجاح، نغلق الشاشة ونعود للرئيسية
+    if (nextStatus == 'delivered' && mounted) {
+      Navigator.of(context).maybePop(); 
     }
   }
 }
