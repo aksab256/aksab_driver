@@ -37,20 +37,20 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         .where('status', whereIn: ['accepted', 'picked_up'])
         .snapshots()
         .listen((snapshot) {
-          if (snapshot.docs.isNotEmpty) {
-            if (mounted) {
-              setState(() {
-                _activeOrderId = snapshot.docs.first.id;
-              });
-            }
-          } else {
-            if (mounted) {
-              setState(() {
-                _activeOrderId = null;
-              });
-            }
-          }
-        });
+      if (snapshot.docs.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _activeOrderId = snapshot.docs.first.id;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _activeOrderId = null;
+          });
+        }
+      }
+    });
   }
 
   void _fetchInitialStatus() async {
@@ -112,12 +112,9 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // إذا وجد طلب نشط، شاشة "الرادار" تتحول تلقائياً لشاشة "الطلب النشط"
     final List<Widget> _pages = [
       _buildDashboardContent(),
-      _activeOrderId != null 
-          ? ActiveOrderScreen(orderId: _activeOrderId!) 
-          : const AvailableOrdersScreen(),
+      _activeOrderId != null ? ActiveOrderScreen(orderId: _activeOrderId!) : const AvailableOrdersScreen(),
       const Center(child: Text("سجل الطلبات قريباً")),
       const WalletScreen(),
     ];
@@ -127,7 +124,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: Text(_activeOrderId != null ? "طلب نشط حالياً" : "لوحة التحكم", 
+        title: Text(_activeOrderId != null ? "طلب نشط حالياً" : "لوحة التحكم",
             style: TextStyle(color: Colors.black, fontSize: 16.sp, fontWeight: FontWeight.bold)),
         centerTitle: true,
         actions: [
@@ -174,8 +171,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         items: [
           const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "الرئيسية"),
           BottomNavigationBarItem(
-            icon: _activeOrderId != null 
-                ? const Icon(Icons.directions_run, color: Colors.green) // أيقونة مختلفة للطلب النشط
+            icon: _activeOrderId != null
+                ? const Icon(Icons.directions_run, color: Colors.green)
                 : (isOnline ? _buildPulseIcon() : Opacity(opacity: 0.4, child: const Icon(Icons.radar))),
             label: _activeOrderId != null ? "الطلب النشط" : "الرادار",
           ),
@@ -186,7 +183,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // دالة بناء مؤشر اليد
   Widget _buildHandPointer() {
     return TweenAnimationBuilder(
       tween: Tween<double>(begin: 0, end: 15),
@@ -231,10 +227,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          // إذا كان هناك طلب نشط، نعرض تنبيه في الرئيسية أيضاً
-          if (_activeOrderId != null)
-             _activeOrderBanner(),
-          
+          if (_activeOrderId != null) _activeOrderBanner(),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(20),
@@ -245,11 +238,11 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
             ),
             child: Row(
               children: [
-                Icon(isOnline ? Icons.check_circle : Icons.do_not_disturb_on,
-                    color: isOnline ? Colors.green : Colors.red, size: 30.sp),
+                Icon(isOnline ? Icons.check_circle : Icons.do_not_disturb_on, color: isOnline ? Colors.green : Colors.red, size: 30.sp),
                 const SizedBox(width: 15),
-                Expanded(child: Text(isOnline ? "أنت متاح الآن لاستقبال الطلبات" : "أنت حالياً خارج التغطية",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp))),
+                Expanded(
+                    child: Text(isOnline ? "أنت متاح الآن لاستقبال الطلبات" : "أنت حالياً خارج التغطية",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp))),
               ],
             ),
           ),
@@ -275,7 +268,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   Widget _activeOrderBanner() {
     return Container(
-      margin: const EdgeInsets.bottom(15),
+      margin: const EdgeInsets.only(bottom: 15), // ✅ تم إصلاح الخطأ هنا
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(color: Colors.orange[900], borderRadius: BorderRadius.circular(15)),
       child: Row(
@@ -294,7 +287,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   Widget _statCard(String title, String value, IconData icon, Color color) {
     return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [const BoxShadow(color: Colors.black12, blurRadius: 5)]),
+      decoration: BoxDecoration(
+          color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [const BoxShadow(color: Colors.black12, blurRadius: 5)]),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
