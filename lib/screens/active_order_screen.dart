@@ -9,6 +9,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
 
+// ✅ استيراد الملف الصحيح لضمان الانتقال السليم
+import 'available_orders_screen.dart'; 
+
 class ActiveOrderScreen extends StatefulWidget {
   final String orderId;
   const ActiveOrderScreen({super.key, required this.orderId});
@@ -30,37 +33,23 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     _startLiveTracking();
   }
 
-  // تحديث المسار بناءً على الوجهة الحالية (متجر أو عميل)
   Future<void> _updateRoute(LatLng destination) async {
     if (_currentLocation == null) return;
-    
     final url = 'https://api.mapbox.com/directions/v5/mapbox/driving/${_currentLocation!.longitude},${_currentLocation!.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&access_token=$_mapboxToken';
-
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final List coords = data['routes'][0]['geometry']['coordinates'];
-        if (mounted) {
-          setState(() {
-            _routePoints = coords.map((c) => LatLng(c[1], c[0])).toList();
-          });
-        }
+        if (mounted) setState(() => _routePoints = coords.map((c) => LatLng(c[1], c[0])).toList());
       }
-    } catch (e) {
-      debugPrint("Route Error: $e");
-    }
+    } catch (e) { debugPrint("Route Error: $e"); }
   }
 
   void _startLiveTracking() async {
     Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-    if (mounted) {
-      setState(() => _currentLocation = LatLng(position.latitude, position.longitude));
-    }
-
-    Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10),
-    ).listen((Position pos) {
+    if (mounted) setState(() => _currentLocation = LatLng(position.latitude, position.longitude));
+    Geolocator.getPositionStream(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10)).listen((Position pos) {
       if (mounted) {
         setState(() => _currentLocation = LatLng(pos.latitude, pos.longitude));
         _updateDriverLocationInFirestore(pos);
@@ -79,16 +68,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   Future<void> _openExternalMap(GeoPoint point) async {
     final uri = Uri.parse("google.navigation:q=${point.latitude},${point.longitude}");
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        final webUri = Uri.parse("https://www.google.com/maps/search/?api=1&query=${point.latitude},${point.longitude}");
-        await launchUrl(webUri, mode: LaunchMode.externalApplication);
-      }
-    } catch (e) {
-      debugPrint("Could not launch maps: $e");
-    }
+    if (await canLaunchUrl(uri)) { await launchUrl(uri, mode: LaunchMode.externalApplication); }
   }
 
   @override
@@ -96,17 +76,16 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text("تتبع المسار", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white.withOpacity(0.9),
-        elevation: 0,
+        title: Text("تتبع المسار المباشر", style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white.withOpacity(0.95),
+        elevation: 4,
         centerTitle: true,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(20))),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(25))),
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: CircularProgressIndicator());
-
           var data = snapshot.data!.data() as Map<String, dynamic>;
           GeoPoint pickup = data['pickupLocation'];
           GeoPoint dropoff = data['dropoffLocation'];
@@ -122,7 +101,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                 options: MapOptions(
                   initialCenter: _currentLocation ?? target,
                   initialZoom: 14.0,
-                  interactionOptions: const InteractionOptions(flags: InteractiveFlag.all),
                 ),
                 children: [
                   TileLayer(
@@ -130,32 +108,22 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                     additionalOptions: {'accessToken': _mapboxToken},
                   ),
                   if (_routePoints.isNotEmpty)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: _routePoints,
-                          color: Colors.blue.withOpacity(0.7),
-                          strokeWidth: 5,
-                          borderColor: Colors.white,
-                          borderStrokeWidth: 1.0,
-                        ),
-                      ],
-                    ),
+                    PolylineLayer(polylines: [
+                      Polyline(points: _routePoints, color: Colors.blue, strokeWidth: 6, borderColor: Colors.white, borderStrokeWidth: 2.0),
+                    ]),
                   MarkerLayer(
                     markers: [
                       if (_currentLocation != null)
-                        Marker(point: _currentLocation!, child: Icon(Icons.navigation, color: Colors.blue, size: 25.sp)),
-                      Marker(point: target, child: Icon(Icons.location_on, color: Colors.red, size: 30.sp)),
+                        Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue, size: 35.sp)),
+                      Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.store, color: Colors.orange[900], size: 32.sp)),
+                      Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.red, size: 32.sp)),
                     ],
                   ),
                 ],
               ),
               Positioned(
-                bottom: 0, left: 0, right: 0,
-                child: SafeArea(
-                  top: false,
-                  child: _build3DControlPanel(status, pickup, dropoff, data['pickupAddress'], data['dropoffAddress']),
-                ),
+                bottom: 0, left: 0, right: 0, 
+                child: SafeArea(child: _build3DControlPanel(status, pickup, dropoff, data['pickupAddress'], data['dropoffAddress']))
               ),
             ],
           );
@@ -167,65 +135,49 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   Widget _build3DControlPanel(String status, GeoPoint pickup, GeoPoint dropoff, String? pAddr, String? dAddr) {
     bool isPickedUp = status == 'picked_up';
     return Container(
-      margin: EdgeInsets.all(12.sp),
-      padding: EdgeInsets.all(16.sp),
+      margin: EdgeInsets.all(15.sp),
+      padding: EdgeInsets.all(20.sp),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(25),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, -5)),
-          BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 10, offset: const Offset(4, 4)),
-        ],
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 15, offset: const Offset(0, -5))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              Container(
-                padding: EdgeInsets.all(10.sp),
-                decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(15)),
-                child: Icon(Icons.map_outlined, color: Colors.blue[800], size: 24.sp),
-              ),
-              SizedBox(width: 12.sp),
+              Icon(Icons.location_on, color: Colors.blue[900], size: 30.sp),
+              SizedBox(width: 10.sp),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(isPickedUp ? "وجهة التسليم (العميل)" : "وجهة الاستلام (المتجر)", style: TextStyle(color: Colors.grey, fontSize: 11.sp)),
+                    Text(isPickedUp ? "وجهة التسليم" : "نقطة الاستلام", style: TextStyle(color: Colors.grey[700], fontSize: 14.sp)),
                     Text(isPickedUp ? dAddr ?? "عنوان العميل" : pAddr ?? "عنوان المتجر", 
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17.sp), maxLines: 2),
                   ],
                 ),
               ),
-              InkWell(
-                onTap: () => _openExternalMap(isPickedUp ? dropoff : pickup),
-                child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 14.sp, vertical: 10.sp),
-                  decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(15)),
-                  child: Row(
-                    children: [
-                      Icon(Icons.near_me, color: Colors.white, size: 16.sp),
-                      SizedBox(width: 4.sp),
-                      Text("توجيه", style: TextStyle(color: Colors.white, fontSize: 11.sp, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
+              ElevatedButton.icon(
+                onPressed: () => _openExternalMap(isPickedUp ? dropoff : pickup),
+                icon: Icon(Icons.directions, size: 20.sp),
+                label: Text("توجيه", style: TextStyle(fontSize: 12.sp)),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white),
+              )
             ],
           ),
-          SizedBox(height: 18.sp),
+          SizedBox(height: 20.sp),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: isPickedUp ? Colors.green[600] : Colors.orange[900],
-              minimumSize: Size(double.infinity, 7.h),
+              backgroundColor: isPickedUp ? Colors.green[700] : Colors.orange[900],
+              minimumSize: Size(double.infinity, 8.h),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              elevation: 6,
-              shadowColor: isPickedUp ? Colors.green.withOpacity(0.4) : Colors.orange.withOpacity(0.4),
+              elevation: 8,
             ),
             onPressed: () => _updateStatus(status),
-            child: Text(isPickedUp ? "تم التسليم بنجاح ✅" : "استلمت الطلب وبدء الملاحة 📦",
-              style: TextStyle(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.bold)),
+            child: Text(isPickedUp ? "تم التسليم بنجاح ✅" : "استلمت من المتجر وبدء الملاحة 📦",
+              style: TextStyle(color: Colors.white, fontSize: 18.sp, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -234,7 +186,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   void _updateStatus(String currentStatus) async {
     String nextStatus = currentStatus == 'accepted' ? 'picked_up' : 'delivered';
-    
     try {
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
         'status': nextStatus,
@@ -242,14 +193,15 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       });
 
       if (nextStatus == 'delivered' && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("تم توصيل الطلب بنجاح ✅ جاري البحث عن طلبات جديدة..."), backgroundColor: Colors.green)
+        // ✅ استخدام نفس طريقة الانتقال في تطبيقك (Replacement) للرجوع للرادار
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const AvailableOrdersScreen()),
         );
-        // النقل إلى شاشة الرادار وتنظيف مكدس الصفحات
-        Navigator.of(context).pushNamedAndRemoveUntil('/radar', (route) => false);
       }
     } catch (e) {
-      debugPrint("Update Status Error: $e");
+      debugPrint("Update Error: $e");
     }
   }
 }
+
