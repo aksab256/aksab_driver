@@ -30,7 +30,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     _startLiveTracking();
   }
 
-  // جلب المسار من Mapbox API
   Future<void> _updateRoute(LatLng destination) async {
     if (_currentLocation == null) return;
     
@@ -79,11 +78,15 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   Future<void> _openExternalMap(GeoPoint point) async {
     final uri = Uri.parse("google.navigation:q=${point.latitude},${point.longitude}");
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      final webUri = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=${point.latitude},${point.longitude}");
-      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        final webUri = Uri.parse("https://www.google.com/maps/search/?api=1&query=${point.latitude},${point.longitude}");
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      debugPrint("Could not launch maps: $e");
     }
   }
 
@@ -109,7 +112,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           String status = data['status'];
           LatLng target = status == 'accepted' ? LatLng(pickup.latitude, pickup.longitude) : LatLng(dropoff.latitude, dropoff.longitude);
 
-          // تحديث الخط تلقائياً عند تغيير الموقع
           _updateRoute(target);
 
           return Stack(
@@ -129,7 +131,13 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                   if (_routePoints.isNotEmpty)
                     PolylineLayer(
                       polylines: [
-                        Polyline(points: _routePoints, color: Colors.blue.withOpacity(0.7), strokeWidth: 5, isOutline: true, outlineColor: Colors.white),
+                        Polyline(
+                          points: _routePoints,
+                          color: Colors.blue.withOpacity(0.7),
+                          strokeWidth: 5,
+                          borderColor: Colors.white, // التعديل هنا
+                          borderStrokeWidth: 1.0,    // التعديل هنا
+                        ),
                       ],
                     ),
                   MarkerLayer(
@@ -161,8 +169,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(25),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, -5)), // ظلال علوية
-          BoxShadow(color: Colors.grey.withOpacity(0.3), blurRadius: 10, offset: const Offset(5, 5)), // تأثير 3D جانبى
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, -5)),
+          BoxShadow(color: Colors.grey.withOpacity(0.3), blurRadius: 10, offset: const Offset(5, 5)),
         ],
       ),
       child: Column(
@@ -229,3 +237,4 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     if (nextStatus == 'delivered' && mounted) Navigator.of(context).maybePop();
   }
 }
+
