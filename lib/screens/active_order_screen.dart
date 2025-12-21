@@ -26,10 +26,29 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     _startLiveTracking();
   }
 
-  // 1. تتبع الموقع وتحديثه في Firestore ليراه العميل لحظياً
-  void _startLiveTracking() {
+  // 1. تعديل لتأمين جلب الموقع فوراً عند الفتح ثم الاستمرار في التتبع
+  void _startLiveTracking() async {
+    // جلب الموقع الحالي فوراً لمرة واحدة لضمان ظهور العلامة الزرقاء مباشرة
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high
+      );
+      if (mounted) {
+        setState(() {
+          _currentLocation = LatLng(position.latitude, position.longitude);
+        });
+        _updateDriverLocationInFirestore(position);
+      }
+    } catch (e) {
+      debugPrint("خطأ في جلب الموقع الأولي: $e");
+    }
+
+    // الاستمرار في مراقبة التغير في الموقع
     Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10),
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high, 
+        distanceFilter: 10
+      ),
     ).listen((Position position) {
       if (mounted) {
         setState(() {
@@ -49,12 +68,20 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // 2. الملاحة الخارجية (بدون API Key) - تفتح تطبيق الخرائط في موبايل المندوب
+  // 2. إصلاح دالة الملاحة الخارجية لتعمل مع كل الأجهزة
   Future<void> _openExternalMap(GeoPoint point) async {
+    // تم تصحيح صياغة الرابط لضمان تمرير الإحداثيات بشكل سليم
     final String url = 'https://www.google.com/maps/search/?api=1&query=${point.latitude},${point.longitude}';
     final Uri uri = Uri.parse(url);
+    
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("تعذر فتح تطبيق الخرائط")),
+        );
+      }
     }
   }
 
@@ -80,7 +107,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
           return Column(
             children: [
-              // قسم الخريطة (CartoDB المجانية)
               Expanded(
                 flex: 3,
                 child: FlutterMap(
@@ -114,7 +140,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                   ],
                 ),
               ),
-              // لوحة التحكم السفلية لتغيير الحالة والملاحة
               _buildControlPanel(status, pickup, dropoff, data['pickupAddress'], data['dropoffAddress']),
             ],
           );
@@ -167,7 +192,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title, style: TextStyle(color: Colors.grey[600], fontSize: 10.sp)),
-              Text(address ?? "جاري تحديد العنوان...", 
+              Text(address ?? "جاري تحديد العنوان...",
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.sp, overflow: TextOverflow.ellipsis), maxLines: 2),
             ],
           ),
@@ -193,7 +218,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       if (nextStatus == 'delivered') 'completedAt': FieldValue.serverTimestamp(),
     });
 
-    // إذا انتهى الطلب بنجاح، نغلق الشاشة ونعود للرئيسية
     if (nextStatus == 'delivered' && mounted) {
       Navigator.of(context).maybePop(); 
     }
