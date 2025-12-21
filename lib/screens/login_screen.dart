@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-// 💡 استيراد الشاشة المخصصة للمندوب الحر
+import 'package:shared_preferences/shared_preferences.dart'; // 💡 مكتبة التخزين المحلي
+
 import 'free_driver_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -11,9 +12,15 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _phoneController = TextEditingController(); 
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+
+  // 🎯 دالة حفظ نوع المركبة محلياً
+  Future<void> _saveVehicleInfo(String config) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_vehicle_config', config);
+  }
 
   Future<void> _handleLogin() async {
     if (_phoneController.text.isEmpty || _passwordController.text.isEmpty) {
@@ -47,15 +54,17 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (userData != null && userData['status'] == 'approved') {
-        // 🎯 التوجيه الذكي بناءً على الدور (Role)
+        
+        // 🎯 جلب وتخزين نوع المركبة للمندوب الحر
         if (userData['role'] == 'free_driver') {
-          // إذا كان مندوب حر، نفتح شاشته الخاصة ونغلق شاشة الدخول
+          String config = userData['vehicleConfig'] ?? 'motorcycleConfig';
+          await _saveVehicleInfo(config); // حفظها تحت مفتاح user_vehicle_config
+          
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const FreeDriverHomeScreen()),
           );
         } else {
-          // الأدوار الأخرى (مشرف، مدير، مندوب موظف) يتم التعامل معها هنا لاحقاً
           _navigateToHome(userData['role'] ?? 'user');
         }
       } else {
@@ -69,6 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // ... باقي الدوال المساعدة (buildInput, showMsg, navigateToHome) تبقى كما هي
   void _navigateToHome(String role) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("مرحباً بك.. دورك: $role")));
   }
@@ -131,4 +141,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-
