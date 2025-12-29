@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sizer/sizer.dart';
-import 'active_order_screen.dart'; // التأكد من وجود ملف التتبع في نفس المجلد
+import 'active_order_screen.dart';
 
 class AvailableOrdersScreen extends StatefulWidget {
   const AvailableOrdersScreen({super.key});
@@ -25,17 +25,15 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     _handleLocationAndData();
   }
 
-  // دالة التعامل مع الموقع الجغرافي وجلب إعدادات المركبة
   Future<void> _handleLocationAndData() async {
     bool serviceEnabled;
     LocationPermission permission;
-
     try {
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (mounted) {
           setState(() {
-            _errorMessage = 'برجاء تفعيل خدمة الموقع (GPS) في هاتفك';
+            _errorMessage = 'برجاء تفعيل خدمة الموقع (GPS)';
             _isGettingLocation = false;
           });
         }
@@ -48,22 +46,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         if (permission == LocationPermission.denied) {
           if (mounted) {
             setState(() {
-              _errorMessage = 'يجب الموافقة على إذن الموقع لرؤية الطلبات القريبة';
+              _errorMessage = 'إذن الموقع مطلوب لرؤية الطلبات';
               _isGettingLocation = false;
             });
           }
           return;
         }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        if (mounted) {
-          setState(() {
-            _errorMessage = 'لقد رفضت إذن الموقع دائماً، برجاء تفعيله من إعدادات الهاتف';
-            _isGettingLocation = false;
-          });
-        }
-        return;
       }
 
       Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
@@ -90,9 +78,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isGettingLocation) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    if (_isGettingLocation) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     if (_errorMessage.isNotEmpty) {
       return Scaffold(
@@ -102,9 +88,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.location_off, size: 50.sp, color: Colors.red),
+                Icon(Icons.location_off, size: 40.sp, color: Colors.red),
                 const SizedBox(height: 20),
-                Text(_errorMessage, textAlign: TextAlign.center, style: TextStyle(fontSize: 14.sp)),
+                Text(_errorMessage, textAlign: TextAlign.center, style: TextStyle(fontSize: 16.sp)),
                 const SizedBox(height: 10),
                 ElevatedButton(onPressed: _handleLocationAndData, child: const Text("إعادة المحاولة"))
               ],
@@ -117,10 +103,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: Text("الرادار - طلبات تناسبك", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
+        title: Text("الرادار - طلبات حية", 
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18.sp, color: Colors.orange[900])),
         centerTitle: true,
         backgroundColor: Colors.white,
-        elevation: 0,
+        elevation: 0.5,
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -136,15 +123,15 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             var data = doc.data() as Map<String, dynamic>;
             GeoPoint? pickupLocation = data['pickupLocation'];
             if (pickupLocation == null || _myCurrentLocation == null) return true;
-
             double distanceInMeters = Geolocator.distanceBetween(
                 _myCurrentLocation!.latitude, _myCurrentLocation!.longitude,
                 pickupLocation.latitude, pickupLocation.longitude);
-            return distanceInMeters <= 15000; // نطاق 15 كم
+            return distanceInMeters <= 15000;
           }).toList();
 
           if (nearbyOrders.isEmpty) {
-            return Center(child: Text("لا توجد طلبات تناسبك حالياً", style: TextStyle(fontSize: 14.sp)));
+            return Center(child: Text("لا توجد طلبات تناسبك حالياً", 
+              style: TextStyle(fontSize: 16.sp, color: Colors.grey[600])));
           }
 
           return ListView.builder(
@@ -160,35 +147,69 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   Widget _buildOrderCard(BuildContext context, String id, Map<String, dynamic> data) {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)]),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Row(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(25),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 5))],
+      ),
+      child: Column(
+        children: [
+          // شريط علوي للمسافة والسعر
+          Container(
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+              color: Colors.orange[900]!.withOpacity(0.05),
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(25), topRight: Radius.circular(25)),
+            ),
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("المسافة: ${_calculateDistance(data)} كم", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                Text("${data['price']} ج.م", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, color: Colors.orange[900])),
+                Row(
+                  children: [
+                    Icon(Icons.near_me, color: Colors.blue, size: 16.sp),
+                    const SizedBox(width: 5),
+                    Text("${_calculateDistance(data)} كم", 
+                      style: TextStyle(color: Colors.blue[900], fontWeight: FontWeight.w900, fontSize: 16.sp)),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.orange[900], borderRadius: BorderRadius.circular(15)),
+                  child: Text("${data['price']} ج.م", 
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18.sp)),
+                ),
               ],
             ),
-            const Divider(),
-            _infoRow(Icons.shopping_bag, "التفاصيل: ${data['details'] ?? 'بدون وصف'}"),
-            _infoRow(Icons.location_on, "من: ${data['pickupAddress'] ?? 'غير محدد'}"),
-            _infoRow(Icons.flag, "إلى: ${data['dropoffAddress'] ?? 'غير محدد'}"),
-            const SizedBox(height: 15),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green[800],
-                  minimumSize: Size(100.w, 7.h),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-              onPressed: () => _acceptOrder(context, id),
-              child: Text("قبول وتوصيل الطلب",
-                  style: TextStyle(fontSize: 14.sp, color: Colors.white, fontWeight: FontWeight.bold)),
-            )
-          ],
-        ),
+          ),
+          
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                _infoRow(Icons.storefront, "من: ${data['pickupAddress'] ?? 'غير محدد'}", Colors.green),
+                const SizedBox(height: 12),
+                _infoRow(Icons.location_on, "إلى: ${data['dropoffAddress'] ?? 'غير محدد'}", Colors.red),
+                const SizedBox(height: 12),
+                _infoRow(Icons.info_outline, "الوصف: ${data['details'] ?? 'بدون وصف'}", Colors.grey[700]!),
+                
+                const SizedBox(height: 25),
+                
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green[800],
+                    minimumSize: Size(100.w, 8.h),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    elevation: 5,
+                  ),
+                  onPressed: () => _acceptOrder(context, id),
+                  child: Text("قبول وتوصيل الطلب", 
+                    style: TextStyle(fontSize: 18.sp, color: Colors.white, fontWeight: FontWeight.w900)),
+                )
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -200,12 +221,10 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return (dist / 1000).toStringAsFixed(1);
   }
 
-  // دالة قبول الطلب والانتقال المؤمن
   Future<void> _acceptOrder(BuildContext context, String orderId) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    // 1. إظهار مؤشر التحميل
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -214,11 +233,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
     final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
     try {
-      // 2. تحديث الحالة في Firestore (Transaction)
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentSnapshot snapshot = await transaction.get(orderRef);
-        if (!snapshot.exists) throw "الطلب غير موجود!";
-        if (snapshot.get('status') != 'pending') throw "سبقك مندوب آخر!";
+        if (!snapshot.exists || snapshot.get('status') != 'pending') throw "سبقك مندوب آخر!";
 
         transaction.update(orderRef, {
           'status': 'accepted',
@@ -227,36 +244,36 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         });
       });
 
-      // 3. إغلاق الـ Loading وتأمين الـ Navigator
-      if (!context.mounted) return;
-      Navigator.pop(context); // إغلاق الـ Dialog
+      if (!mounted) return;
+      Navigator.pop(context); // إغلاق الـ Loading
 
-      // 4. ✅ الانتقال الفوري لصفحة الخريطة (Replacement لعدم الرجوع للرادار)
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)),
       );
-
     } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context); // إغلاق الـ Loading في حالة الخطأ
+      if (mounted) {
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(backgroundColor: Colors.red, content: Text(e.toString()))
+          SnackBar(backgroundColor: Colors.red, content: Text(e.toString(), style: TextStyle(fontSize: 14.sp)))
         );
       }
     }
   }
 
-  Widget _infoRow(IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Icon(icon, size: 18.sp, color: Colors.orange[800]),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w500))),
-        ],
-      ),
+  Widget _infoRow(IconData icon, String text, Color color) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20.sp, color: color),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(text, 
+            style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: Colors.black87),
+            maxLines: 2, overflow: TextOverflow.ellipsis),
+        ),
+      ],
     );
   }
 }
+
