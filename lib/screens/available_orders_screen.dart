@@ -7,7 +7,6 @@ import 'active_order_screen.dart';
 
 class AvailableOrdersScreen extends StatefulWidget {
   final String vehicleType;
-
   const AvailableOrdersScreen({super.key, required this.vehicleType});
 
   @override
@@ -43,7 +42,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // حساب المسافة بين المندوب ونقطة الاستلام
   String _distToPickup(Map<String, dynamic> data) {
     GeoPoint? pickup = data['pickupLocation'];
     if (pickup == null || _myCurrentLocation == null) return "??";
@@ -53,7 +51,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return (dist / 1000).toStringAsFixed(1);
   }
 
-  // حساب مسافة الطلب نفسه (من الاستلام للتسليم)
   String _tripDistance(Map<String, dynamic> data) {
     GeoPoint? pickup = data['pickupLocation'];
     GeoPoint? dropoff = data['dropoffLocation'];
@@ -70,21 +67,21 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
     }
 
-    // 1. مراقبة الإعدادات العامة للمديونية
+    // تنظيف القيمة القادمة من المندوب لتعمل مع الفلترة
+    // تحويل "motorcycleConfig" إلى "motorcycle" ليتطابق مع طلب العميل
+    String cleanType = widget.vehicleType.replaceAll('Config', '');
+
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('systemConfiguration').doc('globalCreditSettings').snapshots(),
       builder: (context, globalSnap) {
-        
         double defaultGlobalLimit = 50.0;
         if (globalSnap.hasData && globalSnap.data!.exists) {
           defaultGlobalLimit = (globalSnap.data!['defaultLimit'] ?? 50.0).toDouble();
         }
 
-        // 2. مراقبة رصيد المندوب وبياناته الخاصة
         return StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
           builder: (context, driverSnap) {
-            
             double walletBalance = 0;
             double? driverSpecificLimit;
 
@@ -94,7 +91,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               driverSpecificLimit = dData['creditLimit']?.toDouble();
             }
 
-            // الخدعة: الرصيد الظاهري = الرصيد الحقيقي + الحد المسموح
             double finalLimit = driverSpecificLimit ?? defaultGlobalLimit;
             double displayBalance = walletBalance + finalLimit;
             bool canAccept = displayBalance > 0;
@@ -105,16 +101,15 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 toolbarHeight: 10.h,
                 title: Column(
                   children: [
-                    Text("رادار الطلبات المتاحة", 
+                    Text("رادار الطلبات المتاحة",
                         style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17.sp, color: Colors.black)),
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                       decoration: BoxDecoration(
-                        color: canAccept ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10)
-                      ),
-                      child: Text("رصيدك الحالي: $displayBalance ج.م", 
-                        style: TextStyle(fontSize: 12.sp, color: canAccept ? Colors.green[800] : Colors.red, fontWeight: FontWeight.bold)),
+                          color: canAccept ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Text("رصيدك الحالي: $displayBalance ج.م",
+                          style: TextStyle(fontSize: 12.sp, color: canAccept ? Colors.green[800] : Colors.red, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -126,7 +121,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 stream: FirebaseFirestore.instance
                     .collection('specialRequests')
                     .where('status', isEqualTo: 'pending')
-                    .where('vehicleConfig', isEqualTo: widget.vehicleType)
+                    .where('vehicleType', isEqualTo: cleanType) // تم تعديل الحقل لـ vehicleType والقيمة لـ cleanType
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
@@ -138,7 +133,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     double dist = Geolocator.distanceBetween(
                         _myCurrentLocation!.latitude, _myCurrentLocation!.longitude,
                         pickup.latitude, pickup.longitude);
-                    return dist <= 15000; // نطاق 15 كم
+                    return dist <= 15000;
                   }).toList();
 
                   if (nearbyOrders.isEmpty) {
@@ -147,8 +142,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                       children: [
                         Icon(Icons.radar, size: 50.sp, color: Colors.grey[300]),
                         SizedBox(height: 2.h),
-                        Text("لا توجد طلبات قريبة منك حالياً", 
-                          style: TextStyle(fontSize: 16.sp, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+                        Text("لا توجد طلبات $cleanType قريبة حالياً",
+                            style: TextStyle(fontSize: 16.sp, color: Colors.grey[600], fontWeight: FontWeight.bold)),
                       ],
                     ));
                   }
@@ -177,7 +172,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(25),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 5))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))],
       ),
       child: Column(
         children: [
@@ -194,16 +189,16 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text("قيمة التوصيل", style: TextStyle(color: Colors.white70, fontSize: 12.sp)),
-                    Text("${data['price']} ج.م", 
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22.sp)),
+                    Text("${data['price']} ج.م",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22.sp)),
                   ],
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text("مشوار الطلب", style: TextStyle(color: Colors.white70, fontSize: 12.sp)),
-                    Text("$tripDist كم", 
-                      style: TextStyle(color: Colors.yellowAccent, fontWeight: FontWeight.w900, fontSize: 18.sp)),
+                    Text("$tripDist كم",
+                        style: TextStyle(color: Colors.yellowAccent, fontWeight: FontWeight.w900, fontSize: 18.sp)),
                   ],
                 ),
               ],
@@ -216,21 +211,19 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 Row(
                   children: [
                     Icon(Icons.directions_bike, color: Colors.blue[800], size: 20.sp),
-                    SizedBox(width: 10),
-                    Text("يبعد عنك الآن: $distToMe كم", 
-                      style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
+                    const SizedBox(width: 10),
+                    Text("يبعد عنك الآن: $distToMe كم",
+                        style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
                   ],
                 ),
                 const Divider(height: 30, thickness: 1),
                 _infoRow(Icons.storefront, "من: ${data['pickupAddress'] ?? 'عنوان الاستلام'}", Colors.green[700]!),
                 const SizedBox(height: 15),
                 _infoRow(Icons.location_on, "إلى: ${data['dropoffAddress'] ?? 'عنوان التسليم'}", Colors.red[700]!),
-                
                 if (data['details'] != null && data['details'].toString().isNotEmpty) ...[
                   const SizedBox(height: 15),
                   _infoRow(Icons.info_outline, "وصف: ${data['details']}", Colors.grey[700]!),
                 ],
-                
                 const SizedBox(height: 30),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
@@ -240,8 +233,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     elevation: canAccept ? 5 : 0,
                   ),
                   onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
-                  child: Text(canAccept ? "قبول الطلب فوراً" : "اشحن المحفظة للقبول", 
-                    style: TextStyle(fontSize: 18.sp, color: Colors.white, fontWeight: FontWeight.w900)),
+                  child: Text(canAccept ? "قبول الطلب فوراً" : "اشحن المحفظة للقبول",
+                      style: TextStyle(fontSize: 18.sp, color: Colors.white, fontWeight: FontWeight.w900)),
                 )
               ],
             ),
@@ -258,9 +251,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         Icon(icon, size: 22.sp, color: color),
         const SizedBox(width: 12),
         Expanded(
-          child: Text(text, 
-            style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, color: Colors.black87),
-            maxLines: 2, overflow: TextOverflow.ellipsis),
+          child: Text(text,
+              style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, color: Colors.black87),
+              maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
       ],
     );
@@ -271,7 +264,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     if (uid == null) return;
 
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
-
     final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
 
     try {
@@ -280,26 +272,19 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         if (!snapshot.exists || snapshot.get('status') != 'pending') {
           throw "عذراً، سبقك مندوب آخر لقبول الطلب!";
         }
-
         transaction.update(orderRef, {
           'status': 'accepted',
           'driverId': uid,
           'acceptedAt': FieldValue.serverTimestamp(),
         });
       });
-
       if (!mounted) return;
-      Navigator.pop(context); 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)),
-      );
+      Navigator.pop(context);
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)));
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(backgroundColor: Colors.red, content: Text(e.toString(), style: TextStyle(fontSize: 14.sp)))
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text(e.toString())));
     }
   }
 }
