@@ -3,13 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
 import 'dart:convert';
-import 'package:http/http.dart' as http; // تم تفعيل المكتبة
-import 'package:url_launcher/url_launcher.dart'; // تم تفعيل المكتبة
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
 
-  // دالة استدعاء الـ API (اللمدا) لشحن الرصيد بنجاح
+  // دالة استدعاء الـ API (اللمدا) لشحن الرصيد
   Future<void> _processCharge(BuildContext context, double amount) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     
@@ -29,17 +29,18 @@ class WalletScreen extends StatelessWidget {
         Uri.parse(lambdaApiUrl),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
-          "type": "REQUEST_CHARGE", // تحديد نوع العملية
+          "type": "REQUEST_CHARGE",
           "driverId": uid,
           "amount": amount,
         }),
-      );
+      ).timeout(const Duration(seconds: 15));
 
+      if (!context.mounted) return;
       Navigator.pop(context); // إغلاق مؤشر التحميل
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final String paymentUrl = data['paymentUrl']; // الرابط الوهمي حالياً
+        final String paymentUrl = data['paymentUrl'];
 
         // فتح المتصفح لإتمام عملية الدفع
         final Uri url = Uri.parse(paymentUrl);
@@ -54,7 +55,7 @@ class WalletScreen extends StatelessWidget {
         );
       }
     } catch (e) {
-      Navigator.pop(context); // إغلاق التحميل في حالة الفشل
+      if (context.mounted) Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("فشل الاتصال بخادم الدفع، تحقق من الإنترنت")),
       );
@@ -75,7 +76,7 @@ class WalletScreen extends StatelessWidget {
         elevation: 0,
       ),
       body: StreamBuilder<DocumentSnapshot>(
-        // مراقبة رصيد المندوب من مجموعة freeDrivers التي اتحدنا عليها
+        // مراقبة رصيد المندوب من مجموعة freeDrivers
         stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
@@ -112,7 +113,6 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // سجل العمليات يقرأ من سجل المحفظة الذي تنشئه اللمدا (walletLogs)
   Widget _buildTransactionHistory(String? uid) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -146,7 +146,6 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // --- المكونات البصرية (UI Widgets) بقيت كما هي مع تحسينات طفيفة للمناسبة ---
   Widget _buildBalanceCard(double balance) {
     return Container(
       width: double.infinity,
