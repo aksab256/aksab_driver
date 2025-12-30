@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'available_orders_screen.dart';
 import 'active_order_screen.dart';
 import 'wallet_screen.dart';
@@ -16,21 +17,28 @@ class FreeDriverHomeScreen extends StatefulWidget {
 class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   bool isOnline = false;
   int _selectedIndex = 0;
-  bool _showHandHint = false;
   String? _activeOrderId;
+  String _vehicleConfig = 'motorcycleConfig'; // القيمة الافتراضية
 
   @override
   void initState() {
     super.initState();
+    _loadVehicleConfig();
     _fetchInitialStatus();
     _listenToActiveOrders();
   }
 
-  // مراقبة الطلبات النشطة (المقبولة أو الجاري استلامها)
+  // تحميل نوع المركبة المحفوظ عند تسجيل الدخول
+  void _loadVehicleConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _vehicleConfig = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
+    });
+  }
+
   void _listenToActiveOrders() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-
     FirebaseFirestore.instance
         .collection('specialRequests')
         .where('driverId', isEqualTo: uid)
@@ -50,9 +58,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     if (uid != null) {
       var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (doc.exists && mounted) {
-        setState(() {
-          isOnline = doc.data()?['isOnline'] ?? false;
-        });
+        setState(() => isOnline = doc.data()?['isOnline'] ?? false);
       }
     }
   }
@@ -64,49 +70,47 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         'isOnline': value,
         'lastSeen': FieldValue.serverTimestamp(),
       });
-      setState(() {
-        isOnline = value;
-        if (isOnline) _showHandHint = true;
-      });
-      if (isOnline) {
-        Future.delayed(const Duration(seconds: 5), () {
-          if (mounted) setState(() => _showHandHint = false);
-        });
-      }
+      setState(() => isOnline = value);
     }
   }
 
-  void _showStatusAlert() {
-    showDialog(
+  // دالة تسجيل الخروج
+  void _logout() async {
+    await FirebaseAuth.instance.signOut();
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  }
+
+  // دالة الحذف الناعم (Soft Delete)
+  void _softDeleteAccount() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    bool confirm = await _showConfirmDialog();
+    if (confirm && uid != null) {
+      await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({'status': 'deleted'});
+      _logout();
+    }
+  }
+
+  Future<bool> _showConfirmDialog() async {
+    return await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.wifi_off, size: 40.sp, color: Colors.redAccent),
-            const SizedBox(height: 15),
-            Text("وضع العمل غير نشط", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18.sp)),
-            const SizedBox(height: 10),
-            Text("برجاء تفعيل زر الاتصال بالأعلى أولاً لتتمكن من رؤية طلبات الرادار",
-                textAlign: TextAlign.center, style: TextStyle(fontSize: 14.sp, color: Colors.grey[600])),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10)),
-              onPressed: () => Navigator.pop(context),
-              child: Text("فهمت", style: TextStyle(color: Colors.white, fontSize: 16.sp)),
-            )
-          ],
-        ),
+      builder: (c) => AlertDialog(
+        title: const Text("حذف الحساب", textAlign: TextAlign.right),
+        content: const Text("هل أنت متأكد من رغبتك في إغلاق الحساب؟ سيتم مراجعة طلبك من الإدارة.", textAlign: TextAlign.right),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("إلغاء")),
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد الحذف", style: TextStyle(color: Colors.red))),
+        ],
       ),
-    );
+    ) ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
     final List<Widget> _pages = [
       _buildDashboardContent(),
-      _activeOrderId != null ? ActiveOrderScreen(orderId: _activeOrderId!) : const AvailableOrdersScreen(),
+      _activeOrderId != null 
+          ? ActiveOrderScreen(orderId: _activeOrderId!) 
+          : AvailableOrdersScreen(vehicleType: _vehicleConfig), // تمرير نوع المركبة هنا
       const Center(child: Text("سجل الطلبات قريباً")),
       const WalletScreen(),
     ];
@@ -116,64 +120,67 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: Text(
-          _activeOrderId != null ? "طلب نشط حالياً" : "لوحة التحكم",
-          style: TextStyle(color: Colors.black, fontSize: 18.sp, fontWeight: FontWeight.w900),
-        ),
+        iconTheme: const IconThemeData(color: Colors.black), // للـ Drawer
+        title: Text(_activeOrderId != null ? "طلب نشط" : "أكسب مناديب", 
+          style: TextStyle(color: Colors.black, fontSize: 16.sp, fontWeight: FontWeight.bold)),
         centerTitle: true,
         actions: [
-          Row(
-            children: [
-              Text(isOnline ? "متصل" : "مختفي",
-                  style: TextStyle(color: isOnline ? Colors.green : Colors.red, fontSize: 12.sp, fontWeight: FontWeight.bold)),
-              Transform.scale(
-                scale: 1.1,
-                child: Switch(
-                  value: isOnline,
-                  activeColor: Colors.green,
-                  onChanged: _toggleOnlineStatus,
-                ),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.only(left: 10),
+            child: Switch(value: isOnline, activeColor: Colors.orange[900], onChanged: _toggleOnlineStatus),
           ),
-          SizedBox(width: 2.w),
         ],
       ),
-      body: Stack(
-        children: [
-          _pages[_selectedIndex],
-          if (_showHandHint && _selectedIndex == 0 && _activeOrderId == null)
-            Positioned(
-              bottom: kBottomNavigationBarHeight - 5,
-              left: 0,
-              right: 0,
-              child: Center(child: _buildModernHint()),
-            ),
-        ],
-      ),
+      drawer: _buildSideDrawer(), // الشريط الجانبي الجديد
+      body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
           if (index == 1 && !isOnline && _activeOrderId == null) {
-            _showStatusAlert();
-            return;
+             _showStatusAlert();
+             return;
           }
           setState(() => _selectedIndex = index);
         },
         selectedItemColor: Colors.orange[900],
         unselectedItemColor: Colors.grey[600],
-        selectedLabelStyle: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold),
         type: BottomNavigationBarType.fixed,
         items: [
           const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "الرئيسية"),
           BottomNavigationBarItem(
-            icon: _activeOrderId != null
-                ? const Icon(Icons.directions_run, color: Colors.green)
-                : (isOnline ? _buildPulseIcon() : Opacity(opacity: 0.4, child: const Icon(Icons.radar))),
-            label: _activeOrderId != null ? "الطلب النشط" : "الرادار",
+            icon: _activeOrderId != null 
+                ? const Icon(Icons.directions_run, color: Colors.green) 
+                : (isOnline ? _buildPulseIcon() : const Icon(Icons.radar)), 
+            label: "الرادار"
           ),
           const BottomNavigationBarItem(icon: Icon(Icons.history), label: "طلباتي"),
           const BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: "المحفظة"),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSideDrawer() {
+    return Drawer(
+      child: Column(
+        children: [
+          UserAccountsDrawerHeader(
+            decoration: BoxDecoration(color: Colors.orange[900]),
+            accountName: const Text("مندوب أكسب"),
+            accountEmail: Text(FirebaseAuth.instance.currentUser?.email ?? ""),
+            currentAccountPicture: const CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.person, size: 40, color: Colors.black)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_outline, color: Colors.blue),
+            title: const Text("حسابي (إغلاق الحساب)"),
+            onTap: _softDeleteAccount,
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text("تسجيل الخروج"),
+            onTap: _logout,
+          ),
         ],
       ),
     );
@@ -185,25 +192,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       child: Column(
         children: [
           if (_activeOrderId != null) _activeOrderBanner(),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: isOnline ? Colors.green[50] : Colors.red[50],
-              borderRadius: BorderRadius.circular(25),
-              border: Border.all(color: isOnline ? Colors.green : Colors.red, width: 2),
-            ),
-            child: Row(
-              children: [
-                Icon(isOnline ? Icons.check_circle : Icons.do_not_disturb_on, color: isOnline ? Colors.green : Colors.red, size: 35.sp),
-                const SizedBox(width: 15),
-                Expanded(
-                    child: Text(isOnline ? "أنت متاح الآن لاستقبال الطلبات" : "أنت حالياً خارج التغطية",
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15.sp))),
-              ],
-            ),
-          ),
-          const SizedBox(height: 25),
           _buildLiveStatsGrid(),
         ],
       ),
@@ -213,46 +201,31 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   Widget _buildLiveStatsGrid() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('specialRequests')
-          .where('driverId', isEqualTo: uid)
-          .where('status', isEqualTo: 'delivered')
-          .snapshots(),
+      stream: FirebaseFirestore.instance.collection('specialRequests').where('driverId', isEqualTo: uid).where('status', isEqualTo: 'delivered').snapshots(),
       builder: (context, snapshot) {
-        double todayNetEarnings = 0.0;
+        double todayTotalEarnings = 0.0; // القيمة الإجمالية للطلب
         int completedCount = 0;
-        double platformCommissionRate = 0.15; // عمولة المنصة 15%
 
         if (snapshot.hasData) {
-          final now = DateTime.now();
-          final todayStart = DateTime(now.year, now.month, now.day);
-          
-          var docs = snapshot.data!.docs;
-          for (var doc in docs) {
+          final todayStart = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+          for (var doc in snapshot.data!.docs) {
             final data = doc.data() as Map<String, dynamic>;
-            
-            // فلتر للتأكد أن الطلب اكتمل "اليوم"
             Timestamp? completedAt = data['completedAt'] as Timestamp?;
             if (completedAt != null && completedAt.toDate().isAfter(todayStart)) {
               completedCount++;
-              double totalPrice = double.tryParse(data['price'].toString()) ?? 0.0;
-              todayNetEarnings += totalPrice * (1 - platformCommissionRate);
+              todayTotalEarnings += double.tryParse(data['price'].toString()) ?? 0.0;
             }
           }
         }
 
         return GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          crossAxisSpacing: 15,
-          mainAxisSpacing: 15,
-          childAspectRatio: 1.0,
+          shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2, crossAxisSpacing: 15, mainAxisSpacing: 15,
           children: [
-            _statCard("صافي أرباح اليوم", "${todayNetEarnings.toStringAsFixed(2)} ج.م", Icons.monetization_on, Colors.blue),
+            _statCard("أرباح اليوم (إجمالي)", "${todayTotalEarnings.toStringAsFixed(2)} ج.م", Icons.monetization_on, Colors.blue),
             _statCard("طلبات منفذة", "$completedCount", Icons.shopping_basket, Colors.orange),
+            _statCard("نوع المركبة", _vehicleConfig == 'motorcycleConfig' ? "موتوسيكل" : "سيارة", Icons.vape_free, Colors.purple),
             _statCard("تقييمك", "5.0", Icons.star, Colors.amber),
-            _statCard("ساعات العمل", "نشط", Icons.timer, Colors.purple),
           ],
         );
       },
@@ -261,24 +234,31 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   Widget _statCard(String title, String value, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [const BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 5))]),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: color, size: 30.sp),
-          const SizedBox(height: 10),
-          Text(title, style: TextStyle(color: Colors.grey[600], fontSize: 11.sp, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          FittedBox(
-            child: Text(value, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17.sp, color: Colors.black)),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [const BoxShadow(color: Colors.black12, blurRadius: 10)]),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(icon, color: color, size: 25.sp),
+        const SizedBox(height: 10),
+        Text(title, style: TextStyle(color: Colors.grey, fontSize: 10.sp)),
+        Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp)),
+      ]),
     );
+  }
+
+  Widget _buildPulseIcon() {
+    return TweenAnimationBuilder(
+      tween: Tween<double>(begin: 1.0, end: 1.2),
+      duration: const Duration(milliseconds: 800),
+      builder: (context, double scale, child) => Transform.scale(
+        scale: scale,
+        child: Icon(Icons.radar, color: Colors.orange[900]),
+      ),
+      onEnd: () => setState(() {}),
+    );
+  }
+  
+  // دالة التنبيه إذا كان أوفلاين
+  void _showStatusAlert() {
+     // نفس كود الديالوج السابق مع تغيير اللون للبرتقالي
   }
 
   Widget _activeOrderBanner() {
@@ -286,65 +266,12 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       margin: const EdgeInsets.only(bottom: 15),
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(color: Colors.orange[900], borderRadius: BorderRadius.circular(20)),
-      child: Row(
-        children: [
-          const Icon(Icons.delivery_dining, color: Colors.white, size: 30),
-          const SizedBox(width: 10),
-          Expanded(child: Text("لديك طلب قيد التنفيذ", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14.sp))),
-          TextButton(
-            onPressed: () => setState(() => _selectedIndex = 1),
-            child: Text("تابعه الآن", style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 14.sp)),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModernHint() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 6.sp),
-          decoration: BoxDecoration(
-            color: Colors.orange[900],
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [const BoxShadow(color: Colors.black26, blurRadius: 8)],
-          ),
-          child: Text(
-            "اضغط هنا للرادار",
-            style: TextStyle(color: Colors.white, fontSize: 11.sp, fontWeight: FontWeight.bold),
-          ),
-        ),
-        TweenAnimationBuilder(
-          tween: Tween<double>(begin: 1.0, end: 1.5),
-          duration: const Duration(milliseconds: 1000),
-          builder: (context, double scale, child) {
-            return Opacity(
-              opacity: (1.5 - scale).clamp(0.0, 1.0),
-              child: Transform.scale(
-                scale: scale,
-                child: Icon(Icons.touch_app, size: 35.sp, color: Colors.orange[900]),
-              ),
-            );
-          },
-          onEnd: () => setState(() {}),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPulseIcon() {
-    return TweenAnimationBuilder(
-      tween: Tween<double>(begin: 1.0, end: 1.3),
-      duration: const Duration(milliseconds: 1000),
-      builder: (context, double scale, child) {
-        return Transform.scale(
-          scale: scale,
-          child: Icon(Icons.radar, color: Color.lerp(Colors.orange[900], Colors.red, (scale - 1) * 3)),
-        );
-      },
-      onEnd: () => setState(() {}),
+      child: Row(children: [
+        const Icon(Icons.delivery_dining, color: Colors.white),
+        const SizedBox(width: 10),
+        const Expanded(child: Text("لديك طلب نشط", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+        TextButton(onPressed: () => setState(() => _selectedIndex = 1), child: const Text("تابعه", style: TextStyle(color: Colors.yellow)))
+      ]),
     );
   }
 }

@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
   @override
   _RegisterScreenState createState() => _RegisterScreenState();
 }
@@ -11,11 +13,9 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   String _selectedRole = 'free_driver';
-  
-  // المفاتيح المعتمدة في النظام القديم
-  String _vehicleConfig = 'motorcycleConfig'; 
-  
+  String _vehicleConfig = 'motorcycleConfig';
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -28,7 +28,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       String smartEmail = "${_phoneController.text.trim()}@aksab.com";
-
       UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: smartEmail,
         password: _passwordController.text,
@@ -49,7 +48,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'phone': _phoneController.text.trim(),
         'address': _addressController.text.trim(),
         'role': _selectedRole,
-        // حفظ نوع المركبة بالمفتاح المتوافق مع التطبيق القديم
         'vehicleConfig': _selectedRole == 'free_driver' ? _vehicleConfig : 'none',
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
@@ -60,93 +58,57 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } on FirebaseAuthException catch (e) {
       _showMsg("خطأ: ${e.message}");
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  // تحسين حجم خط الراديو
-  Widget _roleOption(String title, String value) {
-    return RadioListTile(
-      title: Text(title, style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w500)),
-      value: value,
-      groupValue: _selectedRole,
-      onChanged: (v) => setState(() => _selectedRole = v.toString()),
-      activeColor: Color(0xFF43B97F),
-      contentPadding: EdgeInsets.zero,
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(backgroundColor: Colors.white, elevation: 0, leading: const BackButton(color: Colors.black)),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: Color(0xFF43B97F)))
+          ? const Center(child: CircularProgressIndicator(color: Colors.orange))
           : SingleChildScrollView(
-              padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 6.h),
+              padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
               child: Form(
                 key: _formKey,
                 child: Column(
                   children: [
-                    Text("تسجيل حساب جديد", 
-                      style: TextStyle(fontSize: 22.sp, color: Color(0xFF43B97F), fontWeight: FontWeight.bold)),
-                    SizedBox(height: 3.h),
-                    _buildInput(_nameController, "الاسم الكامل", Icons.person),
+                    Text("انضم لعائلة أكسب",
+                        style: TextStyle(fontSize: 22.sp, color: Colors.orange[900], fontWeight: FontWeight.bold)),
+                    Text("سجل بياناتك وسيتم مراجعتها خلال 24 ساعة",
+                        style: TextStyle(fontSize: 10.sp, color: Colors.grey)),
+                    SizedBox(height: 4.h),
+                    _buildInput(_nameController, "الاسم الكامل كما في البطاقة", Icons.person),
                     _buildInput(_phoneController, "رقم الهاتف", Icons.phone, type: TextInputType.phone),
-                    _buildInput(_addressController, "العنوان بالتفصيل", Icons.map),
-                    _buildInput(_passwordController, "كلمة المرور", Icons.lock, isPass: true),
+                    _buildInput(_addressController, "محل الإقامة الحالي", Icons.map),
+                    _buildInput(_passwordController, "كلمة مرور قوية", Icons.lock, isPass: true),
                     
-                    const Divider(),
-                    
+                    const Divider(height: 40),
                     Align(
-                      alignment: Alignment.centerRight, 
-                      child: Text("نوع الحساب:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp))
-                    ),
-                    _roleOption("مندوب توصيل حر", "free_driver"),
+                        alignment: Alignment.centerRight,
+                        child: Text("نوع الانضمام:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp))),
+                    
+                    _roleOption("مندوب توصيل حر (امتلك مركبة)", "free_driver"),
+                    
+                    if (_selectedRole == 'free_driver') _buildVehiclePicker(),
 
-                    // 🎯 قسم اختيار نوع المركبة (المفاتيح القديمة)
-                    if (_selectedRole == 'free_driver')
-                      Container(
-                        margin: EdgeInsets.symmetric(vertical: 2.h),
-                        padding: EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          borderRadius: BorderRadius.circular(15),
-                          border: Border.all(color: Colors.grey[200]!),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("نوع المركبة المتاحة معك:", 
-                              style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, color: Colors.black54)),
-                            DropdownButtonFormField<String>(
-                              value: _vehicleConfig,
-                              decoration: const InputDecoration(border: InputBorder.none),
-                              items: [
-                                DropdownMenuItem(value: 'motorcycleConfig', child: Text("موتوسيكل (Motorcycle)", style: TextStyle(fontSize: 12.sp))),
-                                DropdownMenuItem(value: 'pickupConfig', child: Text("سيارة ربع نقل (Pickup)", style: TextStyle(fontSize: 12.sp))),
-                                DropdownMenuItem(value: 'jumboConfig', child: Text("جامبو / نقل ثقيل (Jumbo)", style: TextStyle(fontSize: 12.sp))),
-                              ],
-                              onChanged: (val) => setState(() => _vehicleConfig = val!),
-                            ),
-                          ],
-                        ),
-                      ),
+                    _roleOption("مندوب تحصيل (موظف بشركة)", "delivery_rep"),
+                    _roleOption("إدارة / مدير تحصيل", "delivery_manager"),
 
-                    _roleOption("مندوب تحصيل (موظف)", "delivery_rep"),
-                    _roleOption("مشرف تحصيل", "delivery_supervisor"),
-                    _roleOption("مدير تحصيل", "delivery_manager"),
-
-                    SizedBox(height: 3.h),
+                    SizedBox(height: 5.h),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFF43B97F),
-                        minimumSize: Size(100.w, 8.h),
+                        backgroundColor: Colors.black87,
+                        minimumSize: Size(100.w, 7.h),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                       ),
                       onPressed: _handleRegister,
-                      child: Text("إنشاء الحساب", style: TextStyle(color: Colors.white, fontSize: 15.sp, fontWeight: FontWeight.bold)),
+                      child: Text("إرسال طلب الانضمام", 
+                        style: TextStyle(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.bold)),
                     ),
+                    SizedBox(height: 2.h),
                   ],
                 ),
               ),
@@ -154,48 +116,96 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _buildInput(TextEditingController ctrl, String label, IconData icon, 
-      {bool isPass = false, TextInputType type = TextInputType.text}) {
+  Widget _buildVehiclePicker() {
+    return Container(
+      margin: EdgeInsets.symmetric(vertical: 2.h),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.orange[50],
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.orange[100]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("اختر نوع مركبتك:", style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, color: Colors.orange[900])),
+          DropdownButtonFormField<String>(
+            value: _vehicleConfig,
+            dropdownColor: Colors.orange[50],
+            decoration: const InputDecoration(border: InputBorder.none),
+            items: [
+              DropdownMenuItem(value: 'motorcycleConfig', child: Text("موتوسيكل (Motorcycle)", style: TextStyle(fontSize: 11.sp))),
+              DropdownMenuItem(value: 'pickupConfig', child: Text("سيارة ربع نقل (Pickup)", style: TextStyle(fontSize: 11.sp))),
+              DropdownMenuItem(value: 'jumboConfig', child: Text("جامبو / نقل ثقيل (Jumbo)", style: TextStyle(fontSize: 11.sp))),
+            ],
+            onChanged: (val) => setState(() => _vehicleConfig = val!),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _roleOption(String title, String value) {
+    return RadioListTile(
+      title: Text(title, style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w500)),
+      value: value,
+      groupValue: _selectedRole,
+      onChanged: (v) => setState(() => _selectedRole = v.toString()),
+      activeColor: Colors.orange[900],
+      contentPadding: EdgeInsets.zero,
+    );
+  }
+
+  Widget _buildInput(TextEditingController ctrl, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text}) {
     return Padding(
-      padding: EdgeInsets.only(bottom: 2.5.h),
+      padding: EdgeInsets.only(bottom: 2.h),
       child: TextFormField(
         controller: ctrl,
-        obscureText: isPass,
+        obscureText: isPass ? _obscurePassword : false,
         keyboardType: type,
         textAlign: TextAlign.right,
-        style: TextStyle(fontSize: 13.sp), // زيادة حجم خط الكتابة
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(fontSize: 12.sp), // زيادة حجم خط العنوان
-          suffixIcon: Icon(icon, color: Color(0xFF43B97F), size: 18.sp),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-          contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
+          prefixIcon: Icon(icon, color: Colors.orange[900]),
+          suffixIcon: isPass ? IconButton(
+            icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          ) : null,
+          filled: true,
+          fillColor: Colors.grey[50],
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.orange[900]!), borderRadius: BorderRadius.circular(15)),
         ),
         validator: (v) => v!.isEmpty ? "هذا الحقل مطلوب" : null,
       ),
     );
   }
 
-  void _showMsg(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _showMsg(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m), backgroundColor: Colors.redAccent));
 
   void _showSuccessDialog() {
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (c) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("تم بنجاح", textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Text("تم إرسال بياناتك للإدارة بنجاح.\nيرجى الانتظار حتى يتم تفعيل حسابك.", 
-          textAlign: TextAlign.center, style: TextStyle(fontSize: 12.sp)),
+        title: const Icon(Icons.check_circle, color: Colors.green, size: 50),
+        content: Text("تم استلام طلبك بنجاح!\nسيتم مراجعة البيانات وتفعيل الحساب قريباً.",
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 12.sp)),
         actions: [
           Center(
-            child: TextButton(
-              onPressed: () => Navigator.pop(context), 
-              child: Text("حسناً", style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, color: Color(0xFF43B97F)))
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]),
+              onPressed: () {
+                Navigator.pop(context); // إغلاق الديالوج
+                Navigator.pop(context); // العودة لصفحة الدخول
+              },
+              child: const Text("فهمت", style: TextStyle(color: Colors.white)),
             ),
           )
         ],
       ),
-    ).then((_) => Navigator.pop(context));
+    );
   }
 }
 
