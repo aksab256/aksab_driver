@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // إضافة مهمة
 import 'available_orders_screen.dart';
 
 class ActiveOrderScreen extends StatefulWidget {
@@ -32,15 +33,14 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     _startLiveTracking();
   }
 
-  // تحديث المسار مع حماية الـ API (كل 20 متر حركة)
   Future<void> _updateRoute(LatLng destination) async {
     if (_currentLocation == null) return;
     if (_lastRouteUpdateLocation != null) {
       double distance = Geolocator.distanceBetween(
-        _currentLocation!.latitude, _currentLocation!.longitude,
-        _lastRouteUpdateLocation!.latitude, _lastRouteUpdateLocation!.longitude
+          _currentLocation!.latitude, _currentLocation!.longitude,
+          _lastRouteUpdateLocation!.latitude, _lastRouteUpdateLocation!.longitude
       );
-      if (distance < 20) return; 
+      if (distance < 20) return;
     }
 
     final url = 'https://api.mapbox.com/directions/v5/mapbox/driving/${_currentLocation!.longitude},${_currentLocation!.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&access_token=$_mapboxToken';
@@ -64,7 +64,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     if (mounted) setState(() => _currentLocation = LatLng(position.latitude, position.longitude));
 
     Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10)
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10)
     ).listen((Position pos) {
       if (mounted) {
         setState(() => _currentLocation = LatLng(pos.latitude, pos.longitude));
@@ -104,13 +104,12 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: CircularProgressIndicator());
-          
+
           var data = snapshot.data!.data() as Map<String, dynamic>;
           String status = data['status'];
           GeoPoint pickup = data['pickupLocation'];
           GeoPoint dropoff = data['dropoffLocation'];
-          
-          // تحديد الهدف بناءً على الحالة (accepted -> محل | picked_up -> عميل)
+
           GeoPoint targetGeo = (status == 'accepted') ? pickup : dropoff;
           LatLng targetLatLng = LatLng(targetGeo.latitude, targetGeo.longitude);
 
@@ -132,13 +131,12 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                     ]),
                   MarkerLayer(markers: [
                     if (_currentLocation != null)
-                      Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 35.sp)),
-                    Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.store, color: Colors.orange[900], size: 28.sp)),
-                    Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.red, size: 28.sp)),
+                      Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 22.sp)), // تصغير من 35
+                    Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.store, color: Colors.orange[900], size: 18.sp)), // تصغير من 28
+                    Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.red, size: 18.sp)), // تصغير من 28
                   ]),
                 ],
               ),
-              // المنبثقة السفلية مع Safe Area
               Positioned(
                 bottom: 0, left: 0, right: 0,
                 child: SafeArea(
@@ -180,7 +178,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                 children: [
                   Text(isAtPickup ? "الاستلام من المتجر" : "التوصيل للعميل", style: TextStyle(color: Colors.grey[700], fontSize: 11.sp)),
                   Text(isAtPickup ? data['pickupAddress'] ?? "عنوان المتجر" : data['dropoffAddress'] ?? "عنوان العميل",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15.sp), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15.sp), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
@@ -195,13 +193,13 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: isAtPickup ? Colors.orange[900] : Colors.green[800],
-            minimumSize: Size(double.infinity, 7.5.h),
+            minimumSize: Size(double.infinity, 8.h),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
             elevation: 8,
           ),
           onPressed: () => isAtPickup ? _showVerificationDialog(data['verificationCode']) : _completeOrder(),
           child: Text(isAtPickup ? "تأكيد كود الاستلام 📦" : "تم التسليم بنجاح ✅",
-            style: TextStyle(color: Colors.white, fontSize: 17.sp, fontWeight: FontWeight.bold)),
+              style: TextStyle(color: Colors.white, fontSize: 17.sp, fontWeight: FontWeight.bold)),
         ),
       ],
     );
@@ -244,13 +242,23 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': nextStatus});
   }
 
+  // الدالة التي تم تصحيحها لحل خطأ البناء
   void _completeOrder() async {
     await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
       'status': 'delivered',
       'completedAt': FieldValue.serverTimestamp(),
     });
-    if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const AvailableOrdersScreen()));
+
+    if (mounted) {
+      // جلب نوع المركبة المحفوظ قبل العودة للرادار
+      final prefs = await SharedPreferences.getInstance();
+      String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
+
+      Navigator.pushReplacement(
+        context, 
+        MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType))
+      );
+    }
   }
 }
-
 
