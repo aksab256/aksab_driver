@@ -16,7 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
-  bool _obscurePassword = true; // للتحكم في رؤية كلمة المرور
+  bool _obscurePassword = true;
 
   Future<void> _saveVehicleInfo(String config) async {
     final prefs = await SharedPreferences.getInstance();
@@ -32,9 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // فكرة الإيميل الذكي عبقرية لتجنب الـ OTP حالياً
       String smartEmail = "${_phoneController.text.trim()}@aksab.com";
-
       UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: smartEmail,
         password: _passwordController.text,
@@ -43,7 +41,6 @@ class _LoginScreenState extends State<LoginScreen> {
       String uid = userCredential.user!.uid;
       Map<String, dynamic>? userData;
 
-      // البحث في المجموعات المختلفة
       var repSnap = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       var freeSnap = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       var managerSnap = await FirebaseFirestore.instance.collection('managers').doc(uid).get();
@@ -72,19 +69,19 @@ class _LoginScreenState extends State<LoginScreen> {
         _showError("❌ حسابك قيد المراجعة أو غير مفعل.");
       }
     } on FirebaseAuthException catch (e) {
-      _showError("فشل الدخول: تأكد من رقم الهاتف وكلمة المرور");
+      _showError("فشل الدخول: تأكد من البيانات");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _navigateToHome(String role) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("مرحباً بك.. دورك: $role")));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("مرحباً بك.. دورك: $role", style: TextStyle(fontSize: 14.sp))));
   }
 
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo')),
+      content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 14.sp)),
       backgroundColor: Colors.redAccent,
     ));
   }
@@ -99,20 +96,19 @@ class _LoginScreenState extends State<LoginScreen> {
               padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 10.h),
               child: Column(
                 children: [
-                  // أيقونة تعبر عن التطبيق بدلاً من القفل
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
                       color: Colors.orange[50],
-                      shape: BoxType.circle,
+                      shape: BoxShape.circle, // تم التصحيح هنا من BoxType إلى BoxShape
                     ),
                     child: Icon(Icons.moped_rounded, size: 70.sp, color: Colors.orange[900]),
                   ),
                   SizedBox(height: 3.h),
                   Text("أكسب مناديب", 
-                    style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.w900, color: Colors.black87)),
-                  Text("سجل دخولك لبدء استقبال الطلبات", 
-                    style: TextStyle(fontSize: 10.sp, color: Colors.grey[600])),
+                    style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.w900, color: Colors.black87)),
+                  Text("سجل دخولك لبدء العمل", 
+                    style: TextStyle(fontSize: 14.sp, color: Colors.grey[600])), // حجم خط كبير وواضح
                   SizedBox(height: 5.h),
                   
                   _buildInput(_phoneController, "رقم الهاتف", Icons.phone, type: TextInputType.phone),
@@ -121,20 +117,21 @@ class _LoginScreenState extends State<LoginScreen> {
                   SizedBox(height: 2.h),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black87, // خليناه أسود عشان يتماشى مع هوية "البريميوم"
-                      minimumSize: Size(100.w, 7.h),
+                      backgroundColor: Colors.black87,
+                      minimumSize: Size(100.w, 8.h), // زيادة ارتفاع الزر لسهولة اللمس
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                       elevation: 5,
                     ),
                     onPressed: _handleLogin,
-                    child: Text("دخول للنظام", style: TextStyle(color: Colors.white, fontSize: 13.sp, fontWeight: FontWeight.bold)),
+                    child: Text("دخول للنظام", 
+                      style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold)),
                   ),
                   
                   SizedBox(height: 2.h),
                   TextButton(
                     onPressed: () => Navigator.pushNamed(context, '/register'),
-                    child: Text("ليس لديك حساب؟ انضم لعائلة أكسب الآن", 
-                      style: TextStyle(color: Colors.orange[900], fontWeight: FontWeight.w600)),
+                    child: Text("ليس لديك حساب؟ سجل الآن", 
+                      style: TextStyle(color: Colors.orange[900], fontSize: 14.sp, fontWeight: FontWeight.w600)),
                   )
                 ],
               ),
@@ -151,12 +148,14 @@ class _LoginScreenState extends State<LoginScreen> {
         obscureText: isPass ? _obscurePassword : false,
         keyboardType: type,
         textAlign: TextAlign.right,
+        style: TextStyle(fontSize: 15.sp), // خط كتابة كبير (حوالي 20px)
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: Icon(icon, color: Colors.orange[800]),
+          labelStyle: TextStyle(fontSize: 14.sp), // خط العنوان الجانبي
+          prefixIcon: Icon(icon, color: Colors.orange[800], size: 22.sp),
           suffixIcon: isPass 
             ? IconButton(
-                icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, size: 20.sp),
                 onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
               ) 
             : null,
@@ -165,7 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(15),
-            borderSide: BorderSide(color: Colors.orange[800]!, width: 1.5),
+            borderSide: BorderSide(color: Colors.orange[800]!, width: 2),
           ),
         ),
       ),
