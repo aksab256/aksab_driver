@@ -23,7 +23,6 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
   List<String> allAvailableAreaNames = [];
   bool isLoading = true;
 
-  // مفتاح Mapbox الخاص بك
   final String mapboxToken = "pk.eyJ1IjoiYW1yc2hpcGwiLCJhIjoiY21lajRweGdjMDB0eDJsczdiemdzdXV6biJ9.E--si9vOB93NGcAq7uVgGw";
 
   @override
@@ -57,27 +56,27 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
     }
   }
 
-  // الدالة المصححة لجلب المشرفين بناءً على managerId (UID)
   Future<void> _loadSupervisors() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // البحث عن كل من يحمل managerId يطابق UID المدير الحالي (مثل mmm)
     final supervisorsSnap = await FirebaseFirestore.instance
         .collection('managers')
         .where('role', isEqualTo: 'delivery_supervisor')
-        .where('managerId', isEqualTo: user.uid) // التعديل الجوهري هنا
+        .where('managerId', isEqualTo: user.uid)
         .get();
 
-    if (supervisorsSnap.docs.isNotEmpty) {
-      mySupervisors = supervisorsSnap.docs.map((doc) {
-        var data = doc.data();
-        return {
-          'id': doc.id, // 6KntgoeXb8YyRtGwrwLxqHCuFyc2 (ahmed)
-          'fullname': data['fullname'] ?? 'مشرف بدون اسم',
-          'areas': List<String>.from(data['geographicArea'] ?? [])
-        };
-      }).toList();
+    if (mounted) {
+      setState(() {
+        mySupervisors = supervisorsSnap.docs.map((doc) {
+          var data = doc.data();
+          return {
+            'id': doc.id,
+            'fullname': data['fullname'] ?? 'مشرف بدون اسم',
+            'areas': List<String>.from(data['geographicArea'] ?? [])
+          };
+        }).toList();
+      });
     }
   }
 
@@ -89,8 +88,17 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
         .doc(selectedSupervisorId)
         .update({'geographicArea': selectedAreas});
 
+    _showStyledBanner("تم تحديث مناطق المشرف بنجاح ✅");
+  }
+
+  void _showStyledBanner(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("تم تحديث مناطق المشرف بنجاح ✅")),
+      SnackBar(
+        content: Text(message, style: const TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF2F3542),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
     );
   }
 
@@ -102,7 +110,7 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
         backgroundColor: const Color(0xFF2F3542),
         actions: [
           IconButton(
-            icon: const Icon(Icons.save),
+            icon: const Icon(Icons.save, color: Colors.greenAccent),
             onPressed: selectedSupervisorId != null ? _saveAreas : null,
           )
         ],
@@ -111,89 +119,105 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                Padding(
-                  padding: EdgeInsets.all(10.sp),
-                  child: DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(labelText: "اختر المشرف"),
-                    value: selectedSupervisorId,
-                    items: mySupervisors.map((sup) {
-                      return DropdownMenuItem(
-                        value: sup['id'] as String,
-                        child: Text(sup['fullname']),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        selectedSupervisorId = val;
-                        selectedAreas = List<String>.from(
-                            mySupervisors.firstWhere((s) => s['id'] == val)['areas']);
-                      });
-                    },
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: FlutterMap(
-                    mapController: _mapController,
-                    options: const MapOptions(
-                      initialCenter: LatLng(30.0444, 31.2357),
-                      initialZoom: 10,
-                    ),
-                    children: [
-                      // استخدام Mapbox TileLayer بدلاً من OSM
-                      TileLayer(
-                        urlTemplate: "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=$mapboxToken",
-                        additionalOptions: {
-                          'accessToken': mapboxToken,
-                        },
-                      ),
-                      if (selectedAreas.isNotEmpty && geoJsonData != null)
-                        PolygonLayer(
-                          polygons: _buildPolygons(),
-                        ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    color: Colors.white,
-                    child: Column(
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8.0),
-                          child: Text("اختر المناطق الإدارية:",
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                        Expanded(
-                          child: ListView(
-                            children: allAvailableAreaNames.map((area) {
-                              return CheckboxListTile(
-                                title: Text(area),
-                                value: selectedAreas.contains(area),
-                                onChanged: (bool? value) {
-                                  setState(() {
-                                    if (value == true) {
-                                      selectedAreas.add(area);
-                                    } else {
-                                      selectedAreas.remove(area);
-                                    }
-                                  });
-                                },
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                _buildSupervisorSelector(),
+                _buildMapSection(),
+                _buildAreaListSection(),
               ],
             ),
     );
   }
 
+  Widget _buildSupervisorSelector() {
+    return Container(
+      padding: EdgeInsets.all(12.sp),
+      decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5)]),
+      child: DropdownButtonFormField<String>(
+        decoration: InputDecoration(
+          labelText: "المشرف المسؤول",
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          prefixIcon: const Icon(Icons.person_pin_circle),
+        ),
+        value: selectedSupervisorId,
+        items: mySupervisors.map((sup) {
+          return DropdownMenuItem(value: sup['id'] as String, child: Text(sup['fullname']));
+        }).toList(),
+        onChanged: (val) {
+          setState(() {
+            selectedSupervisorId = val;
+            selectedAreas = List<String>.from(mySupervisors.firstWhere((s) => s['id'] == val)['areas']);
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildMapSection() {
+    return Expanded(
+      flex: 2,
+      child: FlutterMap(
+        mapController: _mapController,
+        options: const MapOptions(
+          initialCenter: LatLng(31.2001, 29.9187), // سنتر الإسكندرية
+          initialZoom: 11,
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=$mapboxToken",
+            additionalOptions: {'accessToken': mapboxToken},
+          ),
+          if (selectedAreas.isNotEmpty && geoJsonData != null)
+            PolygonLayer(polygons: _buildPolygons()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAreaListSection() {
+    return Expanded(
+      child: Container(
+        color: Colors.grey[50],
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              width: double.infinity,
+              color: Colors.blueGrey[800],
+              child: const Text("المناطق المتاحة في ملف الـ GeoJSON", textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+            Expanded(
+              child: ListView.separated(
+                itemCount: allAvailableAreaNames.length,
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final area = allAvailableAreaNames[index];
+                  final isSelected = selectedAreas.contains(area);
+                  return CheckboxListTile(
+                    title: Text(area, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                    value: isSelected,
+                    activeColor: Colors.teal,
+                    onChanged: (bool? value) {
+                      setState(() {
+                        if (value == true) {
+                          selectedAreas.add(area);
+                        } else {
+                          selectedAreas.remove(area);
+                        }
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Polygon> _buildPolygons() {
     List<Polygon> polygons = [];
+    if (geoJsonData == null) return polygons;
+
     for (var areaName in selectedAreas) {
       var feature = geoJsonData!['features'].firstWhere(
           (f) => f['properties']['name'] == areaName,
@@ -201,22 +225,33 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
 
       if (feature != null) {
         var geometry = feature['geometry'];
-        List coords = geometry['coordinates'][0];
-        List<LatLng> points = coords
-            .map<LatLng>((c) =>
-                LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
-            .toList();
+        var type = geometry['type'];
 
-        polygons.add(Polygon(
-          points: points,
-          color: Colors.teal.withOpacity(0.3),
-          borderStrokeWidth: 2,
-          borderColor: Colors.teal,
-          isFilled: true,
-        ));
+        if (type == 'Polygon') {
+          _addPolygonFromCoords(polygons, geometry['coordinates']);
+        } else if (type == 'MultiPolygon') {
+          for (var polyCoords in geometry['coordinates']) {
+            _addPolygonFromCoords(polygons, polyCoords);
+          }
+        }
       }
     }
     return polygons;
+  }
+
+  void _addPolygonFromCoords(List<Polygon> polygons, List coords) {
+    // نأخذ أول قائمة إحداثيات (الحدود الخارجية)
+    List<LatLng> points = (coords[0] as List)
+        .map<LatLng>((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
+        .toList();
+
+    polygons.add(Polygon(
+      points: points,
+      color: Colors.teal.withOpacity(0.3),
+      borderStrokeWidth: 2,
+      borderColor: Colors.teal,
+      isFilled: true,
+    ));
   }
 }
 
