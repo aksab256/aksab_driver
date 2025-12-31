@@ -3,6 +3,8 @@ import 'package:sizer/sizer.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert'; // ضروري لتحويل البيانات لـ JSON
+import 'TodayTasksScreen.dart'; // استيراد صفحة المهام
 
 class CompanyRepHomeScreen extends StatefulWidget {
   const CompanyRepHomeScreen({super.key});
@@ -22,22 +24,24 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
     _fetchRepData();
   }
 
-  // جلب بيانات المندوب بنفس منطق الـ HTML
   Future<void> _fetchRepData() async {
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('deliveryReps')
-          .doc(_uid) // استخدام الـ UID مباشرة أسرع وأدق
+          .doc(_uid)
           .get();
 
       if (snapshot.exists) {
+        final data = snapshot.data()!;
         setState(() {
-          _repData = snapshot.data();
+          _repData = data;
           _isLoading = false;
         });
-        // حفظ البيانات محلياً كما في localStorage
+
+        // حفظ البيانات كـ JSON String لمحاكاة localStorage
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('userData', snapshot.data().toString());
+        await prefs.setString('userData', jsonEncode(data));
+        await prefs.setString('userRole', 'delivery_rep');
       }
     } catch (e) {
       debugPrint("Error fetching rep data: $e");
@@ -55,15 +59,16 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F2F5), // لون الخلفية من الـ CSS
+      backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
-        title: Text("لوحة التحكم", style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
+        title: Text("لوحة التحكم", 
+          style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: Colors.white)),
         centerTitle: true,
-        backgroundColor: const Color(0xFF2C3E50), // لون الـ Sidebar
+        backgroundColor: const Color(0xFF2C3E50),
         elevation: 10,
         actions: [
           IconButton(
-            icon: Icon(Icons.logout, size: 20.sp),
+            icon: Icon(Icons.logout, size: 20.sp, color: Colors.white),
             onPressed: _handleLogout,
           )
         ],
@@ -87,32 +92,31 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
     );
   }
 
-  // كرت معلومات المستخدم (User Info)
   Widget _buildUserInfoCard() {
     return Container(
-      padding: EdgeInsets.all(20.sp),
+      padding: EdgeInsets.all(18.sp),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
         border: const Border(right: BorderSide(color: Color(0xFF3498DB), width: 6)),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)],
       ),
       child: Row(
         children: [
           CircleAvatar(
-            radius: 30.sp,
+            radius: 28.sp,
             backgroundColor: const Color(0xFF3498DB).withOpacity(0.1),
-            child: Icon(Icons.person, size: 35.sp, color: const Color(0xFF2C3E50)),
+            child: Icon(Icons.person, size: 32.sp, color: const Color(0xFF2C3E50)),
           ),
-          SizedBox(width: 15.sp),
+          SizedBox(width: 12.sp),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("مرحباً، ${_repData?['fullname'] ?? 'المندوب'}",
-                    style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: const Color(0xFF2C3E50))),
+                Text("${_repData?['fullname'] ?? 'المندوب'}",
+                    style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: const Color(0xFF2C3E50))),
                 Text("كود: ${_repData?['repCode'] ?? 'REP-XXXX'}",
-                    style: TextStyle(fontSize: 14.sp, color: Colors.grey[600], fontWeight: FontWeight.w600)),
+                    style: TextStyle(fontSize: 13.sp, color: Colors.grey[600], fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -121,11 +125,10 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
     );
   }
 
-  // تفاصيل البيانات (Current Section)
   Widget _buildStatsSection() {
     return Container(
       width: 100.w,
-      padding: EdgeInsets.all(20.sp),
+      padding: EdgeInsets.all(18.sp),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
@@ -133,8 +136,9 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
       ),
       child: Column(
         children: [
-          Text("ملخص الحساب", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
-          const Divider(height: 30),
+          Text("ملخص الحساب", 
+            style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
+          const Divider(height: 25),
           _buildDetailRow(Icons.email, "البريد:", _repData?['email'] ?? "-"),
           _buildDetailRow(Icons.phone, "الهاتف:", _repData?['phone'] ?? "-"),
           _buildDetailRow(Icons.check_circle, "الطلبات الناجحة:", "${_repData?['successfulDeliveries'] ?? 0}"),
@@ -145,33 +149,39 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
 
   Widget _buildDetailRow(IconData icon, String label, String value) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8.sp),
+      padding: EdgeInsets.symmetric(vertical: 7.sp),
       child: Row(
         children: [
-          Icon(icon, size: 16.sp, color: const Color(0xFF3498DB)),
+          Icon(icon, size: 15.sp, color: const Color(0xFF3498DB)),
           SizedBox(width: 10.sp),
-          Text(label, style: TextStyle(fontSize: 14.sp, color: Colors.grey[700])),
+          Text(label, style: TextStyle(fontSize: 13.sp, color: Colors.grey[700])),
           const Spacer(),
-          Text(value, style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: Colors.black87)),
+          Text(value, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, color: Colors.black87)),
         ],
       ),
     );
   }
 
-  // الأزرار السريعة (Navigation)
   Widget _buildQuickActions() {
     return Column(
       children: [
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF4CAF50), // نفس لون زر HTML
+            backgroundColor: const Color(0xFF4CAF50),
             minimumSize: Size(100.w, 8.h),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             elevation: 5,
           ),
-          onPressed: () => Navigator.pushNamed(context, '/today-tasks'),
+          onPressed: () {
+            // التنقل لصفحة المهام
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const TodayTasksScreen()),
+            );
+          },
           icon: Icon(Icons.assignment, color: Colors.white, size: 20.sp),
-          label: Text("مهام اليوم", style: TextStyle(fontSize: 16.sp, color: Colors.white, fontWeight: FontWeight.bold)),
+          label: Text("مهام اليوم", 
+            style: TextStyle(fontSize: 15.sp, color: Colors.white, fontWeight: FontWeight.bold)),
         ),
         SizedBox(height: 2.h),
         OutlinedButton.icon(
@@ -180,9 +190,12 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
             side: const BorderSide(color: Color(0xFF2C3E50), width: 2),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           ),
-          onPressed: () => Navigator.pushNamed(context, '/reports'),
-          icon: Icon(Icons.bar_chart, size: 20.sp, color: const Color(0xFF2C3E50)),
-          label: Text("عرض التقارير", style: TextStyle(fontSize: 15.sp, color: const Color(0xFF2C3E50))),
+          onPressed: () {
+            // سيتم ربط التقارير لاحقاً
+          },
+          icon: Icon(Icons.bar_chart, size: 18.sp, color: const Color(0xFF2C3E50)),
+          label: Text("عرض التقارير", 
+            style: TextStyle(fontSize: 14.sp, color: const Color(0xFF2C3E50), fontWeight: FontWeight.bold)),
         ),
       ],
     );
