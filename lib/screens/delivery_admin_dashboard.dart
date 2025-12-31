@@ -30,16 +30,17 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
   Future<void> _checkAuthAndLoadData() async {
     try {
       // 1. التحقق من الدور في كولكشن managers
+      // تم التصحيح هنا ليعمل بأسلوب Flutter
       var managerSnap = await FirebaseFirestore.instance
           .collection('managers')
-          .where('uid', '==', _uid)
+          .where('uid', isEqualTo: _uid)
           .get();
 
       if (managerSnap.docs.isNotEmpty) {
         var doc = managerSnap.docs.first;
         _userData = doc.data();
         String role = _userData!['role'];
-        String managerDocId = doc.id; // المعرف المستخدم للربط مع المناديب
+        String managerDocId = doc.id; 
 
         // 2. تحميل البيانات بناءً على الصلاحيات
         await _loadStats(role, managerDocId);
@@ -56,8 +57,8 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     Query repsQuery = FirebaseFirestore.instance.collection('deliveryReps');
 
     if (role == 'delivery_supervisor') {
-      // المشرف يرى فقط المناديب التابعين له
-      var myReps = await repsQuery.where('supervisorId', '==', managerDocId).get();
+      // تم التصحيح هنا باستخدام isEqualTo
+      var myReps = await repsQuery.where('supervisorId', isEqualTo: managerDocId).get();
       _totalReps = myReps.size;
 
       if (myReps.docs.isNotEmpty) {
@@ -65,7 +66,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
         // فلترة الطلبات بواسطة أكواد المناديب
         ordersQuery = ordersQuery.where('buyer.repCode', whereIn: repCodes);
       } else {
-        return; // لا يوجد مناديب تابعة له
+        return; 
       }
     } else {
       // المدير يرى الكل
@@ -83,7 +84,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
 
     for (var doc in ordersSnap.docs) {
       var data = doc.data() as Map<String, dynamic>;
-      salesSum += (data['total'] ?? 0).toDouble(); // استخدام حقل total للمبيعات
+      salesSum += (data['total'] ?? 0).toDouble();
       if (data['rating'] != null) {
         ratingsSum += data['rating'].toDouble();
         ratedCount++;
@@ -139,7 +140,12 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
-        boxShadow: [BoxShadow(color: Colors.black10, blurRadius: 8)],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1), // تصحيح لون الظل
+            blurRadius: 8,
+          )
+        ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -164,7 +170,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
           _drawerItem(Icons.analytics, "تقارير الطلبات", () {}),
           _drawerItem(Icons.people, "إدارة المناديب", () {}),
           if (_userData?['role'] == 'delivery_manager')
-            _drawerItem(Icons.map, "مناطق المشرفين", () {}), // تظهر للمدير فقط
+            _drawerItem(Icons.map, "مناطق المشرفين", () {}),
           const Divider(),
           _drawerItem(Icons.logout, "تسجيل الخروج", () => FirebaseAuth.instance.signOut()),
         ],
