@@ -5,10 +5,11 @@ import 'package:sizer/sizer.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// استيراد الشاشات
+// استيراد الشاشات - أضفنا صفحة الشركة هنا
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
-import 'screens/free_driver_home_screen.dart'; // الشاشة الجديدة
+import 'screens/free_driver_home_screen.dart';
+import 'screens/CompanyRepHomeScreen.dart'; 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +41,8 @@ class AksabDriverApp extends StatelessWidget {
           routes: {
             '/login': (context) => LoginScreen(),
             '/register': (context) => RegisterScreen(),
-            '/home': (context) => const FreeDriverHomeScreen(),
+            '/free_home': (context) => const FreeDriverHomeScreen(),
+            '/company_home': (context) => const CompanyRepHomeScreen(), // تعريف المسار
           },
         );
       },
@@ -54,37 +56,51 @@ class AuthWrapper extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // حالة التحقق من وجود مستخدم مسجل
         if (snapshot.hasData) {
           final uid = snapshot.data!.uid;
 
-          // فحص بيانات المستخدم في الفايربيز للتوجيه الصحيح
           return FutureBuilder<DocumentSnapshot>(
-            future: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get(),
-            builder: (context, userSnap) {
-              if (userSnap.connectionState == ConnectionState.waiting) {
+            // بنجرب نبحث في كولكشن الشركة الأول
+            future: FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get(),
+            builder: (context, repSnap) {
+              if (repSnap.connectionState == ConnectionState.waiting) {
                 return const Scaffold(body: Center(child: CircularProgressIndicator()));
               }
 
-              // إذا وجدنا بياناته في المندوب الحر وحالته "مقبول"
-              if (userSnap.hasData && userSnap.data!.exists) {
-                var data = userSnap.data!.data() as Map<String, dynamic>;
+              // 1. لو طلع مندوب شركة
+              if (repSnap.hasData && repSnap.data!.exists) {
+                var data = repSnap.data!.data() as Map<String, dynamic>;
                 if (data['status'] == 'approved') {
-                  return const FreeDriverHomeScreen();
+                  return const CompanyRepHomeScreen();
                 }
               }
 
-              // إذا لم يكن مقبولاً أو بياناته لسه في الـ Pending
-              // نسجل الخروج ونعيده للـ Login مع رسالة توضيحية
-              FirebaseAuth.instance.signOut();
-              return LoginScreen();
+              // 2. لو مش شركة، نبحث في الأحرار
+              return FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get(),
+                builder: (context, freeSnap) {
+                  if (freeSnap.connectionState == ConnectionState.waiting) {
+                    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                  }
+
+                  if (freeSnap.hasData && freeSnap.data!.exists) {
+                    var data = freeSnap.data!.data() as Map<String, dynamic>;
+                    if (data['status'] == 'approved') {
+                      return const FreeDriverHomeScreen();
+                    }
+                  }
+
+                  // لو مش موجود في الاتنين أو مش مقبول
+                  FirebaseAuth.instance.signOut();
+                  return LoginScreen();
+                },
+              );
             },
           );
         }
-        
-        // إذا لم يكن هناك مستخدم مسجل أصلاً
         return LoginScreen();
       },
     );
   }
 }
+
