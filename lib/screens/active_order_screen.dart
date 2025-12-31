@@ -8,7 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // إضافة مهمة
+import 'package:shared_preferences/shared_preferences.dart';
 import 'available_orders_screen.dart';
 
 class ActiveOrderScreen extends StatefulWidget {
@@ -131,9 +131,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                     ]),
                   MarkerLayer(markers: [
                     if (_currentLocation != null)
-                      Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 22.sp)), // تصغير من 35
-                    Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.store, color: Colors.orange[900], size: 18.sp)), // تصغير من 28
-                    Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.red, size: 18.sp)), // تصغير من 28
+                      Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 22.sp)),
+                    Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.store, color: Colors.orange[900], size: 18.sp)),
+                    Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.red, size: 18.sp)),
                   ]),
                 ],
               ),
@@ -242,22 +242,70 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': nextStatus});
   }
 
-  // الدالة التي تم تصحيحها لحل خطأ البناء
+  // الدالة النهائية والمحدثة للخصم المالي وإتمام الطلب
   void _completeOrder() async {
-    await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
-      'status': 'delivered',
-      'completedAt': FieldValue.serverTimestamp(),
-    });
+    // 1. إظهار مؤشر التحميل
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.green)),
+    );
 
-    if (mounted) {
-      // جلب نوع المركبة المحفوظ قبل العودة للرادار
-      final prefs = await SharedPreferences.getInstance();
-      String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
+    final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId);
+    final driverId = FirebaseAuth.instance.currentUser?.uid;
 
-      Navigator.pushReplacement(
-        context, 
-        MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType))
-      );
+    try {
+      double savedCommission = 0;
+
+      // 2. استخدام Transaction لضمان الدقة المالية
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentSnapshot orderSnap = await transaction.get(orderRef);
+        
+        if (!orderSnap.exists) throw "الطلب غير موجود!";
+        
+        // جلب العمولة المحجوزة من مستند الطلب
+        savedCommission = (orderSnap.get('commissionAmount') ?? 0.0).toDouble();
+
+        // تحديث حالة الطلب
+        transaction.update(orderRef, {
+          'status': 'delivered',
+          'completedAt': FieldValue.serverTimestamp(),
+        });
+
+        // الخصم من محفظة المندوب
+        if (driverId != null && savedCommission > 0) {
+          final driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(driverId);
+          transaction.update(driverRef, {
+            'walletBalance': FieldValue.increment(-savedCommission),
+          });
+        }
+      });
+
+      if (mounted) {
+        Navigator.pop(context); // إغلاق التحميل
+
+        final prefs = await SharedPreferences.getInstance();
+        String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green,
+            content: Text("تم التسليم بنجاح! تم خصم عمولة: ${savedCommission.toStringAsFixed(1)} ج.م"),
+          ),
+        );
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType))
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // إغلاق التحميل
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(backgroundColor: Colors.red, content: Text("فشل في إتمام الطلب: $e")),
+        );
+      }
     }
   }
 }
