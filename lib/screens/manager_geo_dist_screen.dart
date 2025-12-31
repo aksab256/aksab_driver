@@ -23,6 +23,9 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
   List<String> allAvailableAreaNames = [];
   bool isLoading = true;
 
+  // مفتاح Mapbox الخاص بك
+  final String mapboxToken = "pk.eyJ1IjoiYW1yc2hpcGwiLCJhIjoiY21lajRweGdjMDB0eDJsczdiemdzdXV6biJ9.E--si9vOB93NGcAq7uVgGw";
+
   @override
   void initState() {
     super.initState();
@@ -44,7 +47,7 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
     final String response = await rootBundle.loadString(
         'assets/OSMB-bc319d822a17aa9ad1089fc05e7d4e752460f877.geojson');
     geoJsonData = json.decode(response);
-    
+
     if (geoJsonData != null) {
       allAvailableAreaNames = geoJsonData!['features']
           .map<String>((f) => f['properties']['name']?.toString() ?? "")
@@ -54,29 +57,27 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
     }
   }
 
+  // الدالة المصححة لجلب المشرفين بناءً على managerId (UID)
   Future<void> _loadSupervisors() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // جلب بيانات المدير الحالي لمعرفة من هم المشرفين التابعين له
-    final managerSnap = await FirebaseFirestore.instance
+    // البحث عن كل من يحمل managerId يطابق UID المدير الحالي (مثل mmm)
+    final supervisorsSnap = await FirebaseFirestore.instance
         .collection('managers')
-        .where('uid', isEqualTo: user.uid)
+        .where('role', isEqualTo: 'delivery_supervisor')
+        .where('managerId', isEqualTo: user.uid) // التعديل الجوهري هنا
         .get();
 
-    if (managerSnap.docs.isNotEmpty) {
-      List<dynamic> supervisorIds = managerSnap.docs.first.data()['supervisors'] ?? [];
-      
-      for (String id in supervisorIds) {
-        var supDoc = await FirebaseFirestore.instance.collection('managers').doc(id).get();
-        if (supDoc.exists && supDoc.data()?['role'] == 'delivery_supervisor') {
-          mySupervisors.add({
-            'id': supDoc.id,
-            'fullname': supDoc.data()?['fullname'] ?? 'مشرف بدون اسم',
-            'areas': List<String>.from(supDoc.data()?['geographicArea'] ?? [])
-          });
-        }
-      }
+    if (supervisorsSnap.docs.isNotEmpty) {
+      mySupervisors = supervisorsSnap.docs.map((doc) {
+        var data = doc.data();
+        return {
+          'id': doc.id, // 6KntgoeXb8YyRtGwrwLxqHCuFyc2 (ahmed)
+          'fullname': data['fullname'] ?? 'مشرف بدون اسم',
+          'areas': List<String>.from(data['geographicArea'] ?? [])
+        };
+      }).toList();
     }
   }
 
@@ -110,7 +111,6 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // 1. اختيار المشرف
                 Padding(
                   padding: EdgeInsets.all(10.sp),
                   child: DropdownButtonFormField<String>(
@@ -126,25 +126,26 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
                       setState(() {
                         selectedSupervisorId = val;
                         selectedAreas = List<String>.from(
-                          mySupervisors.firstWhere((s) => s['id'] == val)['areas']
-                        );
+                            mySupervisors.firstWhere((s) => s['id'] == val)['areas']);
                       });
                     },
                   ),
                 ),
-
-                // 2. الخريطة
                 Expanded(
                   flex: 2,
                   child: FlutterMap(
                     mapController: _mapController,
-                    options: MapOptions(
-                      initialCenter: const LatLng(30.0444, 31.2357),
+                    options: const MapOptions(
+                      initialCenter: LatLng(30.0444, 31.2357),
                       initialZoom: 10,
                     ),
                     children: [
+                      // استخدام Mapbox TileLayer بدلاً من OSM
                       TileLayer(
-                        urlTemplate: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                        urlTemplate: "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=$mapboxToken",
+                        additionalOptions: {
+                          'accessToken': mapboxToken,
+                        },
                       ),
                       if (selectedAreas.isNotEmpty && geoJsonData != null)
                         PolygonLayer(
@@ -153,8 +154,6 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
                     ],
                   ),
                 ),
-
-                // 3. قائمة المناطق للاختيار (Multiselect)
                 Expanded(
                   child: Container(
                     color: Colors.white,
@@ -162,7 +161,8 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
                       children: [
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 8.0),
-                          child: Text("اختر المناطق الإدارية:", style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: Text("اختر المناطق الإدارية:",
+                              style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                         Expanded(
                           child: ListView(
@@ -196,14 +196,16 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
     List<Polygon> polygons = [];
     for (var areaName in selectedAreas) {
       var feature = geoJsonData!['features'].firstWhere(
-          (f) => f['properties']['name'] == areaName, orElse: () => null);
+          (f) => f['properties']['name'] == areaName,
+          orElse: () => null);
 
       if (feature != null) {
         var geometry = feature['geometry'];
         List coords = geometry['coordinates'][0];
-        List<LatLng> points = coords.map<LatLng>((c) => 
-          LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble())
-        ).toList();
+        List<LatLng> points = coords
+            .map<LatLng>((c) =>
+                LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
+            .toList();
 
         polygons.add(Polygon(
           points: points,
