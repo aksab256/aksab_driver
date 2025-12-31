@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-// التعديل الصحيح بناءً على ملفات مشروعك
-import 'package:latlong2/latlong.dart'; 
+import 'package:latlong2/latlong.dart';
 import 'package:sizer/sizer.dart';
 
 class DeliveryManagementScreen extends StatefulWidget {
@@ -25,6 +24,41 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
   void initState() {
     super.initState();
     _initializeData();
+  }
+
+  // دالة لإظهار تنبيه احترافي (Custom Toast)
+  void _showSuccessOverlay(String message) {
+    OverlayEntry overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: 45.h,
+        left: 10.w,
+        right: 10.w,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 5.w),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2F3542).withOpacity(0.9),
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.check_circle, color: Colors.green, size: 40),
+                SizedBox(height: 1.h),
+                Text(message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white, fontSize: 13.sp, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(overlayEntry);
+    Future.delayed(const Duration(seconds: 2), () => overlayEntry.remove());
   }
 
   Future<void> _initializeData() async {
@@ -48,7 +82,6 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // تصحيح: استخدام isEqualTo بدلاً من '=='
     final snap = await FirebaseFirestore.instance
         .collection('managers')
         .where('uid', isEqualTo: user.uid)
@@ -56,16 +89,16 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
 
     if (snap.docs.isNotEmpty) {
       var data = snap.docs.first.data();
-      role = data['role']; 
+      role = data['role'];
       myAreas = List<String>.from(data['geographicArea'] ?? []);
-      
+
       if (data['reps'] != null) {
         for (String repId in data['reps']) {
           var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(repId).get();
           if (repDoc.exists) {
             myReps.add({
-              'id': repDoc.id, 
-              'fullname': repDoc['fullname'], 
+              'id': repDoc.id,
+              'fullname': repDoc['fullname'],
               'repCode': repDoc['repCode']
             });
           }
@@ -81,8 +114,7 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
       var xi = polygon[i].latitude, yi = polygon[i].longitude;
       var xj = polygon[j].latitude, yj = polygon[j].longitude;
-      var intersect = ((yi > lng) != (yj > lng)) &&
-          (lat < (xj - xi) * (lng - yi) / (yj - yi) + xi);
+      var intersect = ((yi > lng) != (yj > lng)) && (lat < (xj - xi) * (lng - yi) / (yj - yi) + xi);
       if (intersect) inside = !inside;
     }
     return inside;
@@ -92,7 +124,6 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     if (role == 'delivery_manager') return true;
     if (geoJsonData == null || myAreas.isEmpty) return false;
 
-    // تأمين تحويل الأرقام لـ double لضمان عدم حدوث Crash
     double lat = (locationData['lat'] as num).toDouble();
     double lng = (locationData['lng'] as num).toDouble();
     LatLng orderPoint = LatLng(lat, lng);
@@ -104,11 +135,9 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       if (feature != null) {
         var geometry = feature['geometry'];
         List coords = geometry['coordinates'][0];
-        
-        List<LatLng> polygon = coords.map<LatLng>((c) => 
-          LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble())
-        ).toList();
-        
+        List<LatLng> polygon = coords.map<LatLng>((c) =>
+            LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble())).toList();
+
         if (_isPointInPolygon(orderPoint, polygon)) return true;
       }
     }
@@ -123,8 +152,8 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
         centerTitle: true,
         backgroundColor: const Color(0xFF2F3542),
       ),
-      body: isLoading 
-          ? const Center(child: CircularProgressIndicator()) 
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
           : StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('orders').snapshots(),
               builder: (context, snapshot) {
@@ -132,17 +161,23 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
 
                 var filteredOrders = snapshot.data!.docs.where((doc) {
                   var data = doc.data() as Map<String, dynamic>;
+                  
+                  // منطق المدير: يرى الطلبات الجديدة التي لم يوافق عليها (نفس منطق HTML)
                   if (role == 'delivery_manager') {
-                    return data['status'] == 'new-order';
-                  } else if (role == 'delivery_supervisor') {
-                    return data['status'] == 'awaiting-delivery-assignment' && 
+                    return data['status'] == 'new-order' && data['deliveryManagerAssigned'] != true;
+                  } 
+                  // منطق المشرف: يرى الطلبات التي وافق عليها المدير جغرافياً
+                  else if (role == 'delivery_supervisor') {
+                    return data['deliveryManagerAssigned'] == true &&
+                           data['status'] != 'delivered' &&
+                           data['deliveryRepId'] == null && // لم تُسند لمندوب بعد
                            _isOrderInMyArea(data['buyer']['location']);
                   }
                   return false;
                 }).toList();
 
                 if (filteredOrders.isEmpty) {
-                  return const Center(child: Text("لا توجد طلبات حالياً في نطاقك"));
+                  return const Center(child: Text("لا توجد طلبات معلقة حالياً"));
                 }
 
                 return ListView.builder(
@@ -163,17 +198,17 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text("طلب رقم: ${orderId.substring(0, 5)}", 
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.sp)),
-                                Text("${order['total']} ج.م", 
-                                  style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12.sp)),
+                                Text("طلب رقم: ${orderId.substring(0, 5)}",
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.sp)),
+                                Text("${order['total']} ج.م",
+                                    style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12.sp)),
                               ],
                             ),
                             const Divider(),
                             Text("العميل: ${order['buyer']['name']}"),
                             Text("العنوان: ${order['buyer']['address']}"),
                             SizedBox(height: 2.h),
-                            
+
                             if (role == 'delivery_manager')
                               SizedBox(
                                 width: double.infinity,
@@ -181,9 +216,7 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
                                   icon: const Icon(Icons.send),
                                   label: const Text("نقل للتوصيل"),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.orange, 
-                                    foregroundColor: Colors.white
-                                  ),
+                                      backgroundColor: Colors.orange, foregroundColor: Colors.white),
                                   onPressed: () => _managerMoveToDelivery(orderId),
                                 ),
                               ),
@@ -202,10 +235,11 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
   }
 
   Future<void> _managerMoveToDelivery(String id) async {
+    // نضع الإشارة فقط ونترك الباك إند يغير الحالة كما في الـ HTML
     await FirebaseFirestore.instance.collection('orders').doc(id).update({
       'deliveryManagerAssigned': true,
-      'status': 'awaiting-delivery-assignment'
     });
+    _showSuccessOverlay("تم النقل لفريق التوصيل جغرافياً");
   }
 
   Widget _buildSupervisorAction(String orderId, Map<String, dynamic> orderData) {
@@ -218,9 +252,8 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
           hint: const Text("اختر مندوب من فريقك"),
           items: myReps.map<DropdownMenuItem<String>>((rep) {
             return DropdownMenuItem<String>(
-              value: rep['repCode'].toString(), 
-              child: Text(rep['fullname'].toString())
-            );
+                value: rep['repCode'].toString(),
+                child: Text(rep['fullname'].toString()));
           }).toList(),
           onChanged: (val) async {
             if (val != null) {
@@ -234,17 +267,20 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
   }
 
   Future<void> _assignToRep(String id, Map<String, dynamic> data, Map rep) async {
+    // 1. تحديث الطلب الأساسي بالإشارة للمندوب
     await FirebaseFirestore.instance.collection('orders').doc(id).update({
       'deliveryRepId': rep['repCode'],
       'repName': rep['fullname'],
-      'status': 'assigned-to-rep'
     });
-    await FirebaseFirestore.instance.collection('waitingdelivery').doc(id).set(data);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("تم الإسناد للمندوب ${rep['fullname']}"))
-      );
-    }
+
+    // 2. رفع النسخة لـ waitingdelivery كما في الـ HTML تماماً
+    await FirebaseFirestore.instance.collection('waitingdelivery').doc(id).set({
+      ...data,
+      'deliveryRepId': rep['repCode'],
+      'repName': rep['fullname'],
+    });
+
+    _showSuccessOverlay("تم الإسناد للمندوب ${rep['fullname']}");
   }
 }
 
