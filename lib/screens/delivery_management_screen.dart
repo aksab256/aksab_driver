@@ -78,31 +78,38 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     geoJsonData = json.decode(response);
   }
 
+  // --- التعديل الجوهري هنا: البحث الديناميكي عن المناديب ---
   Future<void> _getUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    // 1. جلب مستند المدير/المشرف من الفايرستور
     final snap = await FirebaseFirestore.instance
         .collection('managers')
         .where('uid', isEqualTo: user.uid)
         .get();
 
     if (snap.docs.isNotEmpty) {
-      var data = snap.docs.first.data();
+      var doc = snap.docs.first;
+      var data = doc.data();
       role = data['role'];
       myAreas = List<String>.from(data['geographicArea'] ?? []);
+      
+      // معرف المستند (Document ID) هو الذي يربط المناديب بالمشرف
+      String supervisorDocId = doc.id;
 
-      if (data['reps'] != null) {
-        for (String repId in data['reps']) {
-          var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(repId).get();
-          if (repDoc.exists) {
-            myReps.add({
-              'id': repDoc.id,
-              'fullname': repDoc['fullname'],
-              'repCode': repDoc['repCode']
-            });
-          }
-        }
+      if (role == 'delivery_supervisor') {
+        // 2. البحث في مجموعة deliveryReps عن المناديب التابعين لهذا المشرف
+        final repsSnap = await FirebaseFirestore.instance
+            .collection('deliveryReps')
+            .where('supervisorId', isEqualTo: supervisorDocId)
+            .get();
+
+        myReps = repsSnap.docs.map((d) => {
+          'id': d.id,
+          'fullname': d['fullname'],
+          'repCode': d['repCode']
+        }).toList();
       }
     }
   }
@@ -161,17 +168,14 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
 
                 var filteredOrders = snapshot.data!.docs.where((doc) {
                   var data = doc.data() as Map<String, dynamic>;
-                  
-                  // منطق المدير: يرى الطلبات الجديدة التي لم يوافق عليها (نفس منطق HTML)
+
                   if (role == 'delivery_manager') {
                     return data['status'] == 'new-order' && data['deliveryManagerAssigned'] != true;
-                  } 
-                  // منطق المشرف: يرى الطلبات التي وافق عليها المدير جغرافياً
-                  else if (role == 'delivery_supervisor') {
+                  } else if (role == 'delivery_supervisor') {
                     return data['deliveryManagerAssigned'] == true &&
-                           data['status'] != 'delivered' &&
-                           data['deliveryRepId'] == null && // لم تُسند لمندوب بعد
-                           _isOrderInMyArea(data['buyer']['location']);
+                        data['status'] != 'delivered' &&
+                        data['deliveryRepId'] == null &&
+                        _isOrderInMyArea(data['buyer']['location']);
                   }
                   return false;
                 }).toList();
@@ -208,7 +212,6 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
                             Text("العميل: ${order['buyer']['name']}"),
                             Text("العنوان: ${order['buyer']['address']}"),
                             SizedBox(height: 2.h),
-
                             if (role == 'delivery_manager')
                               SizedBox(
                                 width: double.infinity,
@@ -220,7 +223,6 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
                                   onPressed: () => _managerMoveToDelivery(orderId),
                                 ),
                               ),
-
                             if (role == 'delivery_supervisor')
                               _buildSupervisorAction(orderId, order),
                           ],
@@ -235,7 +237,6 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
   }
 
   Future<void> _managerMoveToDelivery(String id) async {
-    // نضع الإشارة فقط ونترك الباك إند يغير الحالة كما في الـ HTML
     await FirebaseFirestore.instance.collection('orders').doc(id).update({
       'deliveryManagerAssigned': true,
     });
@@ -247,21 +248,26 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text("إسناد لمندوب تحصيل:", style: TextStyle(fontWeight: FontWeight.bold)),
-        DropdownButton<String>(
-          isExpanded: true,
-          hint: const Text("اختر مندوب من فريقك"),
-          items: myReps.map<DropdownMenuItem<String>>((rep) {
-            return DropdownMenuItem<String>(
-                value: rep['repCode'].toString(),
-                child: Text(rep['fullname'].toString()));
-          }).toList(),
-          onChanged: (val) async {
-            if (val != null) {
-              var selectedRep = myReps.firstWhere((r) => r['repCode'] == val);
-              await _assignToRep(orderId, orderData, selectedRep);
-            }
-          },
-        ),
+        myReps.isEmpty 
+          ? Padding(
+              padding: EdgeInsets.symmetric(vertical: 1.h),
+              child: const Text("⚠️ لا يوجد مناديب مسجلين تحت إدارتك حالياً", style: TextStyle(color: Colors.redAccent)),
+            )
+          : DropdownButton<String>(
+              isExpanded: true,
+              hint: const Text("اختر مندوب من فريقك"),
+              items: myReps.map<DropdownMenuItem<String>>((rep) {
+                return DropdownMenuItem<String>(
+                    value: rep['repCode'].toString(),
+                    child: Text(rep['fullname'].toString()));
+              }).toList(),
+              onChanged: (val) async {
+                if (val != null) {
+                  var selectedRep = myReps.firstWhere((r) => r['repCode'] == val);
+                  await _assignToRep(orderId, orderData, selectedRep);
+                }
+              },
+            ),
       ],
     );
   }
