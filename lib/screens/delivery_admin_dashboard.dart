@@ -4,8 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
 
 // استدعاء الصفحات التابعة
-import 'delivery_management_screen.dart';
-import 'manager_geo_dist_screen.dart'; // الصفحة الجديدة التي أضفناها
+import 'delivery_management_screen.dart'; // أيقونة 1: الطلبات
+import 'delivery_fleet_screen.dart';      // أيقونة 2: إدارة المناديب (الصفحة الجديدة)
+import 'manager_geo_dist_screen.dart';    // أيقونة 3: مناطق التوصيل (الخريطة للمدير)
 
 class DeliveryAdminDashboard extends StatefulWidget {
   const DeliveryAdminDashboard({super.key});
@@ -167,19 +168,26 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
             child: Center(
                 child: Text("أكسب - إدارة التوصيل", style: TextStyle(color: Colors.white, fontSize: 18.sp))),
           ),
+          
+          // 1. أيقونة تقارير الطلبات (حسب الدور جغرافياً)
           _drawerItem(Icons.analytics, "تقارير الطلبات", () {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const DeliveryManagementScreen()),
             );
           }),
-          _drawerItem(Icons.people, "إدارة المناديب", () {
-            // مكان لإدارة المناديب لاحقاً
+
+          // 2. أيقونة إدارة المناديب (الصفحة الجديدة للأهداف وكروت المشرفين)
+          _drawerItem(Icons.people_alt, "إدارة المناديب", () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const DeliveryFleetScreen()),
+            );
           }),
-          
-          // تحديث الجزء الخاص بمناطق المشرفين ليعمل عند الضغط
+
+          // 3. أيقونة مناطق التوصيل (تظهر للمدير فقط لوضع المناطق العامة)
           if (_userData?['role'] == 'delivery_manager')
-            _drawerItem(Icons.map, "مناطق المشرفين", () {
+            _drawerItem(Icons.map, "مناطق التوصيل", () {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const ManagerGeoDistScreen()),
@@ -187,7 +195,9 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
             }),
 
           const Divider(),
-          _drawerItem(Icons.logout, "تسجيل الخروج", () => FirebaseAuth.instance.signOut()),
+          _drawerItem(Icons.logout, "تسجيل الخروج", () {
+            FirebaseAuth.instance.signOut();
+          }),
         ],
       ),
     );
