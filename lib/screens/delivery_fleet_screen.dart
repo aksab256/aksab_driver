@@ -4,6 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
 import 'package:intl/intl.dart';
 
+// استيراد الشاشات المطلوبة للربط
+import 'DeliveryPerformanceScreen.dart';
+import 'manager_geo_dist_screen.dart';
+
 class DeliveryFleetScreen extends StatefulWidget {
   const DeliveryFleetScreen({super.key});
 
@@ -14,9 +18,9 @@ class DeliveryFleetScreen extends StatefulWidget {
 class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
   final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  
+
   String? userRole;
-  String? userDocId; // سنحتاجه للبحث عن المناديب إذا كان المستخدم مشرفاً
+  String? userDocId; 
   bool isLoadingRole = true;
 
   @override
@@ -25,7 +29,6 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
     _checkRole();
   }
 
-  // تحديد دور المستخدم (مدير أم مشرف) لجلب البيانات الصحيحة
   Future<void> _checkRole() async {
     final snap = await _firestore
         .collection('managers')
@@ -35,7 +38,7 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
     if (snap.docs.isNotEmpty) {
       setState(() {
         userRole = snap.docs.first.data()['role'];
-        userDocId = snap.docs.first.id; // المعرف الفريد للمشرف/المدير
+        userDocId = snap.docs.first.id;
         isLoadingRole = false;
       });
     }
@@ -45,8 +48,6 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
   Widget build(BuildContext context) {
     if (isLoadingRole) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
-    // تحديد مسار البحث (Collection) والشرط (Query)
-    // إذا كان مديراً يبحث في المشرفين، وإذا كان مشرفاً يبحث في المناديب
     Query query;
     if (userRole == 'delivery_manager') {
       query = _firestore.collection('managers')
@@ -91,7 +92,6 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
     );
   }
 
-  // كارت موحد لعرض (المشرف للمدير) أو (المندوب للمشرف)
   Widget _buildFleetCard(String docId, Map<String, dynamic> data) {
     String currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
     bool hasTarget = data['targets'] != null && data['targets'][currentMonth] != null;
@@ -106,39 +106,47 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
       child: Column(
         children: [
           ListTile(
+            // --- الربط بصفحة الأداء عند الضغط على الكارت ---
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => DeliveryPerformanceScreen(
+                    repId: docId,
+                    repCode: data['repCode'] ?? docId, // للمشرف نستخدم الـ ID ككود مؤقت
+                    repName: data['fullname'] ?? 'غير مسمى',
+                  ),
+                ),
+              );
+            },
             contentPadding: EdgeInsets.all(12.sp),
             leading: CircleAvatar(
               radius: 25,
               backgroundColor: const Color(0xFF1ABC9C).withOpacity(0.1),
               child: Icon(
-                userRole == 'delivery_manager' ? Icons.badge : Icons.delivery_dining, 
-                color: const Color(0xFF1ABC9C), 
-                size: 30
-              ),
+                  userRole == 'delivery_manager' ? Icons.badge : Icons.delivery_dining,
+                  color: const Color(0xFF1ABC9C),
+                  size: 30),
             ),
             title: Text(data['fullname'] ?? 'غير مسمى',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: const Color(0xFF2F3542))),
             subtitle: Text(data['phone'] ?? 'بدون رقم هاتف', style: TextStyle(fontSize: 10.sp)),
             trailing: _buildStatusBadge(hasTarget),
           ),
-          
-          // تفاصيل إضافية (المناطق للمشرفين، أو كود المندوب للمناديب)
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 15.sp),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 if (userRole == 'delivery_manager')
-                   _buildInfoItem(Icons.map_outlined, "المناطق", "${(data['geographicArea'] as List?)?.length ?? 0}"),
+                  _buildInfoItem(Icons.map_outlined, "المناطق", "${(data['geographicArea'] as List?)?.length ?? 0}"),
                 if (userRole == 'delivery_supervisor')
-                   _buildInfoItem(Icons.qr_code, "كود المندوب", "${data['repCode'] ?? '---'}"),
-                
+                  _buildInfoItem(Icons.qr_code, "كود المندوب", "${data['repCode'] ?? '---'}"),
                 _buildInfoItem(Icons.calendar_month_outlined, "تاريخ البدء",
                     data['approvedAt'] != null ? DateFormat('yyyy/MM/dd').format((data['approvedAt'] as Timestamp).toDate()) : "جديد"),
               ],
             ),
           ),
-          
           SizedBox(height: 10.sp),
           _buildActionButtons(docId, data),
         ],
@@ -169,18 +177,26 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
       ),
       child: Row(
         children: [
-          // "توزيع المناطق" تظهر للمدير فقط
           if (userRole == 'delivery_manager')
             Expanded(
               child: TextButton.icon(
-                onPressed: () => debugPrint("توزيع مناطق المشرف: $docId"),
+                // --- الانتقال لصفحة توزيع المناطق الجغرافية للمدير فقط ---
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ManagerGeoDistScreen(
+                        supervisorId: docId,
+                        supervisorName: data['fullname'] ?? "",
+                      ),
+                    ),
+                  );
+                },
                 icon: const Icon(Icons.location_on, size: 18, color: Colors.teal),
                 label: const Text("توزيع المناطق", style: TextStyle(color: Colors.teal)),
               ),
             ),
           if (userRole == 'delivery_manager') const VerticalDivider(),
-          
-          // "تحديد الهدف" تظهر للكل (المدير يحدده للمشرف، والمشرف للمندوب)
           Expanded(
             child: TextButton.icon(
               onPressed: () => _showSetTargetDialog(docId, data['fullname'] ?? ""),
@@ -193,12 +209,9 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
     );
   }
 
-  // باقي الدوال (_buildInfoItem, _showSetTargetDialog, _buildEmptyState) تبقى كما هي في كودك الأصلي
-  // مع تغيير بسيط في _showSetTargetDialog لتحديث الـ Collection الصحيح
   void _showSetTargetDialog(String docId, String name) {
     final TextEditingController financialController = TextEditingController();
     final TextEditingController visitsController = TextEditingController();
-    final TextEditingController hoursController = TextEditingController();
 
     showDialog(
       context: context,
@@ -216,17 +229,19 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
           ElevatedButton(
             onPressed: () async {
               String month = DateFormat('yyyy-MM').format(DateTime.now());
-              String collection = userRole == 'delivery_manager' ? 'managers' : 'deliveryReps';
-              
-              await _firestore.collection(collection).doc(docId).update({
+              String collectionName = userRole == 'delivery_manager' ? 'managers' : 'deliveryReps';
+
+              await _firestore.collection(collectionName).doc(docId).update({
                 'targets.$month': {
-                  'financialTarget': financialController.text,
-                  'visitsTarget': visitsController.text,
+                  'financialTarget': double.tryParse(financialController.text) ?? 0.0,
+                  'invoiceTarget': int.tryParse(visitsController.text) ?? 0,
                   'dateSet': DateTime.now(),
                 }
               });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم حفظ الهدف بنجاح ✅")));
+              if (mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم حفظ الهدف بنجاح ✅")));
+              }
             },
             child: const Text("حفظ"),
           ),
@@ -247,7 +262,10 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
   }
 
   Widget _buildDialogField(TextEditingController ctrl, String label, IconData icon) {
-    return TextField(controller: ctrl, decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)));
+    return TextField(
+        controller: ctrl,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)));
   }
 
   Widget _buildEmptyState() {
