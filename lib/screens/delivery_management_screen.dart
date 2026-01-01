@@ -26,7 +26,6 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     _initializeData();
   }
 
-  // دالة لإظهار تنبيه احترافي (Custom Toast)
   void _showSuccessOverlay(String message) {
     OverlayEntry overlayEntry = OverlayEntry(
       builder: (context) => Positioned(
@@ -78,12 +77,10 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     geoJsonData = json.decode(response);
   }
 
-  // --- التعديل الجوهري هنا: البحث الديناميكي عن المناديب ---
   Future<void> _getUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // 1. جلب مستند المدير/المشرف من الفايرستور
     final snap = await FirebaseFirestore.instance
         .collection('managers')
         .where('uid', isEqualTo: user.uid)
@@ -94,12 +91,10 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       var data = doc.data();
       role = data['role'];
       myAreas = List<String>.from(data['geographicArea'] ?? []);
-      
-      // معرف المستند (Document ID) هو الذي يربط المناديب بالمشرف
+
       String supervisorDocId = doc.id;
 
       if (role == 'delivery_supervisor') {
-        // 2. البحث في مجموعة deliveryReps عن المناديب التابعين لهذا المشرف
         final repsSnap = await FirebaseFirestore.instance
             .collection('deliveryReps')
             .where('supervisorId', isEqualTo: supervisorDocId)
@@ -248,40 +243,41 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text("إسناد لمندوب تحصيل:", style: TextStyle(fontWeight: FontWeight.bold)),
-        myReps.isEmpty 
-          ? Padding(
-              padding: EdgeInsets.symmetric(vertical: 1.h),
-              child: const Text("⚠️ لا يوجد مناديب مسجلين تحت إدارتك حالياً", style: TextStyle(color: Colors.redAccent)),
-            )
-          : DropdownButton<String>(
-              isExpanded: true,
-              hint: const Text("اختر مندوب من فريقك"),
-              items: myReps.map<DropdownMenuItem<String>>((rep) {
-                return DropdownMenuItem<String>(
-                    value: rep['repCode'].toString(),
-                    child: Text(rep['fullname'].toString()));
-              }).toList(),
-              onChanged: (val) async {
-                if (val != null) {
-                  var selectedRep = myReps.firstWhere((r) => r['repCode'] == val);
-                  await _assignToRep(orderId, orderData, selectedRep);
-                }
-              },
-            ),
+        myReps.isEmpty
+            ? Padding(
+                padding: EdgeInsets.symmetric(vertical: 1.h),
+                child: const Text("⚠️ لا يوجد مناديب مسجلين تحت إدارتك حالياً", style: TextStyle(color: Colors.redAccent)),
+              )
+            : DropdownButton<String>(
+                isExpanded: true,
+                hint: const Text("اختر مندوب من فريقك"),
+                items: myReps.map<DropdownMenuItem<String>>((rep) {
+                  return DropdownMenuItem<String>(
+                      value: rep['repCode'].toString(),
+                      child: Text(rep['fullname'].toString()));
+                }).toList(),
+                onChanged: (val) async {
+                  if (val != null) {
+                    var selectedRep = myReps.firstWhere((r) => r['repCode'] == val);
+                    await _assignToRep(orderId, orderData, selectedRep);
+                  }
+                },
+              ),
       ],
     );
   }
 
   Future<void> _assignToRep(String id, Map<String, dynamic> data, Map rep) async {
-    // 1. تحديث الطلب الأساسي بالإشارة للمندوب
+    // 1. تحديث الطلب الأساسي
     await FirebaseFirestore.instance.collection('orders').doc(id).update({
       'deliveryRepId': rep['repCode'],
       'repName': rep['fullname'],
     });
 
-    // 2. رفع النسخة لـ waitingdelivery كما في الـ HTML تماماً
+    // 2. رفع النسخة لـ waitingdelivery مع التأكد من وجود مفتاح repCode
     await FirebaseFirestore.instance.collection('waitingdelivery').doc(id).set({
       ...data,
+      'repCode': rep['repCode'], // 👈 هذا هو التعديل المطلوب لظهور المهام للمندوب
       'deliveryRepId': rep['repCode'],
       'repName': rep['fullname'],
     });
