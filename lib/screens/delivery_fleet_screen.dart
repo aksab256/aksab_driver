@@ -20,7 +20,8 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F2F6),
       appBar: AppBar(
-        title: const Text("إدارة أسطول التوصيل", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text("إدارة أسطول التوصيل",
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF2F3542),
         elevation: 0,
         centerTitle: true,
@@ -34,7 +35,8 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: Color(0xFF1ABC9C)));
+            return const Center(
+                child: CircularProgressIndicator(color: Color(0xFF1ABC9C)));
           }
 
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
@@ -58,14 +60,21 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
   Widget _buildSupervisorCard(String docId, Map<String, dynamic> data) {
     List areas = data['geographicArea'] ?? [];
     String currentMonth = DateFormat('yyyy-MM').format(DateTime.now());
-    bool hasTarget = data['targets'] != null && data['targets'][currentMonth] != null;
+    bool hasTarget =
+        data['targets'] != null && data['targets'][currentMonth] != null;
 
     return Container(
-      margin: EdgeInsets.bottom(12.sp),
+      // التصحيح التقني هنا: استخدام .only بدلًا من .bottom
+      margin: EdgeInsets.only(bottom: 12.sp),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 5))
+        ],
       ),
       child: Column(
         children: [
@@ -74,20 +83,30 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
             leading: CircleAvatar(
               radius: 25,
               backgroundColor: const Color(0xFF1ABC9C).withOpacity(0.1),
-              child: const Icon(Icons.delivery_dining, color: Color(0xFF1ABC9C), size: 30),
+              child: const Icon(Icons.delivery_dining,
+                  color: Color(0xFF1ABC9C), size: 30),
             ),
-            title: Text(data['fullname'] ?? 'مشرف غير مسمى', 
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: const Color(0xFF2F3542))),
-            subtitle: Text(data['phone'] ?? 'بدون رقم هاتف', style: TextStyle(fontSize: 10.sp)),
+            title: Text(data['fullname'] ?? 'مشرف غير مسمى',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13.sp,
+                    color: const Color(0xFF2F3542))),
+            subtitle: Text(data['phone'] ?? 'بدون رقم هاتف',
+                style: TextStyle(fontSize: 10.sp)),
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: hasTarget ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                color: hasTarget
+                    ? Colors.green.withOpacity(0.1)
+                    : Colors.orange.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(5),
               ),
               child: Text(
                 hasTarget ? "تم تعيين الهدف" : "بدون هدف",
-                style: TextStyle(color: hasTarget ? Colors.green : Colors.orange, fontSize: 8.sp, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: hasTarget ? Colors.green : Colors.orange,
+                    fontSize: 8.sp,
+                    fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -97,8 +116,13 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildInfoItem(Icons.map_outlined, "المناطق", "${areas.length}"),
-                _buildInfoItem(Icons.calendar_month_outlined, "تاريخ البدء", 
-                  data['approvedAt'] != null ? DateFormat('yyyy/MM/dd').format((data['approvedAt'] as Timestamp).toDate()) : "قيد المراجعة"),
+                _buildInfoItem(
+                    Icons.calendar_month_outlined,
+                    "تاريخ البدء",
+                    data['approvedAt'] != null
+                        ? DateFormat('yyyy/MM/dd').format(
+                            (data['approvedAt'] as Timestamp).toDate())
+                        : "قيد المراجعة"),
               ],
             ),
           ),
@@ -107,26 +131,33 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
             padding: EdgeInsets.all(8.sp),
             decoration: const BoxDecoration(
               color: Color(0xFFF8F9FA),
-              borderRadius: BorderRadius.only(bottomLeft: Radius.circular(15), bottomRight: Radius.circular(15)),
+              borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(15),
+                  bottomRight: Radius.circular(15)),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: TextButton.icon(
                     onPressed: () {
-                      // سيتم ربطه بشاشة ManagerGeoDistScreen التي برمجناها سابقاً
                       debugPrint("الانتقال لتوزيع مناطق المشرف: $docId");
+                      // يمكنك هنا إضافة التوجيه لصفحة الخريطة إذا أردت
                     },
-                    icon: const Icon(Icons.location_on, size: 18, color: Colors.teal),
-                    label: const Text("توزيع المناطق", style: TextStyle(color: Colors.teal)),
+                    icon: const Icon(Icons.location_on,
+                        size: 18, color: Colors.teal),
+                    label: const Text("توزيع المناطق",
+                        style: TextStyle(color: Colors.teal)),
                   ),
                 ),
                 const VerticalDivider(),
                 Expanded(
                   child: TextButton.icon(
-                    onPressed: () => _showSetTargetDialog(docId, data['fullname'] ?? ""),
-                    icon: const Icon(Icons.ads_click, size: 18, color: Colors.blueAccent),
-                    label: const Text("تحديد الهدف", style: TextStyle(color: Colors.blueAccent)),
+                    onPressed: () =>
+                        _showSetTargetDialog(docId, data['fullname'] ?? ""),
+                    icon: const Icon(Icons.ads_click,
+                        size: 18, color: Colors.blueAccent),
+                    label: const Text("تحديد الهدف",
+                        style: TextStyle(color: Colors.blueAccent)),
                   ),
                 ),
               ],
@@ -143,7 +174,11 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
         Icon(icon, size: 16, color: Colors.grey),
         SizedBox(height: 4.sp),
         Text(label, style: TextStyle(color: Colors.grey, fontSize: 9.sp)),
-        Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10.sp, color: const Color(0xFF2F3542))),
+        Text(value,
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 10.sp,
+                color: const Color(0xFF2F3542))),
       ],
     );
   }
@@ -157,21 +192,28 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: Text("تعيين هدف لـ $name", textAlign: TextAlign.center, style: TextStyle(fontSize: 14.sp)),
+        title: Text("تعيين هدف لـ $name",
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 14.sp)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildDialogField(financialController, "الهدف المالي الشهري (ج.م)", Icons.money),
-              _buildDialogField(visitsController, "هدف عدد الطلبات/الزيارات", Icons.shopping_bag),
-              _buildDialogField(hoursController, "ساعات العمل المطلوبة", Icons.timer),
+              _buildDialogField(
+                  financialController, "الهدف المالي الشهري (ج.م)", Icons.money),
+              _buildDialogField(
+                  visitsController, "هدف عدد الطلبات/الزيارات", Icons.shopping_bag),
+              _buildDialogField(
+                  hoursController, "ساعات العمل المطلوبة", Icons.timer),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء")),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("إلغاء")),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1ABC9C)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1ABC9C)),
             onPressed: () async {
               String month = DateFormat('yyyy-MM').format(DateTime.now());
               await _firestore.collection('managers').doc(docId).update({
@@ -183,16 +225,19 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
                 }
               });
               if (mounted) Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم حفظ الأهداف بنجاح ✅")));
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("تم حفظ الأهداف بنجاح ✅")));
             },
-            child: const Text("حفظ الهدف", style: TextStyle(color: Colors.white)),
+            child:
+                const Text("حفظ الهدف", style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDialogField(TextEditingController ctrl, String label, IconData icon) {
+  Widget _buildDialogField(
+      TextEditingController ctrl, String label, IconData icon) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
@@ -214,7 +259,8 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
         children: [
           Icon(Icons.people_outline, size: 60.sp, color: Colors.grey[400]),
           SizedBox(height: 10.sp),
-          Text("لا يوجد مشرفو توصيل مسجلين تحت إدارتك", style: TextStyle(color: Colors.grey, fontSize: 12.sp)),
+          Text("لا يوجد مشرفو توصيل مسجلين تحت إدارتك",
+              style: TextStyle(color: Colors.grey, fontSize: 12.sp)),
         ],
       ),
     );
