@@ -33,42 +33,28 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     _startLiveTracking();
   }
 
-  // الدالة المصلحة بناءً على منطق المستمع (Listener) في السيرفر
+  // إرسال إشعار للعميل عند إتمام التسليم
   Future<void> _notifyUserOrderDelivered(String targetUserId) async {
     const String lambdaUrl = 'https://9ayce138ig.execute-api.us-east-1.amazonaws.com/V1/nofiction';
-    
     try {
-      // جلب الـ ARN من كولكشن UserEndpoints كما يفعل كود Node.js
-      var endpointSnap = await FirebaseFirestore.instance
-          .collection('UserEndpoints')
-          .doc(targetUserId)
-          .get();
-
-      if (!endpointSnap.exists || endpointSnap.data()?['endpointArn'] == null) {
-        debugPrint("❌ Notification Cancelled: No endpointArn found in UserEndpoints");
-        return;
-      }
+      var endpointSnap = await FirebaseFirestore.instance.collection('UserEndpoints').doc(targetUserId).get();
+      if (!endpointSnap.exists || endpointSnap.data()?['endpointArn'] == null) return;
 
       String arn = endpointSnap.data()!['endpointArn'];
-
       final payload = {
-        "userId": arn, // وضع الـ ARN هنا هو السر لنجاح الـ Lambda
-        "title": "أكسب مناديب: تم التسليم بنجاح! ✅",
-        "message": "يسعدنا دائماً خدمتك. فضلاً، قم بتقييم المندوب وتأكيد الاستلام الآن لضمان جودة الخدمة.",
+        "userId": arn,
+        "title": "أكسب: تم التسليم بنجاح! ✅",
+        "message": "يسعدنا دائماً خدمتك. فضلاً، قم بتقييم المندوب لضمان جودة الخدمة.",
         "orderId": widget.orderId,
       };
 
-      await http.post(
-        Uri.parse(lambdaUrl),
-        headers: {"Content-Type": "application/json"},
-        body: json.encode(payload),
-      );
-      debugPrint("🔔 Notification Sent Successfully to ARN: $arn");
+      await http.post(Uri.parse(lambdaUrl), headers: {"Content-Type": "application/json"}, body: json.encode(payload));
     } catch (e) {
       debugPrint("❌ Notification Error: $e");
     }
   }
 
+  // تحديث المسار على الخريطة
   Future<void> _updateRoute(LatLng destination) async {
     if (_currentLocation == null) return;
     if (_lastRouteUpdateLocation != null) {
@@ -95,6 +81,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     } catch (e) { debugPrint("Mapbox Route Error: $e"); }
   }
 
+  // بدء تتبع موقع المندوب
   void _startLiveTracking() async {
     Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
     if (mounted) setState(() => _currentLocation = LatLng(position.latitude, position.longitude));
@@ -132,8 +119,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       appBar: AppBar(
         title: Text("تتبع المسار المباشر", style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white.withOpacity(0.9),
-        elevation: 4,
-        centerTitle: true,
+        elevation: 4, centerTitle: true,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(25))),
       ),
       body: StreamBuilder<DocumentSnapshot>(
@@ -143,9 +129,32 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
           var data = snapshot.data!.data() as Map<String, dynamic>;
           String status = data['status'];
+
+          // 🛑 التحديث الهام: إذا قام العميل بالإلغاء، يتم إخراج المندوب فوراً
+          if (status.contains('cancelled')) {
+            Future.microtask(() async {
+              if (mounted) {
+                final prefs = await SharedPreferences.getInstance();
+                String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("⚠️ قام العميل بإلغاء الطلب.. تم حفظ حقك في التعويض"),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType))
+                );
+              }
+            });
+            return const Center(child: Text("تم إلغاء الطلب من قبل العميل..."));
+          }
+
           GeoPoint pickup = data['pickupLocation'];
           GeoPoint dropoff = data['dropoffLocation'];
-
           GeoPoint targetGeo = (status == 'accepted') ? pickup : dropoff;
           LatLng targetLatLng = LatLng(targetGeo.latitude, targetGeo.longitude);
 
@@ -180,8 +189,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                     margin: EdgeInsets.all(12.sp),
                     padding: EdgeInsets.all(15.sp),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(25),
+                      color: Colors.white, borderRadius: BorderRadius.circular(25),
                       boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 15, offset: const Offset(0, -5))],
                     ),
                     child: _buildControlUI(status, data, targetGeo),
@@ -250,9 +258,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text("أدخل كود الاستلام", textAlign: TextAlign.center, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
         content: TextField(
-          controller: _codeController,
-          keyboardType: TextInputType.text,
-          textAlign: TextAlign.center,
+          controller: _codeController, textAlign: TextAlign.center,
           style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.bold, letterSpacing: 5),
           decoration: const InputDecoration(hintText: "كود المتجر"),
         ),
@@ -279,12 +285,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   }
 
   void _completeOrder() async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.green)),
-    );
-
+    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.green)));
     final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId);
     final driverId = FirebaseAuth.instance.currentUser?.uid;
 
@@ -295,52 +296,27 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         if (!orderSnap.exists) throw "الطلب غير موجود!";
-
         savedCommission = (orderSnap.get('commissionAmount') ?? 0.0).toDouble();
         customerUserId = orderSnap.get('userId');
 
-        transaction.update(orderRef, {
-          'status': 'delivered',
-          'completedAt': FieldValue.serverTimestamp(),
-        });
-
+        transaction.update(orderRef, {'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
         if (driverId != null && savedCommission > 0) {
           final driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(driverId);
-          transaction.update(driverRef, {
-            'walletBalance': FieldValue.increment(-savedCommission),
-          });
+          transaction.update(driverRef, {'walletBalance': FieldValue.increment(-savedCommission)});
         }
       });
 
-      if (customerUserId != null) {
-        _notifyUserOrderDelivered(customerUserId!);
-      }
+      if (customerUserId != null) _notifyUserOrderDelivered(customerUserId!);
 
       if (mounted) {
         Navigator.pop(context);
         final prefs = await SharedPreferences.getInstance();
         String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.green,
-            content: Text("تم التسليم بنجاح! تم خصم عمولة: ${savedCommission.toStringAsFixed(1)} ج.م"),
-          ),
-        );
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType))
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.green, content: Text("تم التسليم! تم خصم عمولة: ${savedCommission.toStringAsFixed(1)} ج.م")));
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
       }
     } catch (e) {
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(backgroundColor: Colors.red, content: Text("فشل في إتمام الطلب: $e")),
-        );
-      }
+      if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text("فشل: $e"))); }
     }
   }
 }
-
