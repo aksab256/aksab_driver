@@ -11,7 +11,8 @@ class WalletScreen extends StatelessWidget {
 
   Future<void> _processCharge(BuildContext context, double amount) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    const String lambdaApiUrl = "https://spmyeym5p4.execute-api.us-east-1.amazonaws.com/div/payment";
+    // تم تحديث الرابط للرابط الجديد الخاص بالدالة الشهرية
+    const String lambdaApiUrl = "https://brdbg7u6wpn7fjoftwenecxhei0tvhwf.lambda-url.us-east-1.on.aws/";
 
     showDialog(
       context: context,
@@ -24,34 +25,29 @@ class WalletScreen extends StatelessWidget {
         Uri.parse(lambdaApiUrl),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
-          "type": "REQUEST_CHARGE",
+          "type": "WALLET_TOPUP", // تم التغيير ليتوافق مع شرط الدالة الجديدة
           "driverId": uid,
           "amount": amount,
         }),
       ).timeout(const Duration(seconds: 15));
 
       if (!context.mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context); // إغلاق لودينج
 
       if (response.statusCode == 200) {
-        final dynamic decodedBody = jsonDecode(response.body);
-        Map<String, dynamic> data;
+        final Map<String, dynamic> data = jsonDecode(response.body);
 
-        if (decodedBody is Map<String, dynamic> && decodedBody.containsKey('body')) {
-          data = jsonDecode(decodedBody['body']);
-        } else {
-          data = decodedBody;
-        }
-
+        // التحقق من نجاح العملية ووجود الرابط (بناءً على تصميم الدالة الموحدة)
         if (data['status'] == 'success' && data['paymentUrl'] != null) {
           final Uri url = Uri.parse(data['paymentUrl']);
           if (await canLaunchUrl(url)) {
+            // فتح صفحة الدفع (ستفتح صفحة المحافظ مباشرة لتجنب خطأ الـ Iframe)
             await launchUrl(url, mode: LaunchMode.externalApplication);
           } else {
-            _showInfoSheet(context, "تنبيه", "لا يمكن فتح الرابط حالياً.");
+            _showInfoSheet(context, "تنبيه", "لا يمكن فتح رابط الدفع حالياً.");
           }
         } else {
-          _showInfoSheet(context, "خطأ", "فشل في استلام رابط الدفع.");
+          _showInfoSheet(context, "خطأ", data['message'] ?? "فشل في توليد رابط الدفع.");
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -79,7 +75,6 @@ class WalletScreen extends StatelessWidget {
         backgroundColor: Colors.white,
         elevation: 0,
       ),
-      // 1. مراقبة الإعدادات العامة للمديونية أولاً
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('systemConfiguration').doc('globalCreditSettings').snapshots(),
         builder: (context, globalSnap) {
@@ -89,7 +84,6 @@ class WalletScreen extends StatelessWidget {
             defaultGlobalLimit = (globalSnap.data!['defaultLimit'] ?? 50.0).toDouble();
           }
 
-          // 2. مراقبة بيانات المندوب
           return StreamBuilder<DocumentSnapshot>(
             stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
             builder: (context, driverSnap) {
@@ -99,7 +93,6 @@ class WalletScreen extends StatelessWidget {
               double walletBalance = (userData?['walletBalance'] ?? 0.0).toDouble();
               double? driverSpecificLimit = userData?['creditLimit']?.toDouble();
 
-              // الخدعة: الرصيد الذي يراه المندوب
               double finalLimit = driverSpecificLimit ?? defaultGlobalLimit;
               double displayBalance = walletBalance + finalLimit;
 
@@ -160,7 +153,7 @@ class WalletScreen extends StatelessWidget {
   }
 
   Widget _buildBalanceCard(double displayBalance) {
-    bool isLow = displayBalance <= 5.0; // تنبيه لو الرصيد الظاهري قليل جداً
+    bool isLow = displayBalance <= 5.0;
 
     return Container(
       width: double.infinity, margin: const EdgeInsets.all(20), padding: const EdgeInsets.all(30),
@@ -203,4 +196,3 @@ class WalletScreen extends StatelessWidget {
     showModalBottomSheet(context: context, builder: (context) => Container(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.info_outline, size: 40.sp, color: Colors.orange), const SizedBox(height: 15), Text(title, style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold)), const SizedBox(height: 10), Text(msg, textAlign: TextAlign.center)])));
   }
 }
-
