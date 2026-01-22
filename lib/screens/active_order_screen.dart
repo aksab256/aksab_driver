@@ -47,7 +47,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   }
 
   // --- 🛰️ إعدادات تتبع الخلفية (Foreground Service) ---
-          void _initForegroundTask() {
+        
+  void _initForegroundTask() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'aksab_tracking_channel',
@@ -55,14 +56,16 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
-        // في نسخة 5.6.0 بنبعت الـ ResourceType والـ Prefix كـ Strings عادي جداً
+        // ✅ في الإصدارات الجديدة 9.x.x الأفضل استخدام اسم الأيقونة مباشرة
+        // المكتبة بتعرف تتعامل مع ic_launcher تلقائياً
         iconData: const NotificationIconData(
-          resType: ResourceType.mipmap,
-          resPrefix: ResourcePrefix.ic_launcher,
           name: 'ic_launcher',
         ),
       ),
-      iosNotificationOptions: const IOSNotificationOptions(showNotification: true, playSound: false),
+      iosNotificationOptions: const IOSNotificationOptions(
+        showNotification: true,
+        playSound: false,
+      ),
       foregroundTaskOptions: const ForegroundTaskOptions(
         interval: 10000, 
         isOnceEvent: false,
@@ -72,10 +75,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       ),
     );
   }
-
-
-
-
 
   Future<void> _startBackgroundTracking() async {
     if (_uid != null) {
