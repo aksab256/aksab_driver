@@ -48,7 +48,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   // --- 🛰️ إعدادات تتبع الخلفية (Foreground Service) ---
         
-    void _initForegroundTask() {
+      void _initForegroundTask() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'aksab_tracking_channel',
@@ -56,15 +56,15 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
+        // ✅ الأيقونة بقت تتعرف هنا في النسخة الجديدة
         iconData: const NotificationIconData(
-          resType: ResourceType.mipmap,
-          resPrefix: ResourcePrefix.ic_launcher,
           name: 'ic_launcher',
+          resType: ResourceType.mipmap,
         ),
       ),
       iosNotificationOptions: const IOSNotificationOptions(showNotification: true, playSound: false),
-      foregroundTaskOptions: const ForegroundTaskOptions(
-        interval: 10000, 
+      foregroundTaskOptions: ForegroundTaskOptions(
+        interval: 10000, // الـ interval بقت هنا ومسموحة
         isOnceEvent: false,
         autoRunOnBoot: false,
         allowWakeLock: true,
@@ -72,6 +72,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       ),
     );
   }
+
 
 
   Future<void> _startBackgroundTracking() async {
