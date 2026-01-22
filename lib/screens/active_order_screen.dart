@@ -45,8 +45,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     super.dispose();
   }
 
-  // --- 🛰️ إعدادات تتبع الخلفية (Foreground Service) ---
-
   void _initForegroundTask() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -55,10 +53,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
-        // ✅ تم الإصلاح: استخدام مراجع نصية ثابتة للأيقونة لتجنب أخطاء الـ Build
+        // ✅ الحل النهائي لمشكلة الـ Build: استخدام نصوص مباشرة
         iconData: const NotificationIconData(
           resType: ResourceType.mipmap,
-          resPrefix: ResourceSuffix.ic_launcher,
+          resPrefix: 'ic_launcher', 
           name: 'ic_launcher',
         ),
       ),
@@ -74,7 +72,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   }
 
   Future<void> _startBackgroundTracking() async {
-    // ✅ تم الإصلاح: تأمين البيانات ومنع تمرير قيم null للمكتبة
     if (_uid != null) {
       await FlutterForegroundTask.saveData(key: 'orderId', value: widget.orderId);
       await FlutterForegroundTask.saveData(key: 'uid', value: _uid!);
@@ -93,7 +90,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     await FlutterForegroundTask.stopService();
   }
 
-  // --- 📍 التتبع داخل التطبيق (UI) والمنطق الذكي ---
+  // --- بقية الدوال الأصلية كما هي دون تغيير لضمان استقرار الكود ---
 
   Future<void> _initInitialLocation() async {
     Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
@@ -120,18 +117,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 0),
     ).listen((Position pos) {
       if (!mounted) return;
-
       double distanceToTarget = Geolocator.distanceBetween(pos.latitude, pos.longitude, target.latitude, target.longitude);
-      
-      double dynamicFilter;
-      if (distanceToTarget > 2000) {
-        dynamicFilter = 50.0; 
-      } else if (distanceToTarget > 500) {
-        dynamicFilter = 20.0; 
-      } else {
-        dynamicFilter = 5.0;  
-      }
-
+      double dynamicFilter = (distanceToTarget > 2000) ? 50.0 : (distanceToTarget > 500 ? 20.0 : 5.0);
       double travelSinceLastUpdate = _currentLocation != null
           ? Geolocator.distanceBetween(_currentLocation!.latitude, _currentLocation!.longitude, pos.latitude, pos.longitude)
           : dynamicFilter + 1;
@@ -155,8 +142,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // --- 🛠️ الوظائف المساعدة الأصلية ---
-
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -166,11 +151,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         content: const Text("هل أنت متأكد من الاعتذار؟", textAlign: TextAlign.right),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("تراجع")),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text("تأكيد الاعتذار"),
-          ),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text("تأكيد الاعتذار")),
         ],
       ),
     );
