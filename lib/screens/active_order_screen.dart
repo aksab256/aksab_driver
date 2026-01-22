@@ -10,9 +10,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart'; // المكتبة الجديدة
+import 'package:flutter_foreground_task/flutter_foreground_task.dart'; 
 import 'available_orders_screen.dart';
-import 'location_service_handler.dart'; // استدعاء الملف الذي أنشأناه
+import 'location_service_handler.dart'; 
 
 class ActiveOrderScreen extends StatefulWidget {
   final String orderId;
@@ -34,15 +34,14 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   @override
   void initState() {
     super.initState();
-    _initForegroundTask(); // تهيئة إعدادات الإشعار
-    _startBackgroundTracking(); // بدء تتبع الخلفية فوراً
+    _initForegroundTask(); 
+    _startBackgroundTracking(); 
     _initInitialLocation();
   }
 
   @override
   void dispose() {
     _positionStream?.cancel();
-    // لا نوقف الخدمة هنا لضمان استمرارها لو خرج المندوب لجوجل ماب
     super.dispose();
   }
 
@@ -56,15 +55,16 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
+        // ✅ تم الإصلاح: استخدام مراجع نصية ثابتة للأيقونة لتجنب أخطاء الـ Build
         iconData: const NotificationIconData(
           resType: ResourceType.mipmap,
-          resPrefix: ResourceSuffix.IC_LAUNCHER,
+          resPrefix: ResourceSuffix.ic_launcher,
           name: 'ic_launcher',
         ),
       ),
       iosNotificationOptions: const IOSNotificationOptions(showNotification: true, playSound: false),
       foregroundTaskOptions: const ForegroundTaskOptions(
-        interval: 10000, // فحص كل 10 ثواني
+        interval: 10000, 
         isOnceEvent: false,
         autoRunOnBoot: false,
         allowWakeLock: true,
@@ -74,16 +74,19 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   }
 
   Future<void> _startBackgroundTracking() async {
-    await FlutterForegroundTask.saveData(key: 'orderId', value: widget.orderId);
-    await FlutterForegroundTask.saveData(key: 'uid', value: _uid);
+    // ✅ تم الإصلاح: تأمين البيانات ومنع تمرير قيم null للمكتبة
+    if (_uid != null) {
+      await FlutterForegroundTask.saveData(key: 'orderId', value: widget.orderId);
+      await FlutterForegroundTask.saveData(key: 'uid', value: _uid!);
 
-    if (await FlutterForegroundTask.isRunningService) return;
+      if (await FlutterForegroundTask.isRunningService) return;
 
-    await FlutterForegroundTask.startService(
-      notificationTitle: 'أكسب: رحلة قيد التنفيذ',
-      notificationText: 'جاري مشاركة الموقع لضمان وصول الطلب بدقة',
-      callback: startCallback, // الدالة الموجودة في ملف location_service_handler.dart
-    );
+      await FlutterForegroundTask.startService(
+        notificationTitle: 'أكسب: رحلة قيد التنفيذ',
+        notificationText: 'جاري مشاركة الموقع لضمان وصول الطلب بدقة',
+        callback: startCallback, 
+      );
+    }
   }
 
   Future<void> _stopBackgroundTracking() async {
@@ -120,14 +123,13 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
       double distanceToTarget = Geolocator.distanceBetween(pos.latitude, pos.longitude, target.latitude, target.longitude);
       
-      // المنطق الذكي للمسافات
       double dynamicFilter;
       if (distanceToTarget > 2000) {
-        dynamicFilter = 50.0; // بعيد: حدث كل 50 متر
+        dynamicFilter = 50.0; 
       } else if (distanceToTarget > 500) {
-        dynamicFilter = 20.0; // قرب: حدث كل 20 متر
+        dynamicFilter = 20.0; 
       } else {
-        dynamicFilter = 5.0;  // قريب جداً: حدث كل 5 متر
+        dynamicFilter = 5.0;  
       }
 
       double travelSinceLastUpdate = _currentLocation != null
@@ -146,7 +148,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   void _updateDriverLocationInFirestore(Position pos) {
     if (_uid != null) {
-      FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
+      FirebaseFirestore.instance.collection('freeDrivers').doc(_uid!).update({
         'location': GeoPoint(pos.latitude, pos.longitude),
         'lastSeen': FieldValue.serverTimestamp()
       });
@@ -173,7 +175,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       ),
     );
     if (confirm == true) {
-      _stopBackgroundTracking(); // إيقاف التتبع عند الاعتذار
+      await _stopBackgroundTracking(); 
       try {
         await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
           'status': 'driver_cancelled_reseeking',
@@ -219,8 +221,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     } catch (e) { debugPrint("Notification Error: $e"); }
   }
 
-  // --- 🖼️ واجهة المستخدم ---
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -246,7 +246,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           String status = data['status'];
 
           if (status.contains('cancelled') && status != 'driver_cancelled_reseeking') {
-            _stopBackgroundTracking(); // إيقاف التتبع إذا ألغى العميل
+            _stopBackgroundTracking(); 
             Future.microtask(() async {
               if (mounted) {
                 final prefs = await SharedPreferences.getInstance();
@@ -340,7 +340,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   void _completeOrder() async {
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
-    _stopBackgroundTracking(); // إيقاف التتبع فور التسليم
+    await _stopBackgroundTracking(); 
     final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId);
     try {
       double savedCommission = 0; String? customerUserId;
