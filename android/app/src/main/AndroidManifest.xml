@@ -2,9 +2,7 @@
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     
@@ -23,11 +21,6 @@
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="https" />
         </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
-            <category android:name="android.intent.category.BROWSABLE" />
-            <data android:scheme="http" />
-        </intent>
     </queries>
 
     <application
@@ -35,10 +28,11 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
-        <service 
-            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
             android:foregroundServiceType="location"
-            android:stopWithTask="false" /> 
+            android:enabled="true"
+            android:exported="false" />
 
         <activity
             android:name=".MainActivity"
@@ -51,8 +45,7 @@
             
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
-                android:resource="@style/NormalTheme"
-                />
+                android:resource="@style/NormalTheme" />
             
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
