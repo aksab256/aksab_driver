@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
@@ -23,6 +24,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   LatLng? _currentLocation;
   List<LatLng> _routePoints = [];
   LatLng? _lastRouteUpdateLocation;
+  StreamSubscription<Position>? _positionStream; // لإدارة غلق التتبع
+  
   final MapController _mapController = MapController();
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   final String _mapboxToken = 'pk.eyJ1IjoiYW1yc2hpcGwiLCJhIjoiY21lajRweGdjMDB0eDJsczdiemdzdXV6biJ9.E--si9vOB93NGcAq7uVgGw';
@@ -30,10 +33,91 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   @override
   void initState() {
     super.initState();
-    _startLiveTracking();
+    _initInitialLocation();
   }
 
-  // دالة اعتذار المندوب عن الرحلة
+  @override
+  void dispose() {
+    _positionStream?.cancel(); // غلق التتبع فور الخروج من الشاشة
+    super.dispose();
+  }
+
+  // جلب الموقع لأول مرة ثم بدء التتبع الذكي
+  Future<void> _initInitialLocation() async {
+    Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    if (mounted) {
+      setState(() => _currentLocation = LatLng(position.latitude, position.longitude));
+      // البدء في مراقبة الطلب لجلب إحداثيات الهدف (المتجر أو العميل)
+      _setupDynamicTracking();
+    }
+  }
+
+  void _setupDynamicTracking() {
+    // مراقبة بيانات الطلب لحظياً لتحديد الهدف (pickup أو dropoff)
+    FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots().listen((orderSnap) {
+      if (!orderSnap.exists || !mounted) return;
+      var data = orderSnap.data() as Map<String, dynamic>;
+      String status = data['status'];
+      GeoPoint targetGeo = (status == 'accepted') ? data['pickupLocation'] : data['dropoffLocation'];
+      LatLng targetLatLng = LatLng(targetGeo.latitude, targetGeo.longitude);
+
+      // بدء أو تحديث التتبع بناءً على الهدف الحالي
+      _startSmartLiveTracking(targetLatLng);
+    });
+  }
+
+  void _startSmartLiveTracking(LatLng target) {
+    _positionStream?.cancel(); // إعادة ضبط الـ Stream
+
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 0, // سنفلتر يدوياً بالذكاء المطلوب
+      ),
+    ).listen((Position pos) {
+      if (!mounted) return;
+
+      double distanceToTarget = Geolocator.distanceBetween(
+        pos.latitude, pos.longitude,
+        target.latitude, target.longitude,
+      );
+
+      // --- 🧠 منطق التحديث الذكي ---
+      double dynamicFilter;
+      if (distanceToTarget > 2000) {
+        dynamicFilter = 50.0; // بعيد: تحديث كل 50 متر لتوفير البيانات
+      } else if (distanceToTarget > 500) {
+        dynamicFilter = 20.0; // قرب: تحديث كل 20 متر
+      } else {
+        dynamicFilter = 5.0;  // قريب جداً: تحديث كل 5 متر لسلاسة الحركة عند العميل
+      }
+
+      // حساب المسافة المقطوعة عن آخر تحديث
+      double travelSinceLastUpdate = _currentLocation != null
+          ? Geolocator.distanceBetween(_currentLocation!.latitude, _currentLocation!.longitude, pos.latitude, pos.longitude)
+          : dynamicFilter + 1;
+
+      if (travelSinceLastUpdate >= dynamicFilter) {
+        if (mounted) {
+          setState(() => _currentLocation = LatLng(pos.latitude, pos.longitude));
+          _updateDriverLocationInFirestore(pos);
+          _updateRoute(target); // تحديث خط السير على الخريطة
+        }
+      }
+    });
+  }
+
+  void _updateDriverLocationInFirestore(Position pos) {
+    if (_uid != null) {
+      FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
+        'location': GeoPoint(pos.latitude, pos.longitude),
+        'lastSeen': FieldValue.serverTimestamp()
+      });
+    }
+  }
+
+  // --- 🛠️ الدوال الأصلية المحفوظة بالكامل ---
+
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -51,7 +135,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         ],
       ),
     );
-
     if (confirm == true) {
       try {
         await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
@@ -61,16 +144,31 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           'driverName': FieldValue.delete(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
-
         if (mounted) {
           final prefs = await SharedPreferences.getInstance();
           String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
           Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
         }
-      } catch (e) {
-        debugPrint("Driver Cancel Error: $e");
-      }
+      } catch (e) { debugPrint("Driver Cancel Error: $e"); }
     }
+  }
+
+  Future<void> _updateRoute(LatLng destination) async {
+    if (_currentLocation == null) return;
+    final url = 'https://api.mapbox.com/directions/v5/mapbox/driving/${_currentLocation!.longitude},${_currentLocation!.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&access_token=$_mapboxToken';
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List coords = data['routes'][0]['geometry']['coordinates'];
+        if (mounted) { setState(() { _routePoints = coords.map((c) => LatLng(c[1], c[0])).toList(); }); }
+      }
+    } catch (e) { debugPrint("Mapbox Route Error: $e"); }
+  }
+
+  Future<void> _launchGoogleMaps(GeoPoint point) async {
+    final url = 'google.navigation:q=${point.latitude},${point.longitude}';
+    if (await canLaunchUrl(Uri.parse(url))) { await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); }
   }
 
   Future<void> _notifyUserOrderDelivered(String targetUserId) async {
@@ -84,40 +182,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     } catch (e) { debugPrint("❌ Notification Error: $e"); }
   }
 
-  Future<void> _updateRoute(LatLng destination) async {
-    if (_currentLocation == null) return;
-    if (_lastRouteUpdateLocation != null) {
-      double distance = Geolocator.distanceBetween(_currentLocation!.latitude, _currentLocation!.longitude, _lastRouteUpdateLocation!.latitude, _lastRouteUpdateLocation!.longitude);
-      if (distance < 20) return;
-    }
-    final url = 'https://api.mapbox.com/directions/v5/mapbox/driving/${_currentLocation!.longitude},${_currentLocation!.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&access_token=$_mapboxToken';
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List coords = data['routes'][0]['geometry']['coordinates'];
-        if (mounted) { setState(() { _routePoints = coords.map((c) => LatLng(c[1], c[0])).toList(); _lastRouteUpdateLocation = _currentLocation; }); }
-      }
-    } catch (e) { debugPrint("Mapbox Route Error: $e"); }
-  }
-
-  void _startLiveTracking() async {
-    Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-    if (mounted) setState(() => _currentLocation = LatLng(position.latitude, position.longitude));
-    Geolocator.getPositionStream(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10)).listen((Position pos) {
-      if (mounted) { setState(() => _currentLocation = LatLng(pos.latitude, pos.longitude)); _updateDriverLocationInFirestore(pos); }
-    });
-  }
-
-  void _updateDriverLocationInFirestore(Position pos) {
-    if (_uid != null) { FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({'location': GeoPoint(pos.latitude, pos.longitude), 'lastSeen': FieldValue.serverTimestamp()}); }
-  }
-
-  Future<void> _launchGoogleMaps(GeoPoint point) async {
-    final url = 'google.navigation:q=${point.latitude},${point.longitude}';
-    if (await canLaunchUrl(Uri.parse(url))) { await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -127,7 +191,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         backgroundColor: Colors.white.withOpacity(0.9),
         elevation: 4, centerTitle: true,
         actions: [
-          // زر الاعتذار المضاف حديثاً
           TextButton.icon(
             onPressed: _driverCancelOrder,
             icon: Icon(Icons.cancel, color: Colors.red[900], size: 16.sp),
@@ -148,7 +211,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
               if (mounted) {
                 final prefs = await SharedPreferences.getInstance();
                 String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ قام العميل بإلغاء الطلب.. تم حفظ حقك في التعويض"), backgroundColor: Colors.redAccent));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ قام العميل بإلغاء الطلب"), backgroundColor: Colors.redAccent));
                 Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
               }
             });
@@ -158,14 +221,12 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           GeoPoint pickup = data['pickupLocation'];
           GeoPoint dropoff = data['dropoffLocation'];
           GeoPoint targetGeo = (status == 'accepted') ? pickup : dropoff;
-          LatLng targetLatLng = LatLng(targetGeo.latitude, targetGeo.longitude);
-          _updateRoute(targetLatLng);
 
           return Stack(
             children: [
               FlutterMap(
                 mapController: _mapController,
-                options: MapOptions(initialCenter: _currentLocation ?? targetLatLng, initialZoom: 14.5),
+                options: MapOptions(initialCenter: _currentLocation ?? LatLng(targetGeo.latitude, targetGeo.longitude), initialZoom: 14.5),
                 children: [
                   TileLayer(urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token={accessToken}', additionalOptions: {'accessToken': _mapboxToken}),
                   if (_routePoints.isNotEmpty) PolylineLayer(polylines: [Polyline(points: _routePoints, color: Colors.blueAccent, strokeWidth: 6, borderColor: Colors.white, borderStrokeWidth: 2)]),
