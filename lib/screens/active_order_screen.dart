@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // تمت إضافة المكتبة للتحكم في زرار الرجوع
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -45,6 +46,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     super.dispose();
   }
 
+  // --- 🛰️ إعدادات تتبع الخلفية (Foreground Service) ---
+
   void _initForegroundTask() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -53,7 +56,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
-        // ✅ الحل النهائي لمشكلة الـ Build: استخدام نصوص مباشرة
         iconData: const NotificationIconData(
           resType: ResourceType.mipmap,
           resPrefix: 'ic_launcher', 
@@ -90,7 +92,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     await FlutterForegroundTask.stopService();
   }
 
-  // --- بقية الدوال الأصلية كما هي دون تغيير لضمان استقرار الكود ---
+  // --- 📍 التتبع والمنطق ---
 
   Future<void> _initInitialLocation() async {
     Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
@@ -141,6 +143,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       });
     }
   }
+
+  // --- 🛠️ الوظائف المساعدة ---
 
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog<bool>(
@@ -202,75 +206,107 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     } catch (e) { debugPrint("Notification Error: $e"); }
   }
 
+  // --- 🖼️ واجهة المستخدم ---
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text("تتبع المسار المباشر", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white.withOpacity(0.9),
-        elevation: 4, centerTitle: true,
-        actions: [
-          TextButton.icon(
-            onPressed: _driverCancelOrder,
-            icon: Icon(Icons.cancel, color: Colors.red[900], size: 16.sp),
-            label: Text("اعتذار", style: TextStyle(color: Colors.red[900], fontWeight: FontWeight.bold, fontSize: 12.sp)),
-          )
-        ],
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(25))),
-      ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: CircularProgressIndicator());
-          var data = snapshot.data!.data() as Map<String, dynamic>;
-          String status = data['status'];
+    // ✅ إضافة PopScope لحماية المسار الرئيسي
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
 
-          if (status.contains('cancelled') && status != 'driver_cancelled_reseeking') {
-            _stopBackgroundTracking(); 
-            Future.microtask(() async {
-              if (mounted) {
-                final prefs = await SharedPreferences.getInstance();
-                String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ العميل ألغى الطلب")));
-                Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
-              }
-            });
-            return const Center(child: Text("تم الإلغاء..."));
-          }
-
-          GeoPoint pickup = data['pickupLocation'];
-          GeoPoint dropoff = data['dropoffLocation'];
-          GeoPoint targetGeo = (status == 'accepted') ? pickup : dropoff;
-
-          return Stack(
-            children: [
-              FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(initialCenter: _currentLocation ?? LatLng(targetGeo.latitude, targetGeo.longitude), initialZoom: 14.5),
-                children: [
-                  TileLayer(urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token={accessToken}', additionalOptions: {'accessToken': _mapboxToken}),
-                  if (_routePoints.isNotEmpty) PolylineLayer(polylines: [Polyline(points: _routePoints, color: Colors.blueAccent, strokeWidth: 6, borderColor: Colors.white, borderStrokeWidth: 2)]),
-                  MarkerLayer(markers: [
-                    if (_currentLocation != null) Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 22.sp)),
-                    Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.store, color: Colors.orange[900], size: 18.sp)),
-                    Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.red, size: 18.sp)),
-                  ]),
-                ],
-              ),
-              Positioned(
-                bottom: 0, left: 0, right: 0,
-                child: SafeArea(
-                  child: Container(
-                    margin: EdgeInsets.all(12.sp), padding: EdgeInsets.all(15.sp),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25), boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 15, offset: const Offset(0, -5))]),
-                    child: _buildControlUI(status, data, targetGeo),
-                  ),
-                ),
+        final bool shouldExit = await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text("تنبيه", textAlign: TextAlign.right),
+            content: const Text("هل تريد العودة للقائمة الرئيسية؟ الرحلة وتتبع الموقع سيظلان نشطين.", textAlign: TextAlign.right),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("بقاء")),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
+                child: const Text("عودة"),
               ),
             ],
-          );
-        },
+          ),
+        ) ?? false;
+
+        if (shouldExit && context.mounted) {
+          final prefs = await SharedPreferences.getInstance();
+          String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
+        }
+      },
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: Text("تتبع المسار المباشر", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.white.withOpacity(0.9),
+          elevation: 4, centerTitle: true,
+          actions: [
+            TextButton.icon(
+              onPressed: _driverCancelOrder,
+              icon: Icon(Icons.cancel, color: Colors.red[900], size: 16.sp),
+              label: Text("اعتذار", style: TextStyle(color: Colors.red[900], fontWeight: FontWeight.bold, fontSize: 12.sp)),
+            )
+          ],
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(25))),
+        ),
+        body: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: CircularProgressIndicator());
+            var data = snapshot.data!.data() as Map<String, dynamic>;
+            String status = data['status'];
+
+            if (status.contains('cancelled') && status != 'driver_cancelled_reseeking') {
+              _stopBackgroundTracking(); 
+              Future.microtask(() async {
+                if (mounted) {
+                  final prefs = await SharedPreferences.getInstance();
+                  String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ العميل ألغى الطلب")));
+                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
+                }
+              });
+              return const Center(child: Text("تم الإلغاء..."));
+            }
+
+            GeoPoint pickup = data['pickupLocation'];
+            GeoPoint dropoff = data['dropoffLocation'];
+            GeoPoint targetGeo = (status == 'accepted') ? pickup : dropoff;
+
+            return Stack(
+              children: [
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(initialCenter: _currentLocation ?? LatLng(targetGeo.latitude, targetGeo.longitude), initialZoom: 14.5),
+                  children: [
+                    TileLayer(urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token={accessToken}', additionalOptions: {'accessToken': _mapboxToken}),
+                    if (_routePoints.isNotEmpty) PolylineLayer(polylines: [Polyline(points: _routePoints, color: Colors.blueAccent, strokeWidth: 6, borderColor: Colors.white, borderStrokeWidth: 2)]),
+                    MarkerLayer(markers: [
+                      if (_currentLocation != null) Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 22.sp)),
+                      Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.store, color: Colors.orange[900], size: 18.sp)),
+                      Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.red, size: 18.sp)),
+                    ]),
+                  ],
+                ),
+                Positioned(
+                  bottom: 0, left: 0, right: 0,
+                  child: SafeArea(
+                    child: Container(
+                      margin: EdgeInsets.all(12.sp), padding: EdgeInsets.all(15.sp),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25), boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 15, offset: const Offset(0, -5))]),
+                      child: _buildControlUI(status, data, targetGeo),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
