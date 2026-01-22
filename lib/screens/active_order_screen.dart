@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // تمت إضافة المكتبة للتحكم في زرار الرجوع
+import 'package:flutter/services.dart'; 
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -47,7 +47,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   }
 
   // --- 🛰️ إعدادات تتبع الخلفية (Foreground Service) ---
-
   void _initForegroundTask() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -56,9 +55,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
+        // ✅ الحل النهائي: الاعتماد على اسم الأيقونة فقط لتجنب تعارض الأنواع في الـ Release
         iconData: const NotificationIconData(
-          resType: ResourceType.mipmap,
-          resPrefix: 'ic_launcher', 
           name: 'ic_launcher',
         ),
       ),
@@ -77,9 +75,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     if (_uid != null) {
       await FlutterForegroundTask.saveData(key: 'orderId', value: widget.orderId);
       await FlutterForegroundTask.saveData(key: 'uid', value: _uid!);
-
       if (await FlutterForegroundTask.isRunningService) return;
-
       await FlutterForegroundTask.startService(
         notificationTitle: 'أكسب: رحلة قيد التنفيذ',
         notificationText: 'جاري مشاركة الموقع لضمان وصول الطلب بدقة',
@@ -92,8 +88,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     await FlutterForegroundTask.stopService();
   }
 
-  // --- 📍 التتبع والمنطق ---
-
+  // --- 📍 منطق التتبع والخريطة ---
   Future<void> _initInitialLocation() async {
     Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
     if (mounted) {
@@ -144,8 +139,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // --- 🛠️ الوظائف المساعدة ---
-
+  // --- 🛠️ أفعال المندوب ---
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -206,22 +200,19 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     } catch (e) { debugPrint("Notification Error: $e"); }
   }
 
-  // --- 🖼️ واجهة المستخدم ---
-
   @override
   Widget build(BuildContext context) {
-    // ✅ إضافة PopScope لحماية المسار الرئيسي
+    // ✅ PopScope لحماية المسار ومنع الخروج المفاجئ مع استمرار الخدمة
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-
         final bool shouldExit = await showDialog(
           context: context,
           builder: (context) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: const Text("تنبيه", textAlign: TextAlign.right),
-            content: const Text("هل تريد العودة للقائمة الرئيسية؟ الرحلة وتتبع الموقع سيظلان نشطين.", textAlign: TextAlign.right),
+            content: const Text("هل تريد العودة للقائمة الرئيسية؟ الرحلة وتتبع الموقع سيظلان نشطين في الخلفية.", textAlign: TextAlign.right),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("بقاء")),
               ElevatedButton(
