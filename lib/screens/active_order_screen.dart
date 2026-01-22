@@ -10,7 +10,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart'; // المكتبة الجديدة
 import 'available_orders_screen.dart';
+import 'location_service_handler.dart'; // استدعاء الملف الذي أنشأناه
 
 class ActiveOrderScreen extends StatefulWidget {
   final String orderId;
@@ -23,8 +25,7 @@ class ActiveOrderScreen extends StatefulWidget {
 class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   LatLng? _currentLocation;
   List<LatLng> _routePoints = [];
-  LatLng? _lastRouteUpdateLocation;
-  StreamSubscription<Position>? _positionStream; // لإدارة غلق التتبع
+  StreamSubscription<Position>? _positionStream;
   
   final MapController _mapController = MapController();
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
@@ -33,76 +34,112 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   @override
   void initState() {
     super.initState();
+    _initForegroundTask(); // تهيئة إعدادات الإشعار
+    _startBackgroundTracking(); // بدء تتبع الخلفية فوراً
     _initInitialLocation();
   }
 
   @override
   void dispose() {
-    _positionStream?.cancel(); // غلق التتبع فور الخروج من الشاشة
+    _positionStream?.cancel();
+    // لا نوقف الخدمة هنا لضمان استمرارها لو خرج المندوب لجوجل ماب
     super.dispose();
   }
 
-  // جلب الموقع لأول مرة ثم بدء التتبع الذكي
+  // --- 🛰️ إعدادات تتبع الخلفية (Foreground Service) ---
+
+  void _initForegroundTask() {
+    FlutterForegroundTask.init(
+      androidNotificationOptions: AndroidNotificationOptions(
+        channelId: 'aksab_tracking_channel',
+        channelName: 'تتبع الرحلة النشطة',
+        channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
+        channelImportance: NotificationChannelImportance.LOW,
+        priority: NotificationPriority.LOW,
+        iconData: const NotificationIconData(
+          resType: ResourceType.mipmap,
+          resPrefix: ResourceSuffix.IC_LAUNCHER,
+          name: 'ic_launcher',
+        ),
+      ),
+      iosNotificationOptions: const IOSNotificationOptions(showNotification: true, playSound: false),
+      foregroundTaskOptions: const ForegroundTaskOptions(
+        interval: 10000, // فحص كل 10 ثواني
+        isOnceEvent: false,
+        autoRunOnBoot: false,
+        allowWakeLock: true,
+        allowWifiLock: true,
+      ),
+    );
+  }
+
+  Future<void> _startBackgroundTracking() async {
+    await FlutterForegroundTask.saveData(key: 'orderId', value: widget.orderId);
+    await FlutterForegroundTask.saveData(key: 'uid', value: _uid);
+
+    if (await FlutterForegroundTask.isRunningService) return;
+
+    await FlutterForegroundTask.startService(
+      notificationTitle: 'أكسب: رحلة قيد التنفيذ',
+      notificationText: 'جاري مشاركة الموقع لضمان وصول الطلب بدقة',
+      callback: startCallback, // الدالة الموجودة في ملف location_service_handler.dart
+    );
+  }
+
+  Future<void> _stopBackgroundTracking() async {
+    await FlutterForegroundTask.stopService();
+  }
+
+  // --- 📍 التتبع داخل التطبيق (UI) والمنطق الذكي ---
+
   Future<void> _initInitialLocation() async {
     Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
     if (mounted) {
       setState(() => _currentLocation = LatLng(position.latitude, position.longitude));
-      // البدء في مراقبة الطلب لجلب إحداثيات الهدف (المتجر أو العميل)
       _setupDynamicTracking();
     }
   }
 
   void _setupDynamicTracking() {
-    // مراقبة بيانات الطلب لحظياً لتحديد الهدف (pickup أو dropoff)
     FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots().listen((orderSnap) {
       if (!orderSnap.exists || !mounted) return;
       var data = orderSnap.data() as Map<String, dynamic>;
       String status = data['status'];
       GeoPoint targetGeo = (status == 'accepted') ? data['pickupLocation'] : data['dropoffLocation'];
       LatLng targetLatLng = LatLng(targetGeo.latitude, targetGeo.longitude);
-
-      // بدء أو تحديث التتبع بناءً على الهدف الحالي
       _startSmartLiveTracking(targetLatLng);
     });
   }
 
   void _startSmartLiveTracking(LatLng target) {
-    _positionStream?.cancel(); // إعادة ضبط الـ Stream
-
+    _positionStream?.cancel();
     _positionStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 0, // سنفلتر يدوياً بالذكاء المطلوب
-      ),
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 0),
     ).listen((Position pos) {
       if (!mounted) return;
 
-      double distanceToTarget = Geolocator.distanceBetween(
-        pos.latitude, pos.longitude,
-        target.latitude, target.longitude,
-      );
-
-      // --- 🧠 منطق التحديث الذكي ---
+      double distanceToTarget = Geolocator.distanceBetween(pos.latitude, pos.longitude, target.latitude, target.longitude);
+      
+      // المنطق الذكي للمسافات
       double dynamicFilter;
       if (distanceToTarget > 2000) {
-        dynamicFilter = 50.0; // بعيد: تحديث كل 50 متر لتوفير البيانات
+        dynamicFilter = 50.0; // بعيد: حدث كل 50 متر
       } else if (distanceToTarget > 500) {
-        dynamicFilter = 20.0; // قرب: تحديث كل 20 متر
+        dynamicFilter = 20.0; // قرب: حدث كل 20 متر
       } else {
-        dynamicFilter = 5.0;  // قريب جداً: تحديث كل 5 متر لسلاسة الحركة عند العميل
+        dynamicFilter = 5.0;  // قريب جداً: حدث كل 5 متر
       }
 
-      // حساب المسافة المقطوعة عن آخر تحديث
       double travelSinceLastUpdate = _currentLocation != null
           ? Geolocator.distanceBetween(_currentLocation!.latitude, _currentLocation!.longitude, pos.latitude, pos.longitude)
           : dynamicFilter + 1;
 
       if (travelSinceLastUpdate >= dynamicFilter) {
-        if (mounted) {
-          setState(() => _currentLocation = LatLng(pos.latitude, pos.longitude));
+        setState(() {
+          _currentLocation = LatLng(pos.latitude, pos.longitude);
           _updateDriverLocationInFirestore(pos);
-          _updateRoute(target); // تحديث خط السير على الخريطة
-        }
+          _updateRoute(target);
+        });
       }
     });
   }
@@ -116,7 +153,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // --- 🛠️ الدوال الأصلية المحفوظة بالكامل ---
+  // --- 🛠️ الوظائف المساعدة الأصلية ---
 
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog<bool>(
@@ -124,32 +161,32 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text("اعتذار عن الرحلة", textAlign: TextAlign.right),
-        content: const Text("هل أنت متأكد من الاعتذار عن هذه الرحلة؟ سيتم إخطار العميل وإعادة الطلب للرادار.", textAlign: TextAlign.right),
+        content: const Text("هل أنت متأكد من الاعتذار؟", textAlign: TextAlign.right),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("تراجع")),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text("تأكيد الاعتذار", style: TextStyle(color: Colors.white)),
+            child: const Text("تأكيد الاعتذار"),
           ),
         ],
       ),
     );
     if (confirm == true) {
+      _stopBackgroundTracking(); // إيقاف التتبع عند الاعتذار
       try {
         await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
           'status': 'driver_cancelled_reseeking',
           'lastDriverId': _uid,
           'driverId': FieldValue.delete(),
           'driverName': FieldValue.delete(),
-          'updatedAt': FieldValue.serverTimestamp(),
         });
         if (mounted) {
           final prefs = await SharedPreferences.getInstance();
           String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
           Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
         }
-      } catch (e) { debugPrint("Driver Cancel Error: $e"); }
+      } catch (e) { debugPrint("Cancel Error: $e"); }
     }
   }
 
@@ -161,9 +198,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final List coords = data['routes'][0]['geometry']['coordinates'];
-        if (mounted) { setState(() { _routePoints = coords.map((c) => LatLng(c[1], c[0])).toList(); }); }
+        if (mounted) setState(() => _routePoints = coords.map((c) => LatLng(c[1], c[0])).toList());
       }
-    } catch (e) { debugPrint("Mapbox Route Error: $e"); }
+    } catch (e) { debugPrint("Route Error: $e"); }
   }
 
   Future<void> _launchGoogleMaps(GeoPoint point) async {
@@ -177,10 +214,12 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       var endpointSnap = await FirebaseFirestore.instance.collection('UserEndpoints').doc(targetUserId).get();
       if (!endpointSnap.exists || endpointSnap.data()?['endpointArn'] == null) return;
       String arn = endpointSnap.data()!['endpointArn'];
-      final payload = {"userId": arn, "title": "أكسب: تم التسليم بنجاح! ✅", "message": "يسعدنا دائماً خدمتك. فضلاً، قم بتقييم المندوب.", "orderId": widget.orderId};
+      final payload = {"userId": arn, "title": "أكسب: تم التسليم! ✅", "message": "شكراً لاستخدامك أكسب.", "orderId": widget.orderId};
       await http.post(Uri.parse(lambdaUrl), headers: {"Content-Type": "application/json"}, body: json.encode(payload));
-    } catch (e) { debugPrint("❌ Notification Error: $e"); }
+    } catch (e) { debugPrint("Notification Error: $e"); }
   }
+
+  // --- 🖼️ واجهة المستخدم ---
 
   @override
   Widget build(BuildContext context) {
@@ -207,15 +246,16 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           String status = data['status'];
 
           if (status.contains('cancelled') && status != 'driver_cancelled_reseeking') {
+            _stopBackgroundTracking(); // إيقاف التتبع إذا ألغى العميل
             Future.microtask(() async {
               if (mounted) {
                 final prefs = await SharedPreferences.getInstance();
                 String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ قام العميل بإلغاء الطلب"), backgroundColor: Colors.redAccent));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ العميل ألغى الطلب")));
                 Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
               }
             });
-            return const Center(child: Text("تم إلغاء الطلب..."));
+            return const Center(child: Text("تم الإلغاء..."));
           }
 
           GeoPoint pickup = data['pickupLocation'];
@@ -265,14 +305,14 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
             SizedBox(width: 10.sp),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(isAtPickup ? "الاستلام من المتجر" : "التوصيل للعميل", style: TextStyle(color: Colors.grey[700], fontSize: 11.sp)),
-              Text(isAtPickup ? data['pickupAddress'] ?? "عنوان المتجر" : data['dropoffAddress'] ?? "عنوان العميل", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15.sp), maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(isAtPickup ? data['pickupAddress'] ?? "المتجر" : data['dropoffAddress'] ?? "العميل", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15.sp), maxLines: 1),
             ])),
             IconButton.filled(onPressed: () => launchUrl(Uri.parse("tel:${data['userPhone'] ?? ''}")), icon: Icon(Icons.phone, size: 20.sp), style: IconButton.styleFrom(backgroundColor: Colors.green[700]))
           ],
         ),
         SizedBox(height: 15.sp),
         ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: isAtPickup ? Colors.orange[900] : Colors.green[800], minimumSize: Size(double.infinity, 8.h), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)), elevation: 8),
+          style: ElevatedButton.styleFrom(backgroundColor: isAtPickup ? Colors.orange[900] : Colors.green[800], minimumSize: Size(double.infinity, 8.h), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
           onPressed: () => isAtPickup ? _showVerificationDialog(data['verificationCode']) : _completeOrder(),
           child: Text(isAtPickup ? "تأكيد كود الاستلام 📦" : "تم التسليم بنجاح ✅", style: TextStyle(color: Colors.white, fontSize: 17.sp, fontWeight: FontWeight.bold)),
         ),
@@ -286,11 +326,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       context: context, barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("أدخل كود الاستلام", textAlign: TextAlign.center, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
-        content: TextField(controller: _codeController, textAlign: TextAlign.center, style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.bold, letterSpacing: 5), decoration: const InputDecoration(hintText: "كود المتجر")),
+        title: const Text("أدخل كود الاستلام"),
+        content: TextField(controller: _codeController, textAlign: TextAlign.center, style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.bold), decoration: const InputDecoration(hintText: "كود المتجر")),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text("إلغاء", style: TextStyle(fontSize: 14.sp))),
-          ElevatedButton(onPressed: () { if (_codeController.text.trim() == correctCode?.trim()) { Navigator.pop(context); _updateStatus('picked_up'); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("الكود غير صحيح!"))); } }, child: Text("تأكيد", style: TextStyle(fontSize: 14.sp))),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء")),
+          ElevatedButton(onPressed: () { if (_codeController.text.trim() == correctCode?.trim()) { Navigator.pop(context); _updateStatus('picked_up'); } else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("الكود غير صحيح!"))); } }, child: const Text("تأكيد")),
         ],
       ),
     );
@@ -299,24 +339,28 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   void _updateStatus(String nextStatus) async { await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': nextStatus}); }
 
   void _completeOrder() async {
-    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.green)));
+    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
+    _stopBackgroundTracking(); // إيقاف التتبع فور التسليم
     final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId);
-    final driverId = FirebaseAuth.instance.currentUser?.uid;
     try {
       double savedCommission = 0; String? customerUserId;
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
-        if (!orderSnap.exists) throw "الطلب غير موجود!";
         savedCommission = (orderSnap.get('commissionAmount') ?? 0.0).toDouble();
         customerUserId = orderSnap.get('userId');
         transaction.update(orderRef, {'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
-        if (driverId != null && savedCommission > 0) {
-          final driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(driverId);
+        if (_uid != null && savedCommission > 0) {
+          final driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(_uid!);
           transaction.update(driverRef, {'walletBalance': FieldValue.increment(-savedCommission)});
         }
       });
       if (customerUserId != null) _notifyUserOrderDelivered(customerUserId!);
-      if (mounted) { Navigator.pop(context); final prefs = await SharedPreferences.getInstance(); String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig'; ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.green, content: Text("تم التسليم! تم خصم عمولة: ${savedCommission.toStringAsFixed(1)} ج.م"))); Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType))); }
-    } catch (e) { if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text("فشل: $e"))); } }
+      if (mounted) {
+        Navigator.pop(context);
+        final prefs = await SharedPreferences.getInstance();
+        String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
+      }
+    } catch (e) { if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("فشل: $e"))); } }
   }
 }
