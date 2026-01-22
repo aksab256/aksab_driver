@@ -11,36 +11,26 @@ void startCallback() {
 }
 
 class LocationTaskHandler extends TaskHandler {
-  String? _orderId;
   String? _uid;
   double _lastLat = 0;
   double _lastLng = 0;
 
   @override
-  Future<void> onStart(DateTime timestamp, SendPort? sendPort) async {
-    // مهم جداً للأصدارات المستقرة: التأكد من تهيئة Firebase داخل الـ Isolate
-    try {
-      if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp();
-      }
-    } catch (e) {
-      print("Firebase Init Error in Background: $e");
-    }
-
-    _orderId = await FlutterForegroundTask.getData<String>(key: 'orderId');
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    // تهيئة فايربيس
+    if (Firebase.apps.isEmpty) await Firebase.initializeApp();
+    
+    // جلب الـ UID
     _uid = await FlutterForegroundTask.getData<String>(key: 'uid');
   }
 
   @override
-  Future<void> onRepeatEvent(DateTime timestamp, SendPort? sendPort) async {
+  void onRepeatEvent(DateTime timestamp) async {
     // جلب الموقع
-    Position pos = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high
-    );
+    Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
 
     double dist = Geolocator.distanceBetween(_lastLat, _lastLng, pos.latitude, pos.longitude);
 
-    // لو المندوب تحرك أكتر من 10 متر أو دي أول نقطة
     if (dist > 10 || _lastLat == 0) {
       if (_uid != null) {
         await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
@@ -48,26 +38,14 @@ class LocationTaskHandler extends TaskHandler {
           'lastSeen': FieldValue.serverTimestamp(),
         });
       }
-      
       _lastLat = pos.latitude;
       _lastLng = pos.longitude;
       
-      // إرسال الموقع للشاشة الرئيسية (لو التطبيق مفتوح)
-      sendPort?.send(pos);
+      // إرسال البيانات للـ UI لو محتاج (اختياري في نسخة 9)
+      FlutterForegroundTask.sendDataToMain(pos.toJson());
     }
   }
 
   @override
-  Future<void> onDestroy(DateTime timestamp, SendPort? sendPort) async {
-    // تنظيف الموارد لو لزم الأمر
-  }
-
-  // إضافة الدالة دي عشان نسخة 6.x.x ساعات بتطلبها في الـ Override
-  @override
-  void onButtonPressed(String id) {}
-  
-  @override
-  void onNotificationPressed() {
-    FlutterForegroundTask.launchApp();
-  }
+  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
 }
