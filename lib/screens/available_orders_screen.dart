@@ -37,6 +37,42 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     super.dispose();
   }
 
+  // --- 🛡️ دالة إفصاح الموقع (متطلب أساسي لجوجل بلاي) ---
+  Future<bool> _showLocationDisclosure() async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.location_on, color: Colors.orange),
+            SizedBox(width: 10),
+            Text("تفعيل رادار الطلبات", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: const Text(
+          "لكي نتمكن من عرض الطلبات القريبة منك وتنبيهك بها، يحتاج 'أكسب' للوصول إلى موقعك. "
+          "\n\nسيتم استخدام الموقع أيضاً لتتبع الطلب وتحديث مكانك للعميل حتى لو كان التطبيق مغلقاً أو في الخلفية.",
+          textAlign: TextAlign.right,
+          style: TextStyle(height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("ليس الآن"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("موافق ومتابعة", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  // --- ⚙️ تسلسل بدء الموقع المعدل ---
   Future<void> _initSequence() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -45,12 +81,25 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
 
     LocationPermission permission = await Geolocator.checkPermission();
+    
+    // إذا كان الإذن مرفوضاً، نظهر الإفصاح أولاً قبل طلب النظام
     if (permission == LocationPermission.denied) {
+      bool userAccepted = await _showLocationDisclosure();
+      if (!userAccepted) {
+        if (mounted) setState(() => _isGettingLocation = false);
+        return;
+      }
+      
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         if (mounted) setState(() => _isGettingLocation = false);
         return;
       }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) setState(() => _isGettingLocation = false);
+      return;
     }
     
     try {
@@ -201,7 +250,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
     double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0;
 
-    // حساب المسافة
     String distanceText = "جاري الحساب..";
     GeoPoint? pickupLoc = data['pickupLocation'];
     if (pickupLoc != null && _myCurrentLocation != null) {
