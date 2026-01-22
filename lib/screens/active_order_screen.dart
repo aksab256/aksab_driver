@@ -47,7 +47,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   }
 
   // --- 🛰️ إعدادات تتبع الخلفية (Foreground Service) ---
-  void _initForegroundTask() {
+    void _initForegroundTask() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'aksab_tracking_channel',
@@ -55,8 +55,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
-        // ✅ الحل النهائي: الاعتماد على اسم الأيقونة فقط لتجنب تعارض الأنواع في الـ Release
-        iconData: const NotificationIconData(
+        // ✅ شلنا const واستخدمنا الـ Enums الصحيحة للمكتبة
+        iconData: NotificationIconData(
+          resType: ResourceType.mipmap,
+          resPrefix: ResourcePrefix.ic_launcher,
           name: 'ic_launcher',
         ),
       ),
@@ -70,6 +72,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       ),
     );
   }
+
 
   Future<void> _startBackgroundTracking() async {
     if (_uid != null) {
