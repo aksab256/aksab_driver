@@ -47,7 +47,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   }
 
   // --- 🛰️ إعدادات تتبع الخلفية (Foreground Service) ---
-      void _initForegroundTask() {
+        void _initForegroundTask() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'aksab_tracking_channel',
@@ -55,11 +55,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
         channelImportance: NotificationChannelImportance.LOW,
         priority: NotificationPriority.LOW,
-        // ✅ التعديل هنا ليتوافق مع إصدار 6.5.0
+        // ✅ التعديل الصحيح والقاطع لإصدار 6.5.0
         iconData: const NotificationIconData(
           resType: ResourceType.mipmap,
-          resPrefix: ResourcePrefix.ic_launcher, // تأكدت من أن الاسم ic_launcher وليس ic_launcher_round
-          name: 'ic_launcher',
+          resPrefix: ResourcePrefix.mipmap, // بنقوله دور في مجلدات الـ mipmap
+          name: 'ic_launcher',              // اسم الملف اللي هيدور عليه
         ),
       ),
       iosNotificationOptions: const IOSNotificationOptions(showNotification: true, playSound: false),
@@ -72,6 +72,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       ),
     );
   }
+
 
 
 
