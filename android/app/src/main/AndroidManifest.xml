@@ -1,6 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"> <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -32,7 +31,8 @@
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:foregroundServiceType="location"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false"
+            tools:replace="android:exported" /> 
 
         <activity
             android:name=".MainActivity"
