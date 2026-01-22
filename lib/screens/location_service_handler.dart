@@ -1,51 +1,54 @@
 import 'dart:async';
-import 'dart:isolate';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'dart:ui';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-@pragma('vm:entry-point')
-void startCallback() {
-  FlutterForegroundTask.setTaskHandler(LocationTaskHandler());
+Future<void> initializeService() async {
+  final service = FlutterBackgroundService();
+
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onStart, // الدالة اللي هتشتغل في الخلفية
+      autoStart: false,
+      isForegroundMode: true,
+      notificationChannelId: 'aksab_tracking_channel',
+      initialNotificationTitle: 'أكسب: رحلة قيد التنفيذ',
+      initialNotificationContent: 'جاري تحديث موقعك لضمان جودة التوصيل',
+      foregroundServiceNotificationId: 888,
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: false,
+      onForeground: onStart,
+    ),
+  );
 }
 
-class LocationTaskHandler extends TaskHandler {
-  String? _uid;
-  double _lastLat = 0;
-  double _lastLng = 0;
+@pragma('vm:entry-point')
+void onStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+  if (Firebase.apps.isEmpty) await Firebase.initializeApp();
 
-  @override
-  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
-    // تهيئة فايربيس
-    if (Firebase.apps.isEmpty) await Firebase.initializeApp();
-    
-    // جلب الـ UID
-    _uid = await FlutterForegroundTask.getData<String>(key: 'uid');
-  }
+  // جلب البيانات المخزنة محلياً (UID والـ OrderId)
+  // ملحوظة: المكتبة دي بتستخدم نظام "Invoke" للتواصل
+  
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
 
-  @override
-  void onRepeatEvent(DateTime timestamp) async {
-    // جلب الموقع
-    Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-
-    double dist = Geolocator.distanceBetween(_lastLat, _lastLng, pos.latitude, pos.longitude);
-
-    if (dist > 10 || _lastLat == 0) {
-      if (_uid != null) {
-        await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
-          'location': GeoPoint(pos.latitude, pos.longitude),
-          'lastSeen': FieldValue.serverTimestamp(),
-        });
-      }
-      _lastLat = pos.latitude;
-      _lastLng = pos.longitude;
-      
-      // إرسال البيانات للـ UI لو محتاج (اختياري في نسخة 9)
-      FlutterForegroundTask.sendDataToMain(pos.toJson());
+  // مؤقت لتحديث الموقع كل 10 ثواني
+  Timer.periodic(const Duration(seconds: 10), (timer) async {
+    if (service is AndroidServiceInstance) {
+      if (!(await service.isForegroundService())) return;
     }
-  }
 
-  @override
-  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
+    Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    
+    // هنا بنحدث الفايربيس (محتاجين نمرر الـ UID للخدمة)
+    // هنفترض إننا خزناه في SharedPreferences قبل ما نشغل الخدمة
+    // أو نحدثه من خلال الـ Firestore مباشرة لو معانا الـ ID
+    
+    print("Background Location: ${pos.latitude}");
+  });
 }
