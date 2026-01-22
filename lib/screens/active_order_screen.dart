@@ -11,7 +11,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart'; 
+import 'package:flutter_background_service/flutter_background_service.dart'; // المكتبة الجديدة
 import 'available_orders_screen.dart';
 import 'location_service_handler.dart'; 
 
@@ -35,7 +35,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   @override
   void initState() {
     super.initState();
-    _initForegroundTask(); 
+    // تم حذف _initForegroundTask القديمة وبدء الخدمة الجديدة مباشرة
     _startBackgroundTracking(); 
     _initInitialLocation();
   }
@@ -46,53 +46,39 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     super.dispose();
   }
 
-  // --- 🛰️ إعدادات تتبع الخلفية (Foreground Service) ---
-        
-      void _initForegroundTask() {
-    FlutterForegroundTask.init(
-      androidNotificationOptions: AndroidNotificationOptions(
-        channelId: 'aksab_tracking_channel',
-        channelName: 'تتبع الرحلة النشطة',
-        channelDescription: 'يسمح للتطبيق بتحديث موقعك للعميل لضمان دقة التوصيل',
-        channelImportance: NotificationChannelImportance.LOW,
-        priority: NotificationPriority.LOW,
-        // ✅ الأيقونة بقت تتعرف هنا في النسخة الجديدة
-        iconData: const NotificationIconData(
-          name: 'ic_launcher',
-          resType: ResourceType.mipmap,
-        ),
-      ),
-      iosNotificationOptions: const IOSNotificationOptions(showNotification: true, playSound: false),
-      foregroundTaskOptions: ForegroundTaskOptions(
-        interval: 10000, // الـ interval بقت هنا ومسموحة
-        isOnceEvent: false,
-        autoRunOnBoot: false,
-        allowWakeLock: true,
-        allowWifiLock: true,
-      ),
-    );
-  }
-
-
+  // --- 🛰️ إعدادات تتبع الخلفية (Background Service) الجديدة ---
 
   Future<void> _startBackgroundTracking() async {
     if (_uid != null) {
-      await FlutterForegroundTask.saveData(key: 'orderId', value: widget.orderId);
-      await FlutterForegroundTask.saveData(key: 'uid', value: _uid!);
-      if (await FlutterForegroundTask.isRunningService) return;
-      await FlutterForegroundTask.startService(
-        notificationTitle: 'أكسب: رحلة قيد التنفيذ',
-        notificationText: 'جاري مشاركة الموقع لضمان وصول الطلب بدقة',
-        callback: startCallback, 
+      // حفظ الـ UID لكي تراه الخدمة في الخلفية
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('driver_uid', _uid!);
+
+      final service = FlutterBackgroundService();
+      
+      await service.configure(
+        androidConfiguration: AndroidConfiguration(
+          onStart: onStart,
+          autoStart: true,
+          isForegroundMode: true,
+          notificationChannelId: 'aksab_tracking_channel',
+          initialNotificationTitle: 'أكسب: رحلة قيد التنفيذ',
+          initialNotificationContent: 'جاري مشاركة الموقع لضمان وصول الطلب بدقة',
+          foregroundServiceNotificationId: 888,
+        ),
+        iosConfiguration: IosConfiguration(autoStart: true, onForeground: onStart),
       );
+      
+      service.startService();
     }
   }
 
   Future<void> _stopBackgroundTracking() async {
-    await FlutterForegroundTask.stopService();
+    final service = FlutterBackgroundService();
+    service.invoke("stopService");
   }
 
-  // --- 📍 منطق التتبع والخريطة ---
+  // --- 📍 منطق التتبع والخريطة (مطابق للأصل تماماً) ---
   Future<void> _initInitialLocation() async {
     Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
     if (mounted) {
@@ -143,7 +129,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // --- 🛠️ أفعال المندوب ---
+  // --- 🛠️ أفعال المندوب (مطابقة للأصل تماماً) ---
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog<bool>(
       context: context,
@@ -206,7 +192,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ PopScope لحماية المسار ومنع الخروج المفاجئ مع استمرار الخدمة
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
