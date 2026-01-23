@@ -13,18 +13,21 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        // ✅ تفعيل الـ Desugaring لحل مشكلة مكتبة الإشعارات
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        // الـ target المفضل للمكتبات هو 1.8 لضمان أوسع توافق
+        jvmTarget = "1.8"
     }
 
     defaultConfig {
-        // الـ ID الجديد الخاص بتطبيق المندوب
         applicationId = "com.example.aksab_driver"
-        minSdk = flutter.minSdkVersion
+        // ✅ الـ Desugaring يتطلب minSdk لا يقل عن 21
+        minSdk = 21 
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -32,7 +35,6 @@ android {
 
     buildTypes {
         release {
-            // الإعدادات الافتراضية للـ Debug حالياً حتى مرحلة الرفع
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -40,4 +42,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// ✅ إضافة المكتبة المسؤولة عن الـ Desugaring في الخلفية
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }
