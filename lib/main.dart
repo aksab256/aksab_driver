@@ -4,8 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+// ✅ إضافات ضرورية للخدمات
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-// استيراد الشاشات (تأكد من أن المسارات صحيحة في مشروعك)
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/free_driver_home_screen.dart';
@@ -13,9 +14,23 @@ import 'screens/CompanyRepHomeScreen.dart';
 import 'screens/delivery_admin_dashboard.dart'; 
 
 void main() async {
-  // ✅ ضروري جداً لضمان عمل الـ Binding قبل أي عملية Firebase أو Background
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
+  // ✅ 1. تعريف قناة الإشعارات (هذا الجزء يمنع الـ Crash في أندرويد 13+)
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'aksab_tracking_channel', // يجب أن يطابق المعرف في شاشة التتبع
+    'تتبع رحلات أكسب',
+    description: 'تستخدم لتتبع موقع المندوب أثناء الرحلة لضمان جودة الخدمة',
+    importance: Importance.high,
+  );
+
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
   runApp(AksabDriverApp());
 }
 
@@ -36,11 +51,10 @@ class AksabDriverApp extends StatelessWidget {
           locale: const Locale('ar', 'EG'),
           theme: ThemeData(
             primarySwatch: Colors.orange,
-            fontFamily: 'Tajawal', // تأكد من إضافة الخط في الـ pubspec
+            fontFamily: 'Tajawal',
             scaffoldBackgroundColor: Colors.white,
           ),
           home: AuthWrapper(),
-          // ✅ الحفاظ على جميع المسارات الأصلية
           routes: {
             '/login': (context) => LoginScreen(),
             '/register': (context) => RegisterScreen(),
@@ -54,6 +68,7 @@ class AksabDriverApp extends StatelessWidget {
   }
 }
 
+// باقي كود AuthWrapper و _getUserRoleAndData كما هو في ملفك (سليم 100%)
 class AuthWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -79,15 +94,12 @@ class AuthWrapper extends StatelessWidget {
                 final String type = userData['type'];
                 final String status = userData['status'] ?? '';
 
-                // 1. منطق مناديب الشركة
                 if (type == 'deliveryRep' && status == 'approved') {
                   return const CompanyRepHomeScreen();
                 } 
-                // 2. منطق المناديب الأحرار
                 else if (type == 'freeDriver' && status == 'approved') {
                   return const FreeDriverHomeScreen();
                 } 
-                // 3. منطق طاقم الإدارة
                 else if (type == 'manager') {
                   String role = userData['role'] ?? '';
                   if (role == 'delivery_manager' || role == 'delivery_supervisor') {
@@ -95,29 +107,22 @@ class AuthWrapper extends StatelessWidget {
                   }
                 }
               }
-
-              // إذا لم يتطابق أو الحساب معلق
               return const LoginScreen();
             },
           );
         }
-
         return const LoginScreen();
       },
     );
   }
 
-  // ✅ الدالة الأصلية كما هي مع التأكد من الـ Collections الصحيحة
   Future<Map<String, dynamic>?> _getUserRoleAndData(String uid) async {
-    // 1. فحص مناديب الشركة
     var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
     if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
 
-    // 2. فحص المناديب الأحرار (المجموعة المستهدفة بالتتبع)
     var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
     if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
 
-    // 3. فحص المديرين
     var managerSnap = await FirebaseFirestore.instance
         .collection('managers')
         .where('uid', isEqualTo: uid)
@@ -126,7 +131,6 @@ class AuthWrapper extends StatelessWidget {
     if (managerSnap.docs.isNotEmpty) {
       return {...managerSnap.docs.first.data(), 'type': 'manager'};
     }
-
     return null;
   }
 }
