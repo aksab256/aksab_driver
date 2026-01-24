@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
 import 'active_order_screen.dart';
 
@@ -37,7 +38,25 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     super.dispose();
   }
 
-  // --- 🛡️ دالة إفصاح الموقع (متطلب أساسي لجوجل بلاي) ---
+  // ✅ [الذكاء الاصطناعي] دالة حساب المسافة الإجمالية المتوقعة قبل القبول
+  double _calculateFullTripDistance(GeoPoint pickup, GeoPoint dropoff) {
+    if (_myCurrentLocation == null) return 0.0;
+
+    // 1. المسافة من مكان المندوب للمحل
+    double toPickup = Geolocator.distanceBetween(
+      _myCurrentLocation!.latitude, _myCurrentLocation!.longitude,
+      pickup.latitude, pickup.longitude,
+    );
+
+    // 2. المسافة من المحل للعميل
+    double toCustomer = Geolocator.distanceBetween(
+      pickup.latitude, pickup.longitude,
+      dropoff.latitude, dropoff.longitude,
+    );
+
+    return (toPickup + toCustomer) / 1000; // تحويل لكيلومتر
+  }
+
   Future<bool> _showLocationDisclosure() async {
     return await showDialog<bool>(
       context: context,
@@ -58,10 +77,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           style: TextStyle(height: 1.5),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("ليس الآن"),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("ليس الآن")),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () => Navigator.pop(context, true),
@@ -72,36 +88,29 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     ) ?? false;
   }
 
-  // --- ⚙️ تسلسل بدء الموقع المعدل ---
   Future<void> _initSequence() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       if (mounted) setState(() => _isGettingLocation = false);
       return;
     }
-
     LocationPermission permission = await Geolocator.checkPermission();
-    
-    // إذا كان الإذن مرفوضاً، نظهر الإفصاح أولاً قبل طلب النظام
     if (permission == LocationPermission.denied) {
       bool userAccepted = await _showLocationDisclosure();
       if (!userAccepted) {
         if (mounted) setState(() => _isGettingLocation = false);
         return;
       }
-      
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         if (mounted) setState(() => _isGettingLocation = false);
         return;
       }
     }
-
     if (permission == LocationPermission.deniedForever) {
       if (mounted) setState(() => _isGettingLocation = false);
       return;
     }
-    
     try {
       Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       if (mounted) setState(() { _myCurrentLocation = pos; _isGettingLocation = false; });
@@ -110,80 +119,44 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // --- 🔔 دالة الإشعارات بالـ ARN (مصري) ---
   Future<void> _notifyCustomerOrderAccepted(String customerId, String orderId) async {
     const String lambdaUrl = 'https://9ayce138ig.execute-api.us-east-1.amazonaws.com/V1/nofiction';
     try {
       var endpointSnap = await FirebaseFirestore.instance.collection('UserEndpoints').doc(customerId).get();
       if (!endpointSnap.exists || endpointSnap.data()?['endpointArn'] == null) return;
-
       String arn = endpointSnap.data()!['endpointArn'];
       final payload = {
-        "userId": arn,
-        "title": "طلبك اتقبل! ✨",
+        "userId": arn, "title": "طلبك اتقبل! ✨",
         "message": "مندوب أكسب في طريقه ليك دلوقتي، تقدر تتابعه من الخريطة.",
         "orderId": orderId,
       };
-
-      await http.post(Uri.parse(lambdaUrl), 
-        headers: {"Content-Type": "application/json"}, 
-        body: json.encode(payload)
-      );
+      await http.post(Uri.parse(lambdaUrl), headers: {"Content-Type": "application/json"}, body: json.encode(payload));
     } catch (e) { debugPrint("Notification Error: $e"); }
   }
 
-  // --- 🤝 دالة القبول المؤمنة بـ Transaction ---
   Future<void> _acceptOrder(String orderId, double commission, String? customerId) async {
     if (_uid == null) return;
-
-    showDialog(
-      context: context, 
-      barrierDismissible: false, 
-      builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange))
-    );
-
+    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
     final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
     final driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(_uid);
-
     try {
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         DocumentSnapshot driverSnap = await transaction.get(driverRef);
-
-        if (!orderSnap.exists || orderSnap.get('status') != 'pending') {
-          throw "يا خسارة! مندوب تاني سبقك للطلب ده.";
-        }
-
+        if (!orderSnap.exists || orderSnap.get('status') != 'pending') throw "يا خسارة! مندوب تاني سبقك للطلب ده.";
         double wallet = double.tryParse(driverSnap.get('walletBalance')?.toString() ?? '0') ?? 0.0;
         double limit = double.tryParse(driverSnap.get('creditLimit')?.toString() ?? '50') ?? 50.0;
-        
-        if ((wallet + limit) < commission) {
-          throw "رصيدك مش كفاية، اشحن محفظتك عشان تقدر تقبل الطلب.";
-        }
-
-        transaction.update(orderRef, {
-          'status': 'accepted',
-          'driverId': _uid,
-          'acceptedAt': FieldValue.serverTimestamp(),
-          'commissionAmount': commission,
-        });
+        if ((wallet + limit) < commission) throw "رصيدك مش كفاية، اشحن محفظتك عشان تقدر تقبل الطلب.";
+        transaction.update(orderRef, {'status': 'accepted', 'driverId': _uid, 'acceptedAt': FieldValue.serverTimestamp(), 'commissionAmount': commission});
       });
-
       if (customerId != null) _notifyCustomerOrderAccepted(customerId, orderId);
-
       if (!mounted) return;
-      Navigator.pop(context); // إغلاق الـ Loading
-      Navigator.pushReplacement(
-        context, 
-        MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId))
-      );
-
+      Navigator.pop(context);
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)));
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(backgroundColor: Colors.red, content: Text(e.toString()))
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(backgroundColor: Colors.red, content: Text(e.toString())));
     }
   }
 
@@ -198,6 +171,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         title: Text("رادار الطلبات القريبة", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp)),
         centerTitle: true,
         backgroundColor: Colors.white,
+        elevation: 0,
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
@@ -217,16 +191,14 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 .where('vehicleType', isEqualTo: cleanType)
                 .snapshots(),
             builder: (context, snapshot) {
-              if (snapshot.hasError) return Center(child: Text("خطأ في الاتصال"));
+              if (snapshot.hasError) return const Center(child: Text("خطأ في الاتصال"));
               if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
               final nearbyOrders = snapshot.data!.docs.where((doc) {
                 var data = doc.data() as Map<String, dynamic>;
                 GeoPoint? pickup = data['pickupLocation'];
                 if (pickup == null || _myCurrentLocation == null) return false;
-                double dist = Geolocator.distanceBetween(
-                    _myCurrentLocation!.latitude, _myCurrentLocation!.longitude,
-                    pickup.latitude, pickup.longitude);
+                double dist = Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pickup.latitude, pickup.longitude);
                 return dist <= 15000;
               }).toList();
 
@@ -249,13 +221,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
     double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
     double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0;
+    GeoPoint pickup = data['pickupLocation'];
+    GeoPoint dropoff = data['dropoffLocation'];
 
-    String distanceText = "جاري الحساب..";
-    GeoPoint? pickupLoc = data['pickupLocation'];
-    if (pickupLoc != null && _myCurrentLocation != null) {
-      double dist = Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pickupLoc.latitude, pickupLoc.longitude);
-      distanceText = "${(dist / 1000).toStringAsFixed(1)} كم من موقعك";
-    }
+    // ✅ حقن حساب المسافة الإجمالية
+    double totalTripKm = _calculateFullTripDistance(pickup, dropoff);
 
     Timestamp? createdAt = data['createdAt'] as Timestamp?;
     String timeLeft = "15:00";
@@ -269,32 +239,55 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     bool canAccept = driverBalance >= commission;
 
     return Card(
+      elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       margin: const EdgeInsets.only(bottom: 15),
       child: Column(
         children: [
-          ListTile(
-            tileColor: canAccept ? Colors.green[50] : Colors.red[50],
-            title: Text("صافي ربحك: $driverNet ج.م", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green[800])),
-            subtitle: Text(distanceText, style: TextStyle(color: Colors.blueGrey[800])),
-            trailing: Chip(label: Text(timeLeft, style: const TextStyle(color: Colors.white)), backgroundColor: Colors.red),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+            decoration: BoxDecoration(
+              color: canAccept ? Colors.green[600] : Colors.red[600],
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("صافي ربحك: $driverNet ج.م", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                Text("ينتهي خلال: $timeLeft", style: const TextStyle(color: Colors.white, fontSize: 10)),
+              ],
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(15),
             child: Column(
               children: [
-                _buildRouteRow(Icons.location_on, "من:", data['pickupAddress'] ?? "عنوان المتجر", Colors.orange),
-                const SizedBox(height: 8),
-                _buildRouteRow(Icons.flag, "إلى:", data['dropoffAddress'] ?? "عنوان العميل", Colors.red),
+                // ✅ عرض المسافة الإجمالية بوضوح
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(10)),
+                  child: Row(
+                    children: [
+                      Icon(Icons.directions_run, color: Colors.blue[900], size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        "إجمالي المسافة المتوقعة: ${totalTripKm.toStringAsFixed(1)} كم",
+                        style: TextStyle(color: Colors.blue[900], fontWeight: FontWeight.bold, fontSize: 11.sp),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 15),
+                _buildRouteRow(Icons.store, "من:", data['pickupAddress'] ?? "المتجر", Colors.orange),
+                const Padding(
+                  padding: EdgeInsets.only(right: 20),
+                  child: Icon(Icons.more_vert, color: Colors.grey, size: 15),
+                ),
+                _buildRouteRow(Icons.person_pin_circle, "إلى:", data['dropoffAddress'] ?? "العميل", Colors.red),
                 const Divider(height: 30),
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                   Text("المطلوب تحصيله:", style: TextStyle(fontSize: 11.sp)),
                   Text("$totalPrice ج.م", style: const TextStyle(fontWeight: FontWeight.bold)),
-                ]),
-                const SizedBox(height: 5),
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text("عمولة المنصة:", style: TextStyle(fontSize: 10.sp, color: Colors.grey[600])),
-                  Text("$commission ج.م", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange[900])),
                 ]),
                 const SizedBox(height: 20),
                 ElevatedButton(
@@ -304,7 +297,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
                   ),
                   onPressed: canAccept ? () => _acceptOrder(doc.id, commission, data['userId']) : null,
-                  child: Text(canAccept ? "قبول الطلب" : "الرصيد مش كفاية.. اشحن دلوقتي",
+                  child: Text(canAccept ? "قبول الطلب والبدء فوراً" : "الرصيد مش كفاية.. اشحن دلوقتي",
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp)),
                 )
               ],
@@ -317,9 +310,15 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   Widget _buildRouteRow(IconData icon, String label, String addr, Color color) {
     return Row(children: [
-      Icon(icon, color: color, size: 16.sp),
+      Icon(icon, color: color, size: 18.sp),
       const SizedBox(width: 10),
-      Expanded(child: Text("$label $addr", style: TextStyle(fontSize: 11.sp), maxLines: 1, overflow: TextOverflow.ellipsis)),
+      Expanded(child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: TextStyle(fontSize: 9.sp, color: Colors.grey[600])),
+          Text(addr, style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
+        ],
+      )),
     ]);
   }
 }
