@@ -44,6 +44,25 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     super.dispose();
   }
 
+  // ✅ حساب المسافة الذكية المتبقية
+  double _getSmartDistance(Map<String, dynamic> data, String status) {
+    if (_currentLocation == null) return 0.0;
+
+    GeoPoint pickup = data['pickupLocation'];
+    GeoPoint dropoff = data['dropoffLocation'];
+
+    if (status == 'accepted') {
+      // (المندوب -> المحل) + (المحل -> العميل)
+      double d1 = Geolocator.distanceBetween(_currentLocation!.latitude, _currentLocation!.longitude, pickup.latitude, pickup.longitude);
+      double d2 = Geolocator.distanceBetween(pickup.latitude, pickup.longitude, dropoff.latitude, dropoff.longitude);
+      return (d1 + d2) / 1000;
+    } else {
+      // (المندوب حالياً -> العميل)
+      double dRemaining = Geolocator.distanceBetween(_currentLocation!.latitude, _currentLocation!.longitude, dropoff.latitude, dropoff.longitude);
+      return dRemaining / 1000;
+    }
+  }
+
   Future<void> _startBackgroundTracking() async {
     if (_uid != null) {
       final prefs = await SharedPreferences.getInstance();
@@ -92,7 +111,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     ).listen((Position pos) {
       if (!mounted) return;
       double distanceToTarget = Geolocator.distanceBetween(pos.latitude, pos.longitude, target.latitude, target.longitude);
-      double dynamicFilter = (distanceToTarget > 2000) ? 50.0 : (distanceToTarget > 500 ? 20.0 : 5.0);
       
       setState(() {
         _currentLocation = LatLng(pos.latitude, pos.longitude);
@@ -117,13 +135,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      // Fallback if google.navigation fails
       final fallbackUrl = 'https://www.google.com/maps/search/?api=1&query=${point.latitude},${point.longitude}';
       await launchUrl(Uri.parse(fallbackUrl), mode: LaunchMode.externalApplication);
     }
   }
-
-  // --- UI Components ---
 
   @override
   Widget build(BuildContext context) {
@@ -136,16 +151,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            // 1. الخريطة (تمتد للخلفية بالكامل)
             _buildMap(),
-
-            // 2. AppBar مخصص (داخل SafeArea)
             Positioned(
               top: 0, left: 0, right: 0,
               child: SafeArea(child: _buildCustomAppBar()),
             ),
-
-            // 3. لوحة التحكم السفلية (داخل SafeArea)
             Positioned(
               bottom: 0, left: 0, right: 0,
               child: SafeArea(child: _buildBottomPanel()),
@@ -226,6 +236,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         GeoPoint targetLoc = (status == 'accepted') ? data['pickupLocation'] : data['dropoffLocation'];
         bool isAtPickup = status == 'accepted';
 
+        // ✅ حساب المسافة الذكية
+        double dist = _getSmartDistance(data, status);
+
         return Container(
           margin: EdgeInsets.all(12.sp),
           padding: EdgeInsets.all(16.sp),
@@ -239,7 +252,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
             children: [
               Row(
                 children: [
-                  // ✅ زرار جوجل ماب الضخم للتوجيه
                   _buildCircleAction(
                     icon: Icons.navigation_rounded,
                     label: "توجيه",
@@ -251,15 +263,26 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(isAtPickup ? "الاستلام من المتجر" : "التوصيل للعميل", 
-                          style: TextStyle(color: Colors.grey[600], fontSize: 10.sp, fontWeight: FontWeight.bold)),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(isAtPickup ? "الاستلام من المتجر" : "التوصيل للعميل", 
+                              style: TextStyle(color: Colors.grey[600], fontSize: 10.sp, fontWeight: FontWeight.bold)),
+                            Container(
+                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(5)),
+                              child: Text("${dist.toStringAsFixed(1)} كم متبقي", 
+                                style: TextStyle(color: Colors.blue[900], fontSize: 9.sp, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 4),
                         Text(isAtPickup ? (data['pickupAddress'] ?? "المتجر") : (data['dropoffAddress'] ?? "العميل"),
                           style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w900), maxLines: 1, overflow: TextOverflow.ellipsis),
                       ],
                     ),
                   ),
                   SizedBox(width: 4.w),
-                  // زر الاتصال
                   _buildCircleAction(
                     icon: Icons.phone_in_talk_rounded,
                     label: "اتصال",
@@ -269,7 +292,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                 ],
               ),
               SizedBox(height: 2.h),
-              // الزرار الرئيسي (تأكيد أو تم التسليم)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -310,8 +332,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  // --- Functions (Logic) ---
-
   void _showExitWarning() async {
     final bool shouldExit = await showDialog(
       context: context,
@@ -331,7 +351,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // بقية الدوال (_updateRoute, _completeOrder, _driverCancelOrder, إلخ) تظل كما هي في كودك الأصلي لضمان عمل السيستم
   Future<void> _updateRoute(LatLng destination) async {
     if (_currentLocation == null) return;
     final url = 'https://api.mapbox.com/directions/v5/mapbox/driving/${_currentLocation!.longitude},${_currentLocation!.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson&access_token=$_mapboxToken';
@@ -399,11 +418,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     await _stopBackgroundTracking(); 
     final orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId);
     try {
-      double savedCommission = 0; String? customerUserId;
+      double savedCommission = 0;
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         savedCommission = (orderSnap.get('commissionAmount') ?? 0.0).toDouble();
-        customerUserId = orderSnap.get('userId');
         transaction.update(orderRef, {'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
         if (_uid != null && savedCommission > 0) {
           final driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(_uid!);
@@ -416,6 +434,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         String vType = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: vType)));
       }
-    } catch (e) { if (mounted) { Navigator.pop(context); Navigator.pop(context); } }
+    } catch (e) { if (mounted) { Navigator.pop(context); } }
   }
 }
