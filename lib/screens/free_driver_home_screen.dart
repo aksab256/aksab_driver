@@ -31,40 +31,60 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     _fetchInitialStatus();
     _listenToActiveOrders();
     
-    // ✅ فحص الإشعارات المتوافق مع سياسات جوجل
+    // ✅ فحص الإشعارات عند بدء التشغيل دون تداخل مع نظام التشغيل
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkNotificationPermission();
     });
   }
 
-  // 🛡️ منطق الإشعارات الاحترافي
+  // 🛡️ منطق الإشعارات المحدث لمنع التحويل التلقائي
   Future<void> _checkNotificationPermission() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
+    
+    // 1. جلب الحالة الحالية
     NotificationSettings settings = await messaging.getNotificationSettings();
 
+    // 2. إذا كانت الحالة "لم تطلب بعد" (تظهر رسالة النظام الأصلية)
     if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
-      await messaging.requestPermission(alert: true, badge: true, sound: true);
-    } else if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      _showSettingsRedirectDialog();
+      settings = await messaging.requestPermission(
+        alert: true, 
+        badge: true, 
+        sound: true,
+        provisional: false, // لضمان ظهور الديالوج في أندرويد 13+
+      );
+    }
+
+    // 3. إذا رفض المستخدم نهائياً، نظهر ديالوج التوجيه للإعدادات
+    if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      if (mounted) _showSettingsRedirectDialog();
     }
   }
 
   void _showSettingsRedirectDialog() {
     showDialog(
       context: context,
+      barrierDismissible: false, // إجبار المستخدم على اتخاذ قرار لضمان استقبال الطلبات
       builder: (context) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text("تفعيل الإشعارات", style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-          content: const Text("استقبال الطلبات يتطلب تفعيل الإشعارات. يرجى تفعيلها من إعدادات الهاتف لضمان وصول التنبيهات إليك.", style: TextStyle(fontFamily: 'Cairo')),
+          content: const Text("استقبال الطلبات يتطلب تفعيل الإشعارات. يرجى تفعيلها من إعدادات الهاتف لضمان ظهور طلبات الرادار لديك.", style: TextStyle(fontFamily: 'Cairo')),
           actions: [
             TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("لاحقاً", style: TextStyle(color: Colors.grey, fontFamily: 'Cairo')),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
               onPressed: () {
                 Navigator.pop(context);
                 AppSettings.openAppSettings(type: AppSettingsType.notification);
               },
-              child: const Text("الذهاب للإعدادات", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+              child: const Text("الذهاب للإعدادات", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
             ),
           ],
         ),
@@ -83,11 +103,9 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // 🏗️ واجهة لوحة التحكم العصرية
   Widget _buildModernDashboard() {
     return CustomScrollView(
       slivers: [
-        // الهيدر (الترحيب وحالة الاتصال)
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 25, 20, 15),
@@ -106,38 +124,28 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
             ),
           ),
         ),
-
-        // تنبيه الطلب النشط
         if (_activeOrderId != null)
           SliverToBoxAdapter(child: _buildActiveOrderBanner()),
-
-        // الإحصائيات الحية
         _buildLiveStatsGrid(),
       ],
     );
   }
 
-  // 📊 ربط البيانات بالفايربيز (أرباح، طلبات، تقييم)
   Widget _buildLiveStatsGrid() {
     return StreamBuilder<QuerySnapshot>(
-      // مراقبة طلبات اليوم المسلمة
       stream: FirebaseFirestore.instance
           .collection('specialRequests')
           .where('driverId', isEqualTo: uid)
           .where('status', isEqualTo: 'delivered')
           .snapshots(),
       builder: (context, ordersSnapshot) {
-        
         return StreamBuilder<DocumentSnapshot>(
-          // مراقبة بيانات المندوب (التقييم)
           stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
           builder: (context, driverSnapshot) {
-            
             double todayEarnings = 0.0;
             int completedCount = 0;
-            double rating = 4.0; // البداية بـ 4 نجوم
+            double rating = 4.0; 
 
-            // حساب أرباح اليوم
             if (ordersSnapshot.hasData) {
               final today = DateTime.now();
               final startOfToday = DateTime(today.year, today.month, today.day);
@@ -151,7 +159,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
               }
             }
 
-            // حساب التقييم الاحترافي
             if (driverSnapshot.hasData && driverSnapshot.data!.exists) {
               var dData = driverSnapshot.data!.data() as Map<String, dynamic>;
               double totalStars = double.tryParse(dData['totalStars']?.toString() ?? '0') ?? 0.0;
@@ -239,13 +246,14 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- المنطق (Logic) ---
-
   void _toggleOnlineStatus(bool value) async {
-    NotificationSettings settings = await FirebaseMessaging.instance.getNotificationSettings();
-    if (value && settings.authorizationStatus != AuthorizationStatus.authorized) {
-      _showSettingsRedirectDialog();
-      return;
+    // منع المندوب من فتح أونلاين إذا كانت الإشعارات مغلقة تماماً
+    if (value) {
+      NotificationSettings settings = await FirebaseMessaging.instance.getNotificationSettings();
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        _showSettingsRedirectDialog();
+        return;
+      }
     }
 
     await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
@@ -308,7 +316,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       _activeOrderId != null 
           ? ActiveOrderScreen(orderId: _activeOrderId!) 
           : AvailableOrdersScreen(vehicleType: _vehicleConfig),
-      const Center(child: Text("سجل الطلبات قريباً")),
+      const Center(child: Text("سجل الطلبات قريباً", style: TextStyle(fontFamily: 'Cairo'))),
       const WalletScreen(),
     ];
     return pages[_selectedIndex];
