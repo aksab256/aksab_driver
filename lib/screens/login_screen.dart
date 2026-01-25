@@ -1,11 +1,16 @@
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // مكتبة الإشعارات
+import 'package:http/http.dart' as http; // مكتبة النداءات الخارجية
+import 'dart:convert';
+
 import 'free_driver_home_screen.dart';
 import 'CompanyRepHomeScreen.dart';
-import 'delivery_admin_dashboard.dart'; // استيراد صفحة الإدارة الجديدة
+import 'delivery_admin_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -19,6 +24,30 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+
+  // دالة إرسال بيانات التوكن لـ AWS (نفس الرابط ونفس التنسيق)
+  Future<void> _sendNotificationDataToAWS(String role) async {
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
+      String? uid = FirebaseAuth.instance.currentUser?.uid;
+      
+      if (token != null && uid != null) {
+        const String apiUrl = "https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction";
+        await http.post(
+          Uri.parse(apiUrl),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({
+            "userId": uid, 
+            "fcmToken": token, 
+            "role": role 
+          }),
+        );
+        debugPrint("✅ AWS Notification Data Sent Successfully for role: $role");
+      }
+    } catch (e) {
+      debugPrint("❌ AWS Notification Error: $e");
+    }
+  }
 
   Future<void> _saveVehicleInfo(String config) async {
     final prefs = await SharedPreferences.getInstance();
@@ -42,11 +71,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       String uid = userCredential.user!.uid;
 
-      // 1. فحص هل هو مندوب شركة (deliveryReps)
+      // 1. فحص مندوب شركة (deliveryReps)
       var repSnap = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repSnap.exists) {
         var userData = repSnap.data()!;
         if (userData['status'] == 'approved') {
+          // 🔥 إرسال البيانات لـ AWS قبل الانتقال
+          _sendNotificationDataToAWS('delivery_rep').catchError((e) => debugPrint(e.toString()));
+          
           if (mounted) {
             Navigator.pushReplacement(
               context,
@@ -61,13 +93,17 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 2. فحص هل هو مندوب حر (freeDrivers)
+      // 2. فحص مندوب حر (freeDrivers)
       var freeSnap = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeSnap.exists) {
         var userData = freeSnap.data()!;
         if (userData['status'] == 'approved') {
           String config = userData['vehicleConfig'] ?? 'motorcycleConfig';
           await _saveVehicleInfo(config);
+          
+          // 🔥 إرسال البيانات لـ AWS قبل الانتقال
+          _sendNotificationDataToAWS('free_driver').catchError((e) => debugPrint(e.toString()));
+
           if (mounted) {
             Navigator.pushReplacement(
               context,
@@ -82,14 +118,16 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 3. فحص هل هو من طاقم الإدارة (managers)
+      // 3. فحص طاقم الإدارة (managers)
       var managerSnap = await FirebaseFirestore.instance.collection('managers').doc(uid).get();
       if (managerSnap.exists) {
         var managerData = managerSnap.data()!;
         String role = managerData['role'] ?? '';
 
-        // السماح فقط لأدوار التوصيل بالدخول لهذا التطبيق
         if (role == 'delivery_manager' || role == 'delivery_supervisor') {
+          // 🔥 إرسال البيانات لـ AWS للمديرين أيضاً لضمان وصول التنبيهات الإدارية
+          _sendNotificationDataToAWS(role).catchError((e) => debugPrint(e.toString()));
+
           if (mounted) {
             Navigator.pushReplacement(
               context,
@@ -104,7 +142,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // إذا لم يوجد في أي كولكشن
       _showError("لم يتم العثور على صلاحيات لهذا الحساب");
       await FirebaseAuth.instance.signOut();
 
@@ -117,14 +154,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 14.sp)),
+      content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo')),
       backgroundColor: Colors.redAccent,
     ));
   }
 
   @override
   Widget build(BuildContext context) {
-    // ... نفس كود الـ UI الموجود لديك بدون تغيير ...
     return Scaffold(
       backgroundColor: Colors.white,
       body: _isLoading
@@ -145,9 +181,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     SizedBox(height: 2.h),
                     Text("أكسب مناديب",
-                        style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.w900, color: Colors.black87)),
+                        style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.w900, color: Colors.black87, fontFamily: 'Cairo')),
                     Text("سجل دخولك لبدء العمل",
-                        style: TextStyle(fontSize: 14.sp, color: Colors.grey[600])),
+                        style: TextStyle(fontSize: 14.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
                     SizedBox(height: 4.h),
                     _buildInput(_phoneController, "رقم الهاتف", Icons.phone, type: TextInputType.phone),
                     _buildInput(_passwordController, "كلمة المرور", Icons.lock, isPass: true),
@@ -161,13 +197,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       onPressed: _handleLogin,
                       child: Text("دخول للنظام",
-                          style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold)),
+                          style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
                     ),
                     SizedBox(height: 2.h),
                     TextButton(
                       onPressed: () => Navigator.pushNamed(context, '/register'),
                       child: Text("ليس لديك حساب؟ سجل الآن",
-                          style: TextStyle(color: Colors.orange[900], fontSize: 14.sp, fontWeight: FontWeight.w600)),
+                          style: TextStyle(color: Colors.orange[900], fontSize: 14.sp, fontWeight: FontWeight.w600, fontFamily: 'Cairo')),
                     ),
                     SizedBox(height: 2.h),
                   ],
@@ -189,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
         style: TextStyle(fontSize: 15.sp),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(fontSize: 14.sp),
+          labelStyle: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo'),
           contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 5.w),
           prefixIcon: Icon(icon, color: Colors.orange[800], size: 22.sp),
           suffixIcon: isPass
@@ -210,4 +246,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-
