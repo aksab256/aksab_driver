@@ -4,8 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // مكتبة الإشعارات
-import 'package:app_settings/app_settings.dart'; // مكتبة لفتح الإعدادات (تحتاج لإضافتها في pubspec.yaml)
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:app_settings/app_settings.dart';
 import 'available_orders_screen.dart';
 import 'active_order_screen.dart';
 import 'wallet_screen.dart';
@@ -22,6 +22,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   int _selectedIndex = 0;
   String? _activeOrderId;
   String _vehicleConfig = 'motorcycleConfig';
+  final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
 
   @override
   void initState() {
@@ -30,333 +31,305 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     _fetchInitialStatus();
     _listenToActiveOrders();
     
-    // فحص أذونات الإشعارات فور الدخول
+    // ✅ فحص الإشعارات المتوافق مع سياسات جوجل
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAndRequestNotificationPermission();
+      _checkNotificationPermission();
     });
   }
 
-  // 🛡️ دالة الفحص الذكي للإشعارات
-  Future<void> _checkAndRequestNotificationPermission() async {
+  // 🛡️ منطق الإشعارات الاحترافي
+  Future<void> _checkNotificationPermission() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
     NotificationSettings settings = await messaging.getNotificationSettings();
 
-    // الحالة 1: لم يتم طلب الإذن من قبل (أول مرة)
     if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
-      _showRationaleDialog();
-    } 
-    // الحالة 2: المندوب رفض الإشعارات نهائياً من إعدادات النظام
-    else if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      await messaging.requestPermission(alert: true, badge: true, sound: true);
+    } else if (settings.authorizationStatus == AuthorizationStatus.denied) {
       _showSettingsRedirectDialog();
     }
   }
 
-  // ديالوج الشرح (الرسالة التمهيدية)
-  void _showRationaleDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _buildCustomDialog(
-        title: "تفعيل التنبيهات",
-        content: "من فضلك، فعل الإشعارات لتتمكن من استقبال طلبات التوصيل الجديدة فور صدورها. بدون هذا الإذن، لن تصلك تنبيهات العمل.",
-        buttonText: "موافق، تفعيل الآن",
-        onPressed: () async {
-          Navigator.pop(context);
-          await FirebaseMessaging.instance.requestPermission(alert: true, badge: true, sound: true);
-        },
-      ),
-    );
-  }
-
-  // ديالوج التوجيه للإعدادات (لو هو قافلها من الموبايل نفسه)
   void _showSettingsRedirectDialog() {
     showDialog(
       context: context,
-      builder: (context) => _buildCustomDialog(
-        title: "الإشعارات معطلة",
-        content: "لقد قمت بتعطيل إشعارات التطبيق من إعدادات هاتفك. يرجى تفعيلها لتتمكن من استلام الطلبات.",
-        buttonText: "الذهاب للإعدادات",
-        onPressed: () {
-          Navigator.pop(context);
-          AppSettings.openAppSettings(type: AppSettingsType.notification); // تفتح إعدادات إشعارات التطبيق
-        },
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text("تفعيل الإشعارات", style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+          content: const Text("استقبال الطلبات يتطلب تفعيل الإشعارات. يرجى تفعيلها من إعدادات الهاتف لضمان وصول التنبيهات إليك.", style: TextStyle(fontFamily: 'Cairo')),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                AppSettings.openAppSettings(type: AppSettingsType.notification);
+              },
+              child: const Text("الذهاب للإعدادات", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildCustomDialog({required String title, required String content, required String buttonText, required VoidCallback onPressed}) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-        content: Text(content, style: const TextStyle(fontFamily: 'Cairo')),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]),
-            onPressed: onPressed,
-            child: Text(buttonText, style: const TextStyle(color: Colors.white, fontFamily: 'Cairo')),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: SafeArea(
+        child: _selectedIndex == 0 ? _buildModernDashboard() : _buildOtherPages(),
+      ),
+      bottomNavigationBar: _buildBottomNav(),
+    );
+  }
+
+  // 🏗️ واجهة لوحة التحكم العصرية
+  Widget _buildModernDashboard() {
+    return CustomScrollView(
+      slivers: [
+        // الهيدر (الترحيب وحالة الاتصال)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 25, 20, 15),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("أهلاً بك، مندوبنا 👋", style: TextStyle(fontSize: 11.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
+                    Text("أكسب مناديب", style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: Colors.black, fontFamily: 'Cairo')),
+                  ],
+                ),
+                _buildStatusToggle(),
+              ],
+            ),
+          ),
+        ),
+
+        // تنبيه الطلب النشط
+        if (_activeOrderId != null)
+          SliverToBoxAdapter(child: _buildActiveOrderBanner()),
+
+        // الإحصائيات الحية
+        _buildLiveStatsGrid(),
+      ],
+    );
+  }
+
+  // 📊 ربط البيانات بالفايربيز (أرباح، طلبات، تقييم)
+  Widget _buildLiveStatsGrid() {
+    return StreamBuilder<QuerySnapshot>(
+      // مراقبة طلبات اليوم المسلمة
+      stream: FirebaseFirestore.instance
+          .collection('specialRequests')
+          .where('driverId', isEqualTo: uid)
+          .where('status', isEqualTo: 'delivered')
+          .snapshots(),
+      builder: (context, ordersSnapshot) {
+        
+        return StreamBuilder<DocumentSnapshot>(
+          // مراقبة بيانات المندوب (التقييم)
+          stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
+          builder: (context, driverSnapshot) {
+            
+            double todayEarnings = 0.0;
+            int completedCount = 0;
+            double rating = 4.0; // البداية بـ 4 نجوم
+
+            // حساب أرباح اليوم
+            if (ordersSnapshot.hasData) {
+              final today = DateTime.now();
+              final startOfToday = DateTime(today.year, today.month, today.day);
+              for (var doc in ordersSnapshot.data!.docs) {
+                var d = doc.data() as Map<String, dynamic>;
+                Timestamp? time = d['completedAt'] as Timestamp?;
+                if (time != null && time.toDate().isAfter(startOfToday)) {
+                  completedCount++;
+                  todayEarnings += double.tryParse(d['price']?.toString() ?? '0') ?? 0.0;
+                }
+              }
+            }
+
+            // حساب التقييم الاحترافي
+            if (driverSnapshot.hasData && driverSnapshot.data!.exists) {
+              var dData = driverSnapshot.data!.data() as Map<String, dynamic>;
+              double totalStars = double.tryParse(dData['totalStars']?.toString() ?? '0') ?? 0.0;
+              int reviews = int.tryParse(dData['reviewsCount']?.toString() ?? '0') ?? 0;
+              rating = (4.0 + totalStars) / (1 + reviews);
+            }
+
+            return SliverPadding(
+              padding: const EdgeInsets.all(20),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 15,
+                  crossAxisSpacing: 15,
+                  childAspectRatio: 1.1,
+                ),
+                delegate: SliverChildListDelegate([
+                  _modernStatCard("أرباح اليوم", "${todayEarnings.toStringAsFixed(2)} ج.م", Icons.account_balance_wallet_rounded, Colors.blue),
+                  _modernStatCard("طلبات منفذة", "$completedCount", Icons.shopping_bag_rounded, Colors.orange),
+                  _modernStatCard("نوع المركبة", _vehicleConfig == 'motorcycleConfig' ? "موتوسيكل" : "سيارة", Icons.moped_rounded, Colors.purple),
+                  _modernStatCard("تقييمك", rating.toStringAsFixed(1), Icons.star_rounded, Colors.amber),
+                ]),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _modernStatCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(color: color.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 8)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            child: Icon(icon, color: color, size: 22.sp),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(value, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+              Text(title, style: TextStyle(fontSize: 9.sp, color: Colors.grey, fontFamily: 'Cairo')),
+            ],
           ),
         ],
       ),
     );
   }
 
-  void _loadVehicleConfig() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _vehicleConfig = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig';
-    });
+  Widget _buildStatusToggle() {
+    return GestureDetector(
+      onTap: () => _toggleOnlineStatus(!isOnline),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isOnline ? Colors.green[50] : Colors.red[50],
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(color: isOnline ? Colors.green : Colors.red, width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8, height: 8,
+              decoration: BoxDecoration(color: isOnline ? Colors.green : Colors.red, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Text(isOnline ? "متصل" : "غير متصل", 
+              style: TextStyle(color: isOnline ? Colors.green[800] : Colors.red[800], fontWeight: FontWeight.bold, fontSize: 10.sp, fontFamily: 'Cairo')),
+          ],
+        ),
+      ),
+    );
   }
 
-  void _listenToActiveOrders() {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    FirebaseFirestore.instance
-        .collection('specialRequests')
-        .where('driverId', isEqualTo: uid)
-        .where('status', whereIn: ['accepted', 'picked_up'])
-        .snapshots()
-        .listen((snapshot) {
-      if (mounted) {
-        setState(() {
-          _activeOrderId = snapshot.docs.isNotEmpty ? snapshot.docs.first.id : null;
-        });
-      }
-    });
-  }
-
-  void _fetchInitialStatus() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
-      if (doc.exists && mounted) {
-        setState(() => isOnline = doc.data()?['isOnline'] ?? false);
-      }
-    }
-  }
+  // --- المنطق (Logic) ---
 
   void _toggleOnlineStatus(bool value) async {
-    // فحص إضافي: لا تسمح له بالتحول لـ Online إلا لو الإشعارات مفعلة
     NotificationSettings settings = await FirebaseMessaging.instance.getNotificationSettings();
     if (value && settings.authorizationStatus != AuthorizationStatus.authorized) {
       _showSettingsRedirectDialog();
       return;
     }
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
-        'isOnline': value,
-        'lastSeen': FieldValue.serverTimestamp(),
-      });
-      setState(() => isOnline = value);
+    await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
+      'isOnline': value,
+      'lastSeen': FieldValue.serverTimestamp(),
+    });
+    setState(() => isOnline = value);
+  }
+
+  void _loadVehicleConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _vehicleConfig = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig');
+  }
+
+  void _fetchInitialStatus() async {
+    var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
+    if (doc.exists && mounted) {
+      setState(() => isOnline = doc.data()?['isOnline'] ?? false);
     }
   }
 
-  void _logout() async {
-    await FirebaseAuth.instance.signOut();
-    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  void _listenToActiveOrders() {
+    FirebaseFirestore.instance
+        .collection('specialRequests')
+        .where('driverId', isEqualTo: uid)
+        .where('status', whereIn: ['accepted', 'picked_up'])
+        .snapshots()
+        .listen((snap) {
+      if (mounted) setState(() => _activeOrderId = snap.docs.isNotEmpty ? snap.docs.first.id : null);
+    });
   }
 
-  void _softDeleteAccount() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    bool confirm = await _showConfirmDialog();
-    if (confirm && uid != null) {
-      await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({'status': 'deleted'});
-      _logout();
-    }
-  }
-
-  Future<bool> _showConfirmDialog() async {
-    return await showDialog(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text("حذف الحساب", textAlign: TextAlign.right),
-        content: const Text("هل أنت متأكد من رغبتك في إغلاق الحساب؟ سيتم مراجعة طلبك من الإدارة.", textAlign: TextAlign.right),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("إلغاء")),
-          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد الحذف", style: TextStyle(color: Colors.red))),
-        ],
+  Widget _buildActiveOrderBanner() {
+    return GestureDetector(
+      onTap: () => setState(() => _selectedIndex = 1),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [Colors.orange[800]!, Colors.orange[900]!]),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.delivery_dining, color: Colors.white, size: 30),
+            const SizedBox(width: 15),
+            const Expanded(
+              child: Text("لديك طلب نشط جاري تنفيذه", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+            ),
+            const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 15),
+          ],
+        ),
       ),
-    ) ?? false;
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final List<Widget> _pages = [
-      _buildDashboardContent(),
+  Widget _buildOtherPages() {
+    final List<Widget> pages = [
+      const SizedBox(),
       _activeOrderId != null 
           ? ActiveOrderScreen(orderId: _activeOrderId!) 
           : AvailableOrdersScreen(vehicleType: _vehicleConfig),
       const Center(child: Text("سجل الطلبات قريباً")),
       const WalletScreen(),
     ];
-
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 1,
-        iconTheme: const IconThemeData(color: Colors.black),
-        title: Text(_activeOrderId != null ? "طلب نشط" : "أكسب مناديب", 
-          style: TextStyle(color: Colors.black, fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-        centerTitle: true,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(left: 10),
-            child: Switch(value: isOnline, activeColor: Colors.orange[900], onChanged: _toggleOnlineStatus),
-          ),
-        ],
-      ),
-      drawer: _buildSideDrawer(),
-      body: _pages[_selectedIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          if (index == 1 && !isOnline && _activeOrderId == null) {
-             _showStatusAlert();
-             return;
-          }
-          setState(() => _selectedIndex = index);
-        },
-        selectedItemColor: Colors.orange[900],
-        unselectedItemColor: Colors.grey[600],
-        type: BottomNavigationBarType.fixed,
-        items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: "الرئيسية"),
-          BottomNavigationBarItem(
-            icon: _activeOrderId != null 
-                ? const Icon(Icons.directions_run, color: Colors.green) 
-                : (isOnline ? _buildPulseIcon() : const Icon(Icons.radar)), 
-            label: "الرادار"
-          ),
-          const BottomNavigationBarItem(icon: Icon(Icons.history), label: "طلباتي"),
-          const BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet), label: "المحفظة"),
-        ],
-      ),
-    );
+    return pages[_selectedIndex];
   }
 
-  // ... (باقي دوال الـ UI مثل _buildSideDrawer و _buildDashboardContent تظل كما هي)
-  Widget _buildSideDrawer() {
-    return Drawer(
-      child: Column(
-        children: [
-          UserAccountsDrawerHeader(
-            decoration: BoxDecoration(color: Colors.orange[900]),
-            accountName: const Text("مندوب أكسب", style: TextStyle(fontFamily: 'Cairo')),
-            accountEmail: Text(FirebaseAuth.instance.currentUser?.email ?? ""),
-            currentAccountPicture: const CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.person, size: 40, color: Colors.black)),
-          ),
-          ListTile(
-            leading: const Icon(Icons.person_outline, color: Colors.blue),
-            title: const Text("حسابي (إغلاق الحساب)", style: TextStyle(fontFamily: 'Cairo')),
-            onTap: _softDeleteAccount,
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo')),
-            onTap: _logout,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDashboardContent() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          if (_activeOrderId != null) _activeOrderBanner(),
-          _buildLiveStatsGrid(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLiveStatsGrid() {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('specialRequests').where('driverId', isEqualTo: uid).where('status', isEqualTo: 'delivered').snapshots(),
-      builder: (context, snapshot) {
-        double todayTotalEarnings = 0.0;
-        int completedCount = 0;
-
-        if (snapshot.hasData) {
-          final todayStart = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
-          for (var doc in snapshot.data!.docs) {
-            final data = doc.data() as Map<String, dynamic>;
-            Timestamp? completedAt = data['completedAt'] as Timestamp?;
-            if (completedAt != null && completedAt.toDate().isAfter(todayStart)) {
-              completedCount++;
-              todayTotalEarnings += double.tryParse(data['price'].toString()) ?? 0.0;
-            }
-          }
-        }
-
-        return GridView.count(
-          shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2, crossAxisSpacing: 15, mainAxisSpacing: 15,
-          children: [
-            _statCard("أرباح اليوم", "${todayTotalEarnings.toStringAsFixed(2)} ج.م", Icons.monetization_on, Colors.blue),
-            _statCard("طلبات منفذة", "$completedCount", Icons.shopping_basket, Colors.orange),
-            _statCard("نوع المركبة", _vehicleConfig == 'motorcycleConfig' ? "موتوسيكل" : "سيارة", Icons.vape_free, Colors.purple),
-            _statCard("تقييمك", "5.0", Icons.star, Colors.amber),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _statCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [const BoxShadow(color: Colors.black12, blurRadius: 10)]),
-      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(icon, color: color, size: 25.sp),
-        const SizedBox(height: 10),
-        Text(title, style: TextStyle(color: Colors.grey, fontSize: 10.sp, fontFamily: 'Cairo')),
-        Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp)),
-      ]),
-    );
-  }
-
-  Widget _buildPulseIcon() {
-    return TweenAnimationBuilder(
-      tween: Tween<double>(begin: 1.0, end: 1.2),
-      duration: const Duration(milliseconds: 800),
-      builder: (context, double scale, child) => Transform.scale(
-        scale: scale,
-        child: Icon(Icons.radar, color: Colors.orange[900]),
-      ),
-      onEnd: () => setState(() {}),
-    );
-  }
-
-  void _showStatusAlert() {
-     showDialog(
-       context: context,
-       builder: (c) => AlertDialog(
-         title: const Text("تنبيه", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo')),
-         content: const Text("يجب تفعيل وضع الاتصال (Online) أولاً لاستلام الطلبات.", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo')),
-         actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text("حسناً"))],
-       ),
-     );
-  }
-
-  Widget _activeOrderBanner() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 15),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.orange[900], borderRadius: BorderRadius.circular(20)),
-      child: Row(children: [
-        const Icon(Icons.delivery_dining, color: Colors.white),
-        const SizedBox(width: 10),
-        const Expanded(child: Text("لديك طلب نشط", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))),
-        TextButton(onPressed: () => setState(() => _selectedIndex = 1), child: const Text("تابعه", style: TextStyle(color: Colors.yellow, fontFamily: 'Cairo')))
-      ]),
+  Widget _buildBottomNav() {
+    return BottomNavigationBar(
+      currentIndex: _selectedIndex,
+      onTap: (i) => setState(() => _selectedIndex = i),
+      selectedItemColor: Colors.orange[900],
+      unselectedItemColor: Colors.grey[400],
+      showUnselectedLabels: true,
+      type: BottomNavigationBarType.fixed,
+      selectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+      unselectedLabelStyle: const TextStyle(fontFamily: 'Cairo'),
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: "الرئيسية"),
+        BottomNavigationBarItem(icon: Icon(Icons.explore_rounded), label: "الرادار"),
+        BottomNavigationBarItem(icon: Icon(Icons.history_rounded), label: "طلباتي"),
+        BottomNavigationBarItem(icon: Icon(Icons.wallet_rounded), label: "المحفظة"),
+      ],
     );
   }
 }
