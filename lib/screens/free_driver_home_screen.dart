@@ -1,8 +1,11 @@
+// lib/screens/free_driver_home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // مكتبة الإشعارات
+import 'package:app_settings/app_settings.dart'; // مكتبة لفتح الإعدادات (تحتاج لإضافتها في pubspec.yaml)
 import 'available_orders_screen.dart';
 import 'active_order_screen.dart';
 import 'wallet_screen.dart';
@@ -18,7 +21,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   bool isOnline = false;
   int _selectedIndex = 0;
   String? _activeOrderId;
-  String _vehicleConfig = 'motorcycleConfig'; // القيمة الافتراضية
+  String _vehicleConfig = 'motorcycleConfig';
 
   @override
   void initState() {
@@ -26,9 +29,79 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     _loadVehicleConfig();
     _fetchInitialStatus();
     _listenToActiveOrders();
+    
+    // فحص أذونات الإشعارات فور الدخول
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndRequestNotificationPermission();
+    });
   }
 
-  // تحميل نوع المركبة المحفوظ عند تسجيل الدخول
+  // 🛡️ دالة الفحص الذكي للإشعارات
+  Future<void> _checkAndRequestNotificationPermission() async {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    NotificationSettings settings = await messaging.getNotificationSettings();
+
+    // الحالة 1: لم يتم طلب الإذن من قبل (أول مرة)
+    if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+      _showRationaleDialog();
+    } 
+    // الحالة 2: المندوب رفض الإشعارات نهائياً من إعدادات النظام
+    else if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      _showSettingsRedirectDialog();
+    }
+  }
+
+  // ديالوج الشرح (الرسالة التمهيدية)
+  void _showRationaleDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _buildCustomDialog(
+        title: "تفعيل التنبيهات",
+        content: "من فضلك، فعل الإشعارات لتتمكن من استقبال طلبات التوصيل الجديدة فور صدورها. بدون هذا الإذن، لن تصلك تنبيهات العمل.",
+        buttonText: "موافق، تفعيل الآن",
+        onPressed: () async {
+          Navigator.pop(context);
+          await FirebaseMessaging.instance.requestPermission(alert: true, badge: true, sound: true);
+        },
+      ),
+    );
+  }
+
+  // ديالوج التوجيه للإعدادات (لو هو قافلها من الموبايل نفسه)
+  void _showSettingsRedirectDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => _buildCustomDialog(
+        title: "الإشعارات معطلة",
+        content: "لقد قمت بتعطيل إشعارات التطبيق من إعدادات هاتفك. يرجى تفعيلها لتتمكن من استلام الطلبات.",
+        buttonText: "الذهاب للإعدادات",
+        onPressed: () {
+          Navigator.pop(context);
+          AppSettings.openAppSettings(type: AppSettingsType.notification); // تفتح إعدادات إشعارات التطبيق
+        },
+      ),
+    );
+  }
+
+  Widget _buildCustomDialog({required String title, required String content, required String buttonText, required VoidCallback onPressed}) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        content: Text(content, style: const TextStyle(fontFamily: 'Cairo')),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]),
+            onPressed: onPressed,
+            child: Text(buttonText, style: const TextStyle(color: Colors.white, fontFamily: 'Cairo')),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _loadVehicleConfig() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -64,6 +137,13 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _toggleOnlineStatus(bool value) async {
+    // فحص إضافي: لا تسمح له بالتحول لـ Online إلا لو الإشعارات مفعلة
+    NotificationSettings settings = await FirebaseMessaging.instance.getNotificationSettings();
+    if (value && settings.authorizationStatus != AuthorizationStatus.authorized) {
+      _showSettingsRedirectDialog();
+      return;
+    }
+
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
@@ -74,13 +154,11 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     }
   }
 
-  // دالة تسجيل الخروج
   void _logout() async {
     await FirebaseAuth.instance.signOut();
     Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
-  // دالة الحذف الناعم (Soft Delete)
   void _softDeleteAccount() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     bool confirm = await _showConfirmDialog();
@@ -110,7 +188,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       _buildDashboardContent(),
       _activeOrderId != null 
           ? ActiveOrderScreen(orderId: _activeOrderId!) 
-          : AvailableOrdersScreen(vehicleType: _vehicleConfig), // تمرير نوع المركبة هنا
+          : AvailableOrdersScreen(vehicleType: _vehicleConfig),
       const Center(child: Text("سجل الطلبات قريباً")),
       const WalletScreen(),
     ];
@@ -120,9 +198,9 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        iconTheme: const IconThemeData(color: Colors.black), // للـ Drawer
+        iconTheme: const IconThemeData(color: Colors.black),
         title: Text(_activeOrderId != null ? "طلب نشط" : "أكسب مناديب", 
-          style: TextStyle(color: Colors.black, fontSize: 16.sp, fontWeight: FontWeight.bold)),
+          style: TextStyle(color: Colors.black, fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
         centerTitle: true,
         actions: [
           Padding(
@@ -131,7 +209,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           ),
         ],
       ),
-      drawer: _buildSideDrawer(), // الشريط الجانبي الجديد
+      drawer: _buildSideDrawer(),
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
@@ -160,25 +238,26 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
+  // ... (باقي دوال الـ UI مثل _buildSideDrawer و _buildDashboardContent تظل كما هي)
   Widget _buildSideDrawer() {
     return Drawer(
       child: Column(
         children: [
           UserAccountsDrawerHeader(
             decoration: BoxDecoration(color: Colors.orange[900]),
-            accountName: const Text("مندوب أكسب"),
+            accountName: const Text("مندوب أكسب", style: TextStyle(fontFamily: 'Cairo')),
             accountEmail: Text(FirebaseAuth.instance.currentUser?.email ?? ""),
             currentAccountPicture: const CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.person, size: 40, color: Colors.black)),
           ),
           ListTile(
             leading: const Icon(Icons.person_outline, color: Colors.blue),
-            title: const Text("حسابي (إغلاق الحساب)"),
+            title: const Text("حسابي (إغلاق الحساب)", style: TextStyle(fontFamily: 'Cairo')),
             onTap: _softDeleteAccount,
           ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text("تسجيل الخروج"),
+            title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo')),
             onTap: _logout,
           ),
         ],
@@ -203,7 +282,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('specialRequests').where('driverId', isEqualTo: uid).where('status', isEqualTo: 'delivered').snapshots(),
       builder: (context, snapshot) {
-        double todayTotalEarnings = 0.0; // القيمة الإجمالية للطلب
+        double todayTotalEarnings = 0.0;
         int completedCount = 0;
 
         if (snapshot.hasData) {
@@ -222,7 +301,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
           crossAxisCount: 2, crossAxisSpacing: 15, mainAxisSpacing: 15,
           children: [
-            _statCard("أرباح اليوم (إجمالي)", "${todayTotalEarnings.toStringAsFixed(2)} ج.م", Icons.monetization_on, Colors.blue),
+            _statCard("أرباح اليوم", "${todayTotalEarnings.toStringAsFixed(2)} ج.م", Icons.monetization_on, Colors.blue),
             _statCard("طلبات منفذة", "$completedCount", Icons.shopping_basket, Colors.orange),
             _statCard("نوع المركبة", _vehicleConfig == 'motorcycleConfig' ? "موتوسيكل" : "سيارة", Icons.vape_free, Colors.purple),
             _statCard("تقييمك", "5.0", Icons.star, Colors.amber),
@@ -238,7 +317,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         Icon(icon, color: color, size: 25.sp),
         const SizedBox(height: 10),
-        Text(title, style: TextStyle(color: Colors.grey, fontSize: 10.sp)),
+        Text(title, style: TextStyle(color: Colors.grey, fontSize: 10.sp, fontFamily: 'Cairo')),
         Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp)),
       ]),
     );
@@ -255,10 +334,16 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       onEnd: () => setState(() {}),
     );
   }
-  
-  // دالة التنبيه إذا كان أوفلاين
+
   void _showStatusAlert() {
-     // نفس كود الديالوج السابق مع تغيير اللون للبرتقالي
+     showDialog(
+       context: context,
+       builder: (c) => AlertDialog(
+         title: const Text("تنبيه", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo')),
+         content: const Text("يجب تفعيل وضع الاتصال (Online) أولاً لاستلام الطلبات.", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo')),
+         actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text("حسناً"))],
+       ),
+     );
   }
 
   Widget _activeOrderBanner() {
@@ -269,10 +354,9 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       child: Row(children: [
         const Icon(Icons.delivery_dining, color: Colors.white),
         const SizedBox(width: 10),
-        const Expanded(child: Text("لديك طلب نشط", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-        TextButton(onPressed: () => setState(() => _selectedIndex = 1), child: const Text("تابعه", style: TextStyle(color: Colors.yellow)))
+        const Expanded(child: Text("لديك طلب نشط", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))),
+        TextButton(onPressed: () => setState(() => _selectedIndex = 1), child: const Text("تابعه", style: TextStyle(color: Colors.yellow, fontFamily: 'Cairo')))
       ]),
     );
   }
 }
-
