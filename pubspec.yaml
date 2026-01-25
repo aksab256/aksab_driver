@@ -36,7 +36,6 @@ dependencies:
 
   # --- 🚀 التتبع والموقع في الخلفية (البديل المستقر) ---
   flutter_background_service: ^5.0.10
-  # ✅ مكتبات ضرورية مكنتش موجودة ومسببة فشل البناء
   flutter_background_service_android: ^6.3.1
   flutter_local_notifications: ^17.2.3
 
@@ -44,6 +43,8 @@ dependencies:
   provider: ^6.1.2
   shared_preferences: ^2.5.3
   permission_handler: ^12.0.1
+  # ✅ إضافة مكتبة فتح الإعدادات لحل أخطاء البناء
+  app_settings: ^5.1.1 
   share_plus: ^10.1.4
   path_provider: ^2.1.3
   http: ^1.6.0
