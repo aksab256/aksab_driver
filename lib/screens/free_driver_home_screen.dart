@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:app_settings/app_settings.dart';
 import 'available_orders_screen.dart';
 import 'active_order_screen.dart';
 import 'wallet_screen.dart';
@@ -17,7 +16,7 @@ class FreeDriverHomeScreen extends StatefulWidget {
 }
 
 class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
-  bool isOnline = false; // الافتراضي غير متصل
+  bool isOnline = false; 
   int _selectedIndex = 0;
   String? _activeOrderId;
   String _vehicleConfig = 'motorcycleConfig';
@@ -27,61 +26,48 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   void initState() {
     super.initState();
     _loadVehicleConfig();
-    _fetchInitialStatus(); // جلب الحالة الحقيقية من الداتابيز
+    _fetchInitialStatus(); // مزامنة الحالة الحقيقية من فايربيز فوراً
     _listenToActiveOrders();
     
+    // طلب إذن الإشعارات بنعومة مرة واحدة عند الدخول
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestNotificationPermissionQuietly();
+      _requestNotificationPermissionOnce();
     });
   }
 
-  // طلب الإذن بنعومة دون إجبار
-  Future<void> _requestNotificationPermissionQuietly() async {
+  // طلب الإذن الرسمي من النظام لمرة واحدة
+  Future<void> _requestNotificationPermissionOnce() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
-    NotificationSettings settings = await messaging.getNotificationSettings();
-
-    if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
-      await messaging.requestPermission(alert: true, badge: true, sound: true);
-    }
+    await messaging.requestPermission(alert: true, badge: true, sound: true);
   }
 
-  void _showSettingsRedirectDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: true, 
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-          title: const Text("تنبيه هام", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, fontFamily: 'Cairo')),
-          content: const Text("لكي يستطيع الرادار تنبيهك بالطلبات الجديدة، يجب تفعيل الإشعارات من إعدادات الهاتف.", 
-            style: TextStyle(fontFamily: 'Cairo', fontSize: 18)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("إغلاق", style: TextStyle(color: Colors.grey, fontSize: 18, fontFamily: 'Cairo')),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange[900],
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                AppSettings.openAppSettings(type: AppSettingsType.notification);
-              },
-              child: const Text("فتح الإعدادات", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'Cairo')),
-            ),
-          ],
+  // دالة التحكم في الانتقال بين الصفحات مع حماية الرادار
+  void _onItemTapped(int index) {
+    if (index == 1 && !isOnline) {
+      // إذا حاول فتح الرادار وهو أوفلاين، تظهر رسالة تنبيه سريعة
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            "⚠️ برجاء تفعيل وضع الاتصال (أونلاين) لفتح الرادار",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: Colors.orange[900],
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(20),
         ),
-      ),
-    );
+      );
+      return; 
+    }
+    setState(() => _selectedIndex = index);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA), // لون خلفية هادئ
+      backgroundColor: const Color(0xFFF4F7FA),
       body: SafeArea(
         child: _selectedIndex == 0 ? _buildModernDashboard() : _buildOtherPages(),
       ),
@@ -89,6 +75,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
+  // --- واجهة لوحة التحكم ---
   Widget _buildModernDashboard() {
     return CustomScrollView(
       slivers: [
@@ -125,44 +112,38 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           .where('status', isEqualTo: 'delivered')
           .snapshots(),
       builder: (context, ordersSnapshot) {
-        return StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
-          builder: (context, driverSnapshot) {
-            double todayEarnings = 0.0;
-            int completedCount = 0;
-            double rating = 4.5; 
+        double todayEarnings = 0.0;
+        int completedCount = 0;
 
-            if (ordersSnapshot.hasData) {
-              final today = DateTime.now();
-              final startOfToday = DateTime(today.year, today.month, today.day);
-              for (var doc in ordersSnapshot.data!.docs) {
-                var d = doc.data() as Map<String, dynamic>;
-                Timestamp? time = d['completedAt'] as Timestamp?;
-                if (time != null && time.toDate().isAfter(startOfToday)) {
-                  completedCount++;
-                  todayEarnings += double.tryParse(d['price']?.toString() ?? '0') ?? 0.0;
-                }
-              }
+        if (ordersSnapshot.hasData) {
+          final today = DateTime.now();
+          final startOfToday = DateTime(today.year, today.month, today.day);
+          for (var doc in ordersSnapshot.data!.docs) {
+            var d = doc.data() as Map<String, dynamic>;
+            Timestamp? time = d['completedAt'] as Timestamp?;
+            if (time != null && time.toDate().isAfter(startOfToday)) {
+              completedCount++;
+              todayEarnings += double.tryParse(d['price']?.toString() ?? '0') ?? 0.0;
             }
+          }
+        }
 
-            return SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 20,
-                  crossAxisSpacing: 20,
-                  childAspectRatio: 0.95,
-                ),
-                delegate: SliverChildListDelegate([
-                  _modernStatCard("أرباح اليوم", "${todayEarnings.toStringAsFixed(0)} ج.م", Icons.payments_rounded, Colors.green),
-                  _modernStatCard("طلباتك", "$completedCount", Icons.local_shipping_rounded, Colors.blue),
-                  _modernStatCard("المركبة", _vehicleConfig == 'motorcycleConfig' ? "موتوسيكل" : "سيارة", Icons.moped_rounded, Colors.orange),
-                  _modernStatCard("تقييمك", rating.toStringAsFixed(1), Icons.stars_rounded, Colors.amber),
-                ]),
-              ),
-            );
-          },
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 20,
+              crossAxisSpacing: 20,
+              childAspectRatio: 0.95,
+            ),
+            delegate: SliverChildListDelegate([
+              _modernStatCard("أرباح اليوم", "${todayEarnings.toStringAsFixed(0)} ج.م", Icons.payments_rounded, Colors.green),
+              _modernStatCard("طلباتك", "$completedCount", Icons.local_shipping_rounded, Colors.blue),
+              _modernStatCard("المركبة", _vehicleConfig == 'motorcycleConfig' ? "موتوسيكل" : "سيارة", Icons.moped_rounded, Colors.orange),
+              _modernStatCard("التقييم", "4.8", Icons.stars_rounded, Colors.amber),
+            ]),
+          ),
         );
       },
     );
@@ -220,19 +201,11 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _toggleOnlineStatus(bool value) async {
-    if (value) {
-      NotificationSettings settings = await FirebaseMessaging.instance.getNotificationSettings();
-      if (settings.authorizationStatus == AuthorizationStatus.denied) {
-        _showSettingsRedirectDialog();
-        return;
-      }
-    }
-
+    setState(() => isOnline = value);
     await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
       'isOnline': value,
       'lastSeen': FieldValue.serverTimestamp(),
     });
-    setState(() => isOnline = value);
   }
 
   void _loadVehicleConfig() async {
@@ -302,7 +275,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       ),
       child: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (i) => setState(() => _selectedIndex = i),
+        onTap: _onItemTapped, // استخدام الدالة المحمية
         selectedItemColor: Colors.orange[900],
         unselectedItemColor: Colors.grey[400],
         showUnselectedLabels: true,
