@@ -18,8 +18,8 @@ class WalletScreen extends StatelessWidget {
     );
 
     try {
-      // إرسال الطلب لكوليكشن الانتظار ليقوم السيرفر بتوليد الرابط
-      DocumentReference docRef = await FirebaseFirestore.instance.collection('pendingInvoices').add({
+      // 1. إرسال الطلب للسيرفر
+      await FirebaseFirestore.instance.collection('pendingInvoices').add({
         'driverId': uid,
         'amount': amount,
         'status': 'pay_now',
@@ -28,56 +28,15 @@ class WalletScreen extends StatelessWidget {
       });
 
       if (!context.mounted) return;
-      Navigator.pop(context); // إغلاق لودينج البداية
+      Navigator.pop(context); // إغلاق اللودينج
 
-      // بدء مراقبة الوثيقة بانتظار الرابط
-      _waitForPaymentUrl(context, docRef);
+      // 2. إظهار رسالة توجيهية للمندوب
+      _showInfoSheet(context, "تم استلام طلبك", "جاري تجهيز رابط الدفع. يمكنك الضغط على 'ادفع الآن' من سجل العمليات بالأسفل بمجرد ظهوره.");
 
     } catch (e) {
       if (context.mounted) Navigator.pop(context);
-      _showInfoSheet(context, "خطأ", "فشل الاتصال بالسيرفر، حاول مجدداً");
+      _showInfoSheet(context, "خطأ", "فشل الاتصال، حاول مجدداً");
     }
-  }
-
-  // ✅ وظيفة مراقبة الرابط وفتحه فور وصوله
-  void _waitForPaymentUrl(BuildContext context, DocumentReference ref) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: Colors.green),
-            SizedBox(height: 15),
-            Text("جاري تجهيز بوابة الدفع...", style: TextStyle(fontFamily: 'Cairo')),
-          ],
-        ),
-      ),
-    );
-
-    // الـ Listener لمراقبة تحديث السيرفر للوثيقة
-    var subscription = ref.snapshots().listen((snapshot) async {
-      if (snapshot.exists) {
-        var data = snapshot.data() as Map<String, dynamic>?;
-        
-        // التحقق من وصول رابط الدفع من السيرفر
-        if (data != null && data['paymentUrl'] != null && data['paymentUrl'].toString().isNotEmpty) {
-          
-          // إغلاق الديالوج باستخدام rootNavigator لضمان الإغلاق الصحيح
-          if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
-          
-          final Uri url = Uri.parse(data['paymentUrl']);
-          
-          if (await canLaunchUrl(url)) {
-            await launchUrl(url, mode: LaunchMode.externalApplication);
-          }
-        }
-      }
-    });
-
-    // إيقاف المراقبة بعد دقيقتين للأمان وتوفير الموارد
-    Future.delayed(const Duration(minutes: 2), () => subscription.cancel());
   }
 
   @override
@@ -88,9 +47,7 @@ class WalletScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFFBFBFB),
       appBar: AppBar(
         title: const Text("المحفظة الذكية", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black, fontFamily: 'Cairo')),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 0,
+        centerTitle: true, backgroundColor: Colors.white, elevation: 0,
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('systemConfiguration').doc('globalCreditSettings').snapshots(),
@@ -107,16 +64,14 @@ class WalletScreen extends StatelessWidget {
               
               var userData = driverSnap.data!.data() as Map<String, dynamic>?;
               double walletBalance = (userData?['walletBalance'] ?? 0.0).toDouble();
-              double? driverSpecificLimit = userData?['creditLimit']?.toDouble();
-
-              double finalLimit = driverSpecificLimit ?? defaultGlobalLimit;
-              double totalOperableBalance = walletBalance + finalLimit;
+              double finalLimit = (userData?['creditLimit'] ?? defaultGlobalLimit).toDouble();
+              double totalBalance = walletBalance + finalLimit;
 
               return Column(
                 children: [
-                  _buildAdvancedBalanceCard(walletBalance, finalLimit, totalOperableBalance),
+                  _buildAdvancedBalanceCard(walletBalance, finalLimit, totalBalance),
                   const SizedBox(height: 10),
-                  Text("⚠️ الرصيد القابل للسحب هو رصيد المحفظة فقط (${walletBalance.toStringAsFixed(2)} ج.م)",
+                  Text("⚠️ الرصيد القابل للسحب: ${walletBalance.toStringAsFixed(2)} ج.م",
                       style: TextStyle(color: Colors.grey[600], fontSize: 9.sp, fontFamily: 'Cairo')),
                   
                   Padding(
@@ -143,38 +98,50 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // ✅ بناء سجل العمليات (تم تعطيل الترتيب مؤقتاً لتجنب تعليق الـ Index)
+  // ✅ السجل الذكي: يكتشف وجود رابط الدفع ويظهره للمندوب
   Widget _buildTransactionHistory(String? uid) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('walletLogs')
+      stream: FirebaseFirestore.instance.collection('pendingInvoices') // بنراقب الطلبات هنا
           .where('driverId', isEqualTo: uid)
-          // .orderBy('timestamp', descending: true) // 👈 رجع السطر ده بعد تفعيل الـ Index في فايربيز
-          .limit(10)
+          .where('type', isEqualTo: 'WALLET_TOPUP')
+          .limit(5)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Center(child: Text("لا توجد عمليات حالياً", style: TextStyle(fontFamily: 'Cairo')));
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+           return const Center(child: Text("لا توجد طلبات شحن حالية", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)));
+        }
         
         return ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           itemCount: snapshot.data!.docs.length,
           itemBuilder: (context, index) {
             var data = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+            String status = data['status'] ?? '';
+            String? paymentUrl = data['paymentUrl'];
             double amount = (data['amount'] ?? 0.0).toDouble();
-            bool isTopup = data['type'] == 'topup' || amount > 0;
-            
+
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.grey[200]!)),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white, 
+                borderRadius: BorderRadius.circular(15), 
+                border: Border.all(color: status == 'ready_for_payment' ? Colors.green : Colors.grey[200]!)
+              ),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: isTopup ? Colors.green[50] : Colors.red[50],
-                  child: Icon(isTopup ? Icons.add : Icons.remove, color: isTopup ? Colors.green : Colors.red, size: 18),
+                  backgroundColor: status == 'paid' ? Colors.green[50] : Colors.orange[50],
+                  child: Icon(status == 'paid' ? Icons.check : Icons.hourglass_empty, color: status == 'paid' ? Colors.green : Colors.orange, size: 18),
                 ),
-                title: Text(isTopup ? "شحن رصيد" : "خصم عمولة رحلة", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Cairo')),
-                subtitle: Text(_formatTimestamp(data['timestamp']), style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                trailing: Text("${isTopup ? '+' : ''}${amount.toStringAsFixed(2)} ج.م", 
-                  style: TextStyle(color: isTopup ? Colors.green[700] : Colors.red, fontWeight: FontWeight.bold, fontSize: 14)),
+                title: Text("شحن رصيد ${amount.toStringAsFixed(0)} ج.م", style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                subtitle: Text(status == 'ready_for_payment' ? "الرابط جاهز للدفع" : "الحالة: $status", style: const TextStyle(fontSize: 10, fontFamily: 'Cairo')),
+                trailing: status == 'ready_for_payment' && paymentUrl != null
+                  ? ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                      onPressed: () => launchUrl(Uri.parse(paymentUrl), mode: LaunchMode.externalApplication),
+                      child: const Text("ادفع الآن", style: TextStyle(fontFamily: 'Cairo', fontSize: 10)),
+                    )
+                  : Text(status == 'paid' ? "تم بنجاح" : "جاري..", style: const TextStyle(fontSize: 10, color: Colors.grey)),
               ),
             );
           },
@@ -183,7 +150,7 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // --- الودجتات المساعدة ---
+  // --- الودجتات المساعدة (نفس التصميم الاحترافي) ---
 
   Widget _buildAdvancedBalanceCard(double wallet, double credit, double total) {
     return Container(
@@ -191,22 +158,15 @@ class WalletScreen extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: const LinearGradient(colors: [Color(0xFF1a1a1a), Color(0xFF3a3a3a)], begin: Alignment.topLeft, end: Alignment.bottomRight),
         borderRadius: BorderRadius.circular(30),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 15, offset: const Offset(0, 8))],
       ),
       child: Column(children: [
         const Text("إجمالي رصيد التشغيل", style: TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'Cairo')),
-        const SizedBox(height: 5),
         Text("${total.toStringAsFixed(2)} ج.م", style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
         const SizedBox(height: 20),
-        Container(
-          padding: const EdgeInsets.all(15),
-          decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(20)),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _balanceDetail("المحفظة", wallet, Colors.greenAccent),
-            Container(width: 1, height: 30, color: Colors.white24),
-            _balanceDetail("الكريدت", credit, Colors.orangeAccent),
-          ]),
-        )
+        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          _balanceDetail("المحفظة", wallet, Colors.greenAccent),
+          _balanceDetail("الكريدت", credit, Colors.orangeAccent),
+        ]),
       ]),
     );
   }
@@ -221,27 +181,27 @@ class WalletScreen extends StatelessWidget {
   Widget _sectionHeader(String title) {
     return Padding(padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 10),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-        const Icon(Icons.history, size: 18, color: Colors.grey),
+        Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+        const Icon(Icons.refresh, size: 18, color: Colors.grey),
       ]),
     );
   }
 
   Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) {
     return ElevatedButton.icon(
-      onPressed: onTap, icon: Icon(icon, size: 20),
-      label: Text(label, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-      style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)), elevation: 0),
+      onPressed: onTap, icon: Icon(icon, size: 18),
+      label: Text(label, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 12)),
+      style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
     );
   }
 
   void _showAmountPicker(BuildContext context) {
     showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
       builder: (context) => Container(padding: const EdgeInsets.all(25), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text("شحن محفظة أكسب", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-        const SizedBox(height: 25),
-        Wrap(spacing: 15, runSpacing: 15, children: [50, 100, 200, 500].map((amt) => _amountOption(context, amt)).toList()),
+        const Text("اختر مبلغ الشحن", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
         const SizedBox(height: 20),
+        Wrap(spacing: 15, runSpacing: 15, children: [50, 100, 200, 500].map((amt) => _amountOption(context, amt)).toList()),
+        const SizedBox(height: 30),
       ])),
     );
   }
@@ -256,13 +216,7 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  String _formatTimestamp(dynamic ts) {
-    if (ts == null) return "الآن";
-    DateTime date = (ts as Timestamp).toDate();
-    return "${date.day}/${date.month} - ${date.hour}:${date.minute.toString().padLeft(2, '0')}";
-  }
-
   void _showInfoSheet(BuildContext context, String title, String msg) {
-    showModalBottomSheet(context: context, builder: (context) => Container(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.info_outline, size: 40, color: Colors.orange), const SizedBox(height: 15), Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Cairo')), const SizedBox(height: 10), Text(msg, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo'))])));
+    showModalBottomSheet(context: context, builder: (context) => Container(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.info_outline, size: 40, color: Colors.orange), const SizedBox(height: 15), Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Cairo')), const SizedBox(height: 10), Text(msg, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', fontSize: 12))])));
   }
 }
