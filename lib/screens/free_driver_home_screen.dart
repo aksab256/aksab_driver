@@ -21,30 +21,27 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   String? _activeOrderId;
   String _vehicleConfig = 'motorcycleConfig';
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
     super.initState();
     _loadVehicleConfig();
-    _fetchInitialStatus(); // مزامنة الحالة الحقيقية من فايربيز فوراً
+    _fetchInitialStatus(); 
     _listenToActiveOrders();
     
-    // طلب إذن الإشعارات بنعومة مرة واحدة عند الدخول
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _requestNotificationPermissionOnce();
     });
   }
 
-  // طلب الإذن الرسمي من النظام لمرة واحدة
   Future<void> _requestNotificationPermissionOnce() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
     await messaging.requestPermission(alert: true, badge: true, sound: true);
   }
 
-  // دالة التحكم في الانتقال بين الصفحات مع حماية الرادار
   void _onItemTapped(int index) {
     if (index == 1 && !isOnline) {
-      // إذا حاول فتح الرادار وهو أوفلاين، تظهر رسالة تنبيه سريعة
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
@@ -67,11 +64,74 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: _buildSideDrawer(), // الشريط الجانبي الجديد
       backgroundColor: const Color(0xFFF4F7FA),
       body: SafeArea(
         child: _selectedIndex == 0 ? _buildModernDashboard() : _buildOtherPages(),
       ),
       bottomNavigationBar: _buildBottomNav(),
+    );
+  }
+
+  // --- الشريط الجانبي (Drawer) ---
+  Widget _buildSideDrawer() {
+    return Drawer(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(topLeft: Radius.circular(30), bottomLeft: Radius.circular(30)),
+      ),
+      child: Column(
+        children: [
+          UserAccountsDrawerHeader(
+            decoration: BoxDecoration(
+              color: Colors.orange[900],
+              image: DecorationImage(
+                image: const AssetImage('assets/images/drawer_bg.png'), // اختياري لو عندك خلفية
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.1), BlendMode.dstATop),
+              ),
+            ),
+            accountName: const Text("كابتن أكسب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18)),
+            accountEmail: Text(FirebaseAuth.instance.currentUser?.email ?? "لا يوجد بريد", style: const TextStyle(fontFamily: 'Cairo')),
+            currentAccountPicture: const CircleAvatar(
+              backgroundColor: Colors.white,
+              child: Icon(Icons.person, size: 45, color: Colors.orange),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_circle_outlined, color: Colors.blueGrey),
+            title: const Text("حسابي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+            onTap: () {
+              Navigator.pop(context);
+              // أضف كود الانتقال لصفحة البروفايل هنا
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined, color: Colors.blueGrey),
+            title: const Text("سياسة الخصوصية", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+            onTap: () {
+              Navigator.pop(context);
+              // أضف كود عرض سياسة الخصوصية هنا
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
+            title: const Text("الدعم الفني", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+            onTap: () => Navigator.pop(context),
+          ),
+          const Spacer(),
+          const Divider(indent: 20, endIndent: 20),
+          ListTile(
+            leading: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+            title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo', color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            onTap: () async {
+              await FirebaseAuth.instance.signOut();
+              if (mounted) Navigator.pushReplacementNamed(context, '/login');
+            },
+          ),
+          const SizedBox(height: 30),
+        ],
+      ),
     );
   }
 
@@ -81,15 +141,24 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 30, 20, 20),
+            padding: const EdgeInsets.fromLTRB(10, 30, 20, 20),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
                   children: [
-                    const Text("أهلاً بك 👋", style: TextStyle(fontSize: 18, color: Colors.blueGrey, fontFamily: 'Cairo')),
-                    const Text("كابتن أكسب", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.black, fontFamily: 'Cairo')),
+                    IconButton(
+                      icon: const Icon(Icons.menu_rounded, size: 32, color: Colors.black),
+                      onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                    ),
+                    const SizedBox(width: 5),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("أهلاً بك 👋", style: TextStyle(fontSize: 16, color: Colors.blueGrey, fontFamily: 'Cairo')),
+                        const Text("كابتن أكسب", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black, fontFamily: 'Cairo')),
+                      ],
+                    ),
                   ],
                 ),
                 _buildStatusToggle(),
@@ -168,8 +237,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
             child: Icon(icon, color: color, size: 28),
           ),
           const Spacer(),
-          Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-          Text(title, style: const TextStyle(fontSize: 16, color: Colors.grey, fontFamily: 'Cairo')),
+          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+          Text(title, style: const TextStyle(fontSize: 14, color: Colors.grey, fontFamily: 'Cairo')),
         ],
       ),
     );
@@ -180,7 +249,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       onTap: () => _toggleOnlineStatus(!isOnline),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
         decoration: BoxDecoration(
           color: isOnline ? Colors.green[600] : Colors.red[600],
           borderRadius: BorderRadius.circular(20),
@@ -190,10 +259,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         ),
         child: Row(
           children: [
-            Icon(isOnline ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
+            Icon(isOnline ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
             Text(isOnline ? "متصل" : "أوفلاين", 
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'Cairo')),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Cairo')),
           ],
         ),
       ),
@@ -275,7 +344,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       ),
       child: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: _onItemTapped, // استخدام الدالة المحمية
+        onTap: _onItemTapped,
         selectedItemColor: Colors.orange[900],
         unselectedItemColor: Colors.grey[400],
         showUnselectedLabels: true,
