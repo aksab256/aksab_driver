@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
 
-  // ✅ طلب الشحن (أرقام ثابتة)
+  // ✅ طلب الشحن
   Future<void> _processCharge(BuildContext context, double amount) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _showLoading(context);
@@ -15,22 +15,23 @@ class WalletScreen extends StatelessWidget {
       await FirebaseFirestore.instance.collection('pendingInvoices').add({
         'driverId': uid,
         'amount': amount,
-        'status': 'pay_now',
+        'status': 'pay_now', // السيستم هيحولها لـ ready_for_payment ويضيف الـ URL
         'type': 'WALLET_TOPUP',
         'createdAt': FieldValue.serverTimestamp(),
-      }).timeout(const Duration(seconds: 10));
-      Navigator.pop(context);
+      });
+      if (context.mounted) Navigator.pop(context);
       _showInfoSheet(context, "تم استلام طلبك", "جاري تجهيز الرابط، سيظهر في السجل بالأسفل خلال ثوانٍ.");
     } catch (e) {
-      Navigator.pop(context);
+      if (context.mounted) Navigator.pop(context);
       _showInfoSheet(context, "خطأ", "فشل الاتصال، تأكد من الإنترنت.");
     }
   }
 
-  // ✅ تنفيذ عملية السحب بعد التأكيد
+  // ✅ تنفيذ عملية السحب (تم إصلاح اللودينج)
   Future<void> _executeWithdrawal(BuildContext context, double amount) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _showLoading(context);
+    
     try {
       await FirebaseFirestore.instance.collection('withdrawRequests').add({
         'driverId': uid,
@@ -38,13 +39,17 @@ class WalletScreen extends StatelessWidget {
         'status': 'pending',
         'type': 'CASH_OUT',
         'createdAt': FieldValue.serverTimestamp(),
-      }).timeout(const Duration(seconds: 10));
+      });
       
-      Navigator.pop(context); // إغلاق اللودينج
-      _showInfoSheet(context, "تم إرسال الطلب", "سيتم مراجعة طلب سحب $amount ج.م وتحويله خلال 24 ساعة.");
+      if (context.mounted) {
+        Navigator.pop(context); // إغلاق اللودينج فوراً عند النجاح
+        _showInfoSheet(context, "تم إرسال الطلب", "سيتم مراجعة طلب سحب $amount ج.م وتحويله خلال 24 ساعة.");
+      }
     } catch (e) {
-      Navigator.pop(context);
-      _showInfoSheet(context, "خطأ", "حدث خطأ أثناء إرسال الطلب، حاول مجدداً.");
+      if (context.mounted) {
+        Navigator.pop(context); // إغلاق اللودينج عند الخطأ
+        _showInfoSheet(context, "خطأ", "حدث خطأ أثناء إرسال الطلب: $e");
+      }
     }
   }
 
@@ -80,7 +85,6 @@ class WalletScreen extends StatelessWidget {
                 children: [
                   _buildAdvancedBalanceCard(walletBalance, finalLimit, totalBalance),
                   
-                  // ✅ تكبير خط الرصيد القابل للسحب
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Text(
@@ -111,7 +115,89 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // ✅ نافذة سحب الكاش اليدوية
+  // ✅ السجل المدمج مع فلترة "آخر رابط" و "صلاحية الساعتين"
+  Widget _buildCombinedHistory(String? uid) {
+    return StreamBuilder<QuerySnapshot>(
+      // طلبنا آخر رابط واحد فقط ومرتب تنازلياً حسب الوقت
+      stream: FirebaseFirestore.instance.collection('pendingInvoices')
+          .where('driverId', isEqualTo: uid)
+          .where('status', isEqualTo: 'ready_for_payment')
+          .orderBy('createdAt', descending: true)
+          .limit(1) 
+          .snapshots(),
+      builder: (context, pendingSnap) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance.collection('walletLogs')
+              .where('driverId', isEqualTo: uid)
+              .orderBy('timestamp', descending: true).limit(10).snapshots(),
+          builder: (context, logSnap) {
+            List<Map<String, dynamic>> allItems = [];
+            
+            if (pendingSnap.hasData && pendingSnap.data!.docs.isNotEmpty) {
+              var doc = pendingSnap.data!.docs.first;
+              var d = doc.data() as Map<String, dynamic>;
+              
+              // ✅ فحص صلاحية الرابط (ساعتين = 120 دقيقة)
+              if (d['createdAt'] != null) {
+                DateTime createdTime = (d['createdAt'] as Timestamp).toDate();
+                if (DateTime.now().difference(createdTime).inMinutes < 120) {
+                  d['isPendingLink'] = true;
+                  allItems.add(d);
+                }
+              }
+            }
+
+            if (logSnap.hasData) {
+              for (var doc in logSnap.data!.docs) {
+                var d = doc.data() as Map<String, dynamic>;
+                d['isPendingLink'] = false;
+                allItems.add(d);
+              }
+            }
+
+            if (allItems.isEmpty) return const Center(child: Text("لا توجد عمليات مؤخراً", style: TextStyle(fontFamily: 'Cairo')));
+
+            return ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20, bottom: 20),
+              itemCount: allItems.length,
+              itemBuilder: (context, index) {
+                var item = allItems[index];
+                bool isPending = item['isPendingLink'] ?? false;
+                double amount = (item['amount'] ?? 0.0).toDouble();
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: isPending ? Colors.orange[50] : Colors.white, 
+                    borderRadius: BorderRadius.circular(18), 
+                    border: Border.all(color: isPending ? Colors.orange : Colors.grey[100]!)
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: isPending ? Colors.orange : Colors.blueGrey[50],
+                      child: Icon(isPending ? Icons.link_rounded : Icons.history, color: isPending ? Colors.white : Colors.blueGrey),
+                    ),
+                    title: Text(isPending ? "رابط الدفع النشط" : (amount > 0 ? "شحن رصيد" : "خصم عمولة"), style: const TextStyle(fontFamily: 'Cairo', fontSize: 13, fontWeight: FontWeight.bold)),
+                    subtitle: Text(isPending ? "صالح لمدة ساعتين من طلبه" : _formatTimestamp(item['timestamp']), style: const TextStyle(fontFamily: 'Cairo', fontSize: 10.5)),
+                    trailing: isPending
+                        ? ElevatedButton(
+                            onPressed: () => launchUrl(Uri.parse(item['paymentUrl']), mode: LaunchMode.externalApplication), 
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))), 
+                            child: const Text("ادفع", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))
+                        : Text("${amount > 0 ? '+' : ''}${amount.toStringAsFixed(2)} ج.م", style: TextStyle(fontWeight: FontWeight.bold, color: amount > 0 ? Colors.green : Colors.red)),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // --- باقي الدوال المساعدة (بدون تغيير في الـ UI) ---
+  // [أبقينا على _buildAdvancedBalanceCard و _showWithdrawDialog وغيرها كما هي لضمان استقرار التصميم]
+
   void _showWithdrawDialog(BuildContext context, double currentWallet) {
     final TextEditingController amountController = TextEditingController();
     showModalBottomSheet(
@@ -163,29 +249,29 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // ✅ رسالة تأكيد الرسوم
   void _confirmWithdrawFees(BuildContext context, double amount) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("تأكيد السحب", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo')),
-        content: Text("سيتم طلب سحب $amount ج.م.\nيرجى العلم أنه سيتم خصم رسوم التحويل من المبلغ المستلم حسب مزود الخدمة.", 
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("تأكيد السحب", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        content: Text("سيتم طلب سحب $amount ج.م.\nسيتم التحويل خلال 24 ساعة لوسيلة الدفع المسجلة.", 
           textAlign: TextAlign.right, style: const TextStyle(fontFamily: 'Cairo')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(color: Colors.red, fontFamily: 'Cairo'))),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
             onPressed: () {
               Navigator.pop(context);
               _executeWithdrawal(context, amount);
             },
-            child: const Text("موافق وإرسال"),
+            child: const Text("تأكيد", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  // ✅ اختيار مبلغ الشحن (أرقام ثابتة)
   void _showChargePicker(BuildContext context) {
     showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
       builder: (context) => Container(padding: const EdgeInsets.all(25), child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -203,67 +289,9 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // ✅ السجل المدمج
-  Widget _buildCombinedHistory(String? uid) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('pendingInvoices')
-          .where('driverId', isEqualTo: uid)
-          .where('status', isEqualTo: 'ready_for_payment').snapshots(),
-      builder: (context, pendingSnap) {
-        return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance.collection('walletLogs')
-              .where('driverId', isEqualTo: uid)
-              .orderBy('timestamp', descending: true).limit(10).snapshots(),
-          builder: (context, logSnap) {
-            List<Map<String, dynamic>> allItems = [];
-            if (pendingSnap.hasData) {
-              for (var doc in pendingSnap.data!.docs) {
-                var d = doc.data() as Map<String, dynamic>;
-                d['isPendingLink'] = true;
-                allItems.add(d);
-              }
-            }
-            if (logSnap.hasData) {
-              for (var doc in logSnap.data!.docs) {
-                var d = doc.data() as Map<String, dynamic>;
-                d['isPendingLink'] = false;
-                allItems.add(d);
-              }
-            }
-            if (allItems.isEmpty) return const Center(child: Text("لا توجد عمليات"));
-
-            return ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: allItems.length,
-              itemBuilder: (context, index) {
-                var item = allItems[index];
-                bool isPending = item['isPendingLink'] ?? false;
-                double amount = (item['amount'] ?? 0.0).toDouble();
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(color: isPending ? Colors.green[50] : Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: isPending ? Colors.green : Colors.grey[100]!)),
-                  child: ListTile(
-                    leading: Icon(isPending ? Icons.bolt : Icons.history, color: isPending ? Colors.green : Colors.grey),
-                    title: Text(isPending ? "رابط شحن جاهز" : (amount > 0 ? "شحن رصيد" : "خصم عمولة"), style: const TextStyle(fontFamily: 'Cairo', fontSize: 12, fontWeight: FontWeight.bold)),
-                    subtitle: Text(isPending ? "اضغط للدفع الآن" : _formatTimestamp(item['timestamp']), style: const TextStyle(fontFamily: 'Cairo', fontSize: 10)),
-                    trailing: isPending
-                        ? ElevatedButton(onPressed: () => launchUrl(Uri.parse(item['paymentUrl']), mode: LaunchMode.externalApplication), style: ElevatedButton.styleFrom(backgroundColor: Colors.green, padding: EdgeInsets.zero), child: const Text("ادفع", style: TextStyle(fontSize: 10, color: Colors.white)))
-                        : Text("${amount.toStringAsFixed(2)} ج.م", style: TextStyle(fontWeight: FontWeight.bold, color: amount > 0 ? Colors.green : Colors.red)),
-                  ),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // --- المساعدات (UI) ---
   Widget _buildAdvancedBalanceCard(double wallet, double credit, double total) {
     return Container(
-      width: double.infinity, margin: const Offset(0, 10).distance > 0 ? const EdgeInsets.all(20) : EdgeInsets.zero, padding: const EdgeInsets.all(25),
+      width: double.infinity, margin: const EdgeInsets.all(20), padding: const EdgeInsets.all(25),
       decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF1a1a1a), Color(0xFF3a3a3a)]), borderRadius: BorderRadius.circular(30)),
       child: Column(children: [
         const Text("إجمالي رصيد التشغيل", style: TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'Cairo')),
@@ -289,7 +317,7 @@ class WalletScreen extends StatelessWidget {
   }
 
   void _showInfoSheet(BuildContext context, String title, String msg) {
-    showModalBottomSheet(context: context, builder: (context) => Container(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.info_outline, size: 40, color: Colors.orange), const SizedBox(height: 15), Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Cairo')), const SizedBox(height: 10), Text(msg, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', fontSize: 12))])));
+    showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), builder: (context) => Container(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.info_outline, size: 40, color: Colors.orange), const SizedBox(height: 15), Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Cairo')), const SizedBox(height: 10), Text(msg, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', fontSize: 12)), const SizedBox(height: 20)])));
   }
 
   String _formatTimestamp(dynamic ts) {
