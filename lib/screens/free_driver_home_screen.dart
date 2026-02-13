@@ -4,9 +4,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:sizer/sizer.dart'; // تأكد من وجود هذه المكتبة في pubspec.yaml
+
+// الصفحات التابعة
 import 'available_orders_screen.dart';
 import 'active_order_screen.dart';
 import 'wallet_screen.dart';
+import 'orders_history_screen.dart'; // الصفحة الجديدة التي أنشأناها
 
 class FreeDriverHomeScreen extends StatefulWidget {
   const FreeDriverHomeScreen({super.key});
@@ -41,6 +45,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _onItemTapped(int index) {
+    // منع دخول الرادار إذا كان المندوب أوفلاين
     if (index == 1 && !isOnline) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -65,10 +70,17 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
-      drawer: _buildSideDrawer(), // الشريط الجانبي الجديد
+      drawer: _buildSideDrawer(),
       backgroundColor: const Color(0xFFF4F7FA),
-      body: SafeArea(
-        child: _selectedIndex == 0 ? _buildModernDashboard() : _buildOtherPages(),
+      // استخدمنا Stack مع SafeArea مخصص لضمان عدم تداخل المحتوى مع الـ Navigation Bar
+      body: Column(
+        children: [
+          Expanded(
+            child: _selectedIndex == 0 
+                ? _buildModernDashboard() 
+                : _buildOtherPages(),
+          ),
+        ],
       ),
       bottomNavigationBar: _buildBottomNav(),
     );
@@ -85,11 +97,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           UserAccountsDrawerHeader(
             decoration: BoxDecoration(
               color: Colors.orange[900],
-              image: DecorationImage(
-                image: const AssetImage('assets/images/drawer_bg.png'), // اختياري لو عندك خلفية
-                fit: BoxFit.cover,
-                colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.1), BlendMode.dstATop),
-              ),
             ),
             accountName: const Text("كابتن أكسب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18)),
             accountEmail: Text(FirebaseAuth.instance.currentUser?.email ?? "لا يوجد بريد", style: const TextStyle(fontFamily: 'Cairo')),
@@ -101,22 +108,11 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           ListTile(
             leading: const Icon(Icons.account_circle_outlined, color: Colors.blueGrey),
             title: const Text("حسابي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
-            onTap: () {
-              Navigator.pop(context);
-              // أضف كود الانتقال لصفحة البروفايل هنا
-            },
+            onTap: () => Navigator.pop(context),
           ),
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined, color: Colors.blueGrey),
             title: const Text("سياسة الخصوصية", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
-            onTap: () {
-              Navigator.pop(context);
-              // أضف كود عرض سياسة الخصوصية هنا
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
-            title: const Text("الدعم الفني", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
             onTap: () => Navigator.pop(context),
           ),
           const Spacer(),
@@ -135,41 +131,43 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- واجهة لوحة التحكم ---
+  // --- واجهة لوحة التحكم الرئيسية ---
   Widget _buildModernDashboard() {
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 30, 20, 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.menu_rounded, size: 32, color: Colors.black),
-                      onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                    ),
-                    const SizedBox(width: 5),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text("أهلاً بك 👋", style: TextStyle(fontSize: 16, color: Colors.blueGrey, fontFamily: 'Cairo')),
-                        const Text("كابتن أكسب", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black, fontFamily: 'Cairo')),
-                      ],
-                    ),
-                  ],
-                ),
-                _buildStatusToggle(),
-              ],
+    return SafeArea(
+      child: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 20, 20, 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.menu_rounded, size: 32, color: Colors.black),
+                        onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                      ),
+                      const SizedBox(width: 5),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("أهلاً بك 👋", style: TextStyle(fontSize: 14, color: Colors.blueGrey, fontFamily: 'Cairo')),
+                          const Text("كابتن أكسب", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black, fontFamily: 'Cairo')),
+                        ],
+                      ),
+                    ],
+                  ),
+                  _buildStatusToggle(),
+                ],
+              ),
             ),
           ),
-        ),
-        if (_activeOrderId != null)
-          SliverToBoxAdapter(child: _buildActiveOrderBanner()),
-        _buildLiveStatsGrid(),
-      ],
+          if (_activeOrderId != null)
+            SliverToBoxAdapter(child: _buildActiveOrderBanner()),
+          _buildLiveStatsGrid(),
+        ],
+      ),
     );
   }
 
@@ -198,13 +196,13 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         }
 
         return SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.all(20),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              mainAxisSpacing: 20,
-              crossAxisSpacing: 20,
-              childAspectRatio: 0.95,
+              mainAxisSpacing: 15,
+              crossAxisSpacing: 15,
+              childAspectRatio: 1.1,
             ),
             delegate: SliverChildListDelegate([
               _modernStatCard("أرباح اليوم", "${todayEarnings.toStringAsFixed(0)} ج.م", Icons.payments_rounded, Colors.green),
@@ -220,25 +218,19 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   Widget _modernStatCard(String title, String value, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(color: color.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10)),
-        ],
+        borderRadius: BorderRadius.circular(25),
+        boxShadow: [BoxShadow(color: color.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(15)),
-            child: Icon(icon, color: color, size: 28),
-          ),
+          Icon(icon, color: color, size: 24),
           const Spacer(),
-          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-          Text(title, style: const TextStyle(fontSize: 14, color: Colors.grey, fontFamily: 'Cairo')),
+          Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+          Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'Cairo')),
         ],
       ),
     );
@@ -248,21 +240,18 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     return GestureDetector(
       onTap: () => _toggleOnlineStatus(!isOnline),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: isOnline ? Colors.green[600] : Colors.red[600],
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(color: (isOnline ? Colors.green : Colors.red).withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 5)),
-          ],
+          borderRadius: BorderRadius.circular(15),
         ),
         child: Row(
           children: [
-            Icon(isOnline ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
+            Icon(isOnline ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 16),
+            const SizedBox(width: 5),
             Text(isOnline ? "متصل" : "أوفلاين", 
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Cairo')),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Cairo')),
           ],
         ),
       ),
@@ -304,21 +293,20 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     return GestureDetector(
       onTap: () => setState(() => _selectedIndex = 1),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        padding: const EdgeInsets.all(20),
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
           gradient: LinearGradient(colors: [Colors.orange[800]!, Colors.orange[600]!]),
-          borderRadius: BorderRadius.circular(25),
-          boxShadow: [BoxShadow(color: Colors.orange.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8))],
+          borderRadius: BorderRadius.circular(20),
         ),
-        child: Row(
+        child: const Row(
           children: [
-            const CircleAvatar(backgroundColor: Colors.white24, child: Icon(Icons.directions_run, color: Colors.white)),
-            const SizedBox(width: 15),
-            const Expanded(
-              child: Text("لديك طلب جاري تنفيذه حالياً", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'Cairo')),
+            Icon(Icons.directions_run, color: Colors.white),
+            SizedBox(width: 15),
+            Expanded(
+              child: Text("لديك طلب جاري.. اضغط للمتابعة", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15, fontFamily: 'Cairo')),
             ),
-            const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 20),
+            Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
           ],
         ),
       ),
@@ -327,11 +315,11 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   Widget _buildOtherPages() {
     final List<Widget> pages = [
-      const SizedBox(),
+      const SizedBox(), // Dashboard (index 0)
       _activeOrderId != null 
           ? ActiveOrderScreen(orderId: _activeOrderId!) 
           : AvailableOrdersScreen(vehicleType: _vehicleConfig),
-      const Center(child: Text("سجل الطلبات قريباً", style: TextStyle(fontFamily: 'Cairo', fontSize: 20))),
+      const OrdersHistoryScreen(), // ✅ تم استبدال النص بالصفحة الجديدة
       const WalletScreen(),
     ];
     return pages[_selectedIndex];
@@ -340,24 +328,29 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   Widget _buildBottomNav() {
     return Container(
       decoration: BoxDecoration(
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20)],
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, -2))],
       ),
-      child: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        selectedItemColor: Colors.orange[900],
-        unselectedItemColor: Colors.grey[400],
-        showUnselectedLabels: true,
-        iconSize: 28,
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14),
-        unselectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontSize: 13),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
-          BottomNavigationBarItem(icon: Icon(Icons.radar), label: "الرادار"),
-          BottomNavigationBarItem(icon: Icon(Icons.assignment_rounded), label: "طلباتي"),
-          BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_rounded), label: "المحفظة"),
-        ],
+      child: SafeArea( // ✅ حماية الشريط السفلي من حواف الشاشة
+        child: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+          selectedItemColor: Colors.orange[900],
+          unselectedItemColor: Colors.grey[400],
+          showUnselectedLabels: true,
+          iconSize: 26,
+          backgroundColor: Colors.white,
+          elevation: 0,
+          type: BottomNavigationBarType.fixed,
+          selectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 12),
+          unselectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontSize: 11),
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
+            BottomNavigationBarItem(icon: Icon(Icons.radar), label: "الرادار"),
+            BottomNavigationBarItem(icon: Icon(Icons.assignment_rounded), label: "طلباتي"),
+            BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_rounded), label: "المحفظة"),
+          ],
+        ),
       ),
     );
   }
