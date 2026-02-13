@@ -4,13 +4,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:sizer/sizer.dart'; // تأكد من وجود هذه المكتبة في pubspec.yaml
+import 'package:sizer/sizer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // الصفحات التابعة
 import 'available_orders_screen.dart';
 import 'active_order_screen.dart';
 import 'wallet_screen.dart';
-import 'orders_history_screen.dart'; // الصفحة الجديدة التي أنشأناها
+import 'orders_history_screen.dart';
+import 'profile_screen.dart'; // ✅ إضافة استيراد صفحة البروفايل
 
 class FreeDriverHomeScreen extends StatefulWidget {
   const FreeDriverHomeScreen({super.key});
@@ -44,21 +46,23 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     await messaging.requestPermission(alert: true, badge: true, sound: true);
   }
 
+  // ✅ فتح رابط سياسة الخصوصية
+  Future<void> _launchPrivacyPolicy() async {
+    final Uri url = Uri.parse('https://aksab-app.com/privacy-policy'); // استبدله برابطك
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      debugPrint("Could not launch $url");
+    }
+  }
+
   void _onItemTapped(int index) {
-    // منع دخول الرادار إذا كان المندوب أوفلاين
     if (index == 1 && !isOnline) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-            "⚠️ برجاء تفعيل وضع الاتصال (أونلاين) لفتح الرادار",
+          content: const Text("⚠️ برجاء تفعيل وضع الاتصال (أونلاين) لفتح الرادار",
             textAlign: TextAlign.center,
-            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
-          ),
+            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
           backgroundColor: Colors.orange[900],
-          duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          margin: const EdgeInsets.all(20),
         ),
       );
       return; 
@@ -72,7 +76,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       key: _scaffoldKey,
       drawer: _buildSideDrawer(),
       backgroundColor: const Color(0xFFF4F7FA),
-      // استخدمنا Stack مع SafeArea مخصص لضمان عدم تداخل المحتوى مع الـ Navigation Bar
       body: Column(
         children: [
           Expanded(
@@ -86,7 +89,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- الشريط الجانبي (Drawer) ---
+  // --- الشريط الجانبي (Drawer) المحدث ---
   Widget _buildSideDrawer() {
     return Drawer(
       shape: const RoundedRectangleBorder(
@@ -95,9 +98,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       child: Column(
         children: [
           UserAccountsDrawerHeader(
-            decoration: BoxDecoration(
-              color: Colors.orange[900],
-            ),
+            decoration: BoxDecoration(color: Colors.orange[900]),
             accountName: const Text("كابتن أكسب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18)),
             accountEmail: Text(FirebaseAuth.instance.currentUser?.email ?? "لا يوجد بريد", style: const TextStyle(fontFamily: 'Cairo')),
             currentAccountPicture: const CircleAvatar(
@@ -108,12 +109,18 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           ListTile(
             leading: const Icon(Icons.account_circle_outlined, color: Colors.blueGrey),
             title: const Text("حسابي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
-            onTap: () => Navigator.pop(context),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen()));
+            },
           ),
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined, color: Colors.blueGrey),
             title: const Text("سياسة الخصوصية", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
-            onTap: () => Navigator.pop(context),
+            onTap: () {
+              Navigator.pop(context);
+              _launchPrivacyPolicy();
+            },
           ),
           const Spacer(),
           const Divider(indent: 20, endIndent: 20),
@@ -149,11 +156,11 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
                         onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                       ),
                       const SizedBox(width: 5),
-                      Column(
+                      const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("أهلاً بك 👋", style: TextStyle(fontSize: 14, color: Colors.blueGrey, fontFamily: 'Cairo')),
-                          const Text("كابتن أكسب", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black, fontFamily: 'Cairo')),
+                          Text("أهلاً بك 👋", style: TextStyle(fontSize: 14, color: Colors.blueGrey, fontFamily: 'Cairo')),
+                          Text("كابتن أكسب", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black, fontFamily: 'Cairo')),
                         ],
                       ),
                     ],
@@ -190,7 +197,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
             Timestamp? time = d['completedAt'] as Timestamp?;
             if (time != null && time.toDate().isAfter(startOfToday)) {
               completedCount++;
-              todayEarnings += double.tryParse(d['price']?.toString() ?? '0') ?? 0.0;
+              todayEarnings += double.tryParse(d['driverNet']?.toString() ?? '0') ?? 0.0;
             }
           }
         }
@@ -315,11 +322,11 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   Widget _buildOtherPages() {
     final List<Widget> pages = [
-      const SizedBox(), // Dashboard (index 0)
+      const SizedBox(), 
       _activeOrderId != null 
           ? ActiveOrderScreen(orderId: _activeOrderId!) 
           : AvailableOrdersScreen(vehicleType: _vehicleConfig),
-      const OrdersHistoryScreen(), // ✅ تم استبدال النص بالصفحة الجديدة
+      const OrdersHistoryScreen(),
       const WalletScreen(),
     ];
     return pages[_selectedIndex];
@@ -331,7 +338,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         color: Colors.white,
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, -2))],
       ),
-      child: SafeArea( // ✅ حماية الشريط السفلي من حواف الشاشة
+      child: SafeArea(
         child: BottomNavigationBar(
           currentIndex: _selectedIndex,
           onTap: _onItemTapped,
