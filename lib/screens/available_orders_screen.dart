@@ -1,3 +1,4 @@
+// lib/screens/available_orders_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -107,7 +108,45 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // ... (نفس دالات _notifyCustomerOrderAccepted و _acceptOrder بدون تغيير)
+  // ✅ إضافة دالة قبول الطلب البرمجية
+  Future<void> _acceptOrder(String orderId, double commission, String customerId) async {
+    try {
+      showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
+        DocumentSnapshot orderSnap = await transaction.get(orderRef);
+
+        if (orderSnap.exists && orderSnap.get('status') == 'pending') {
+          transaction.update(orderRef, {
+            'status': 'accepted',
+            'driverId': _uid,
+            'acceptedAt': FieldValue.serverTimestamp(),
+          });
+        } else {
+          throw Exception("عذراً، الطلب تم قبوله من كابتن آخر");
+        }
+      });
+
+      _notifyCustomerOrderAccepted(customerId, orderId);
+
+      if (mounted) {
+        Navigator.pop(context); // إغلاق الـ Loading
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)));
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  // ✅ دالة إرسال إشعار للعميل (اختيارية حسب إعدادات السيرفر عندك)
+  void _notifyCustomerOrderAccepted(String customerId, String orderId) async {
+    // يمكن هنا استدعاء Cloud Function أو إرسال إشعار مباشر
+    debugPrint("إشعار للعميل $customerId بقبول الطلب $orderId");
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +161,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         backgroundColor: Colors.white,
         elevation: 0.5,
       ),
-      body: SafeArea( // ✅ حماية المحتوى من الحواف
+      body: SafeArea(
         child: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
           builder: (context, driverSnap) {
@@ -216,7 +255,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             padding: EdgeInsets.all(4.w),
             child: Column(
               children: [
-                // ✅ عرض المسافة بشكل بارز جداً
                 Container(
                   padding: EdgeInsets.symmetric(vertical: 1.h, horizontal: 3.w),
                   decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blue.shade100)),
@@ -256,7 +294,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                     elevation: 2,
                   ),
-                  onPressed: canAccept ? () => _acceptOrder(doc.id, commission, data['userId']) : null,
+                  onPressed: canAccept ? () => _acceptOrder(doc.id, commission, data['userId'] ?? "") : null,
                   child: Text(
                     canAccept ? "قبول الطلب والتحرك الآن" : "الرصيد غير كافٍ.. اشحن محفظتك",
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo')
