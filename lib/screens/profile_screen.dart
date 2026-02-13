@@ -27,7 +27,7 @@ class ProfileScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator(color: Colors.orange));
           }
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text("لم يتم العثور على بيانات"));
+            return const Center(child: Text("لم يتم العثور على بيانات", style: TextStyle(fontFamily: 'Cairo')));
           }
 
           var userData = snapshot.data!.data() as Map<String, dynamic>;
@@ -36,27 +36,13 @@ class ProfileScreen extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                // صورة البروفايل والاسم
                 Center(
                   child: Column(
                     children: [
-                      Stack(
-                        children: [
-                          CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.orange[100],
-                            child: const Icon(Icons.person, size: 60, color: Colors.orange),
-                          ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
-                              child: const Icon(Icons.check, color: Colors.white, size: 18),
-                            ),
-                          )
-                        ],
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.orange[100],
+                        child: const Icon(Icons.person, size: 60, color: Colors.orange),
                       ),
                       const SizedBox(height: 15),
                       Text(
@@ -70,44 +56,38 @@ class ProfileScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                
                 const SizedBox(height: 30),
-
-                // بطاقة بيانات المركبة
                 _buildInfoCard(
                   title: "بيانات المركبة",
                   icon: Icons.delivery_dining_rounded,
                   content: userData['vehicleType'] == 'motorcycle' ? "موتوسيكل" : "سيارة",
                   color: Colors.blue,
                 ),
-
                 const SizedBox(height: 15),
-
-                // بطاقة بيانات الاتصال
                 _buildInfoCard(
                   title: "رقم الهاتف",
                   icon: Icons.phone_android_rounded,
                   content: userData['phone'] ?? "غير مسجل",
                   color: Colors.orange,
                 ),
-
                 const SizedBox(height: 15),
-
-                // بطاقة العنوان أو المنطقة
                 _buildInfoCard(
                   title: "المنطقة النشطة",
                   icon: Icons.map_rounded,
                   content: userData['city'] ?? "الإسكندرية",
                   color: Colors.teal,
                 ),
-
                 const SizedBox(height: 30),
-
-                // زر تعديل البيانات (اختياري)
                 ElevatedButton.icon(
                   onPressed: () {
+                    // ✅ تم إصلاح الخطأ هنا (وضع الـ TextStyle داخل الـ Text)
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("ميزة تعديل البيانات ستتوفر قريباً"), fontFamily: 'Cairo')
+                      const SnackBar(
+                        content: Text(
+                          "ميزة تعديل البيانات ستتوفر قريباً", 
+                          style: TextStyle(fontFamily: 'Cairo'),
+                        ),
+                      ),
                     );
                   },
                   icon: const Icon(Icons.edit_note_rounded),
