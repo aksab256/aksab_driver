@@ -142,7 +142,7 @@ class OrdersHistoryScreen extends StatelessWidget {
         Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 10.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
         const SizedBox(height: 6),
         Text("$value ج.م", 
-          style: TextStyle(color: valueColor, fontSize: 13.sp, fontWeight: FontWeight.black, fontFamily: 'Cairo')), // تكبير خط المبالغ المالية
+          style: TextStyle(color: valueColor, fontSize: 13.sp, fontWeight: FontWeight.w900, fontFamily: 'Cairo')), // تكبير خط المبالغ المالية
       ],
     );
   }
