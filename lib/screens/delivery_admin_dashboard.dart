@@ -4,9 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
 
 // استدعاء الصفحات التابعة
-import 'delivery_management_screen.dart'; // أيقونة 1: الطلبات
-import 'delivery_fleet_screen.dart';      // أيقونة 2: إدارة المناديب (الصفحة الجديدة)
-import 'manager_geo_dist_screen.dart';    // أيقونة 3: مناطق التوصيل (الخريطة للمدير)
+import 'delivery_management_screen.dart'; 
+import 'delivery_fleet_screen.dart';      
+import 'manager_geo_dist_screen.dart';    
 
 class DeliveryAdminDashboard extends StatefulWidget {
   const DeliveryAdminDashboard({super.key});
@@ -42,7 +42,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       if (managerSnap.docs.isNotEmpty) {
         var doc = managerSnap.docs.first;
         _userData = doc.data();
-        String role = _userData!['role'];
+        String role = _userData!['role'] ?? 'delivery_supervisor';
         String managerDocId = doc.id;
 
         await _loadStats(role, managerDocId);
@@ -51,6 +51,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
       debugPrint("Dashboard Error: $e");
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -95,14 +96,16 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
-        title: Text(_userData?['role'] == 'delivery_manager' ? "لوحة مدير التوصيل" : "لوحة مشرف التوصيل"),
+        title: Text(_userData?['role'] == 'delivery_manager' ? "لوحة مدير التوصيل" : "لوحة مشرف التوصيل",
+            style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF2F3542),
         centerTitle: true,
+        elevation: 0,
       ),
       drawer: _buildDrawer(),
       body: Padding(
@@ -111,7 +114,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text("مرحباً بك، ${_userData?['fullname'] ?? ''}",
-                style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
+                style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
             SizedBox(height: 2.h),
             Expanded(
               child: GridView.count(
@@ -139,10 +142,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-          )
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
         ],
       ),
       child: Column(
@@ -150,9 +150,9 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
         children: [
           Icon(icon, color: color, size: 28.sp),
           SizedBox(height: 1.h),
-          Text(title, style: TextStyle(fontSize: 10.sp, color: Colors.grey[600])),
+          Text(title, style: TextStyle(fontSize: 10.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
           Text(value,
-              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: color),
+              style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, color: color, fontFamily: 'Cairo'),
               textAlign: TextAlign.center),
         ],
       ),
@@ -162,68 +162,74 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
   Widget _buildDrawer() {
     return Drawer(
       child: ListView(
+        padding: EdgeInsets.zero,
         children: [
           DrawerHeader(
             decoration: const BoxDecoration(color: Color(0xFF2F3542)),
             child: Center(
-                child: Text("أكسب - إدارة التوصيل", style: TextStyle(color: Colors.white, fontSize: 18.sp))),
+                child: Text("أكسب - إدارة التوصيل", 
+                  style: TextStyle(color: Colors.white, fontSize: 16.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold))),
           ),
           
-          // 1. أيقونة تقارير الطلبات (حسب الدور جغرافياً)
           _drawerItem(Icons.analytics, "تقارير الطلبات", () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const DeliveryManagementScreen()),
-            );
+            Navigator.pop(context); // إغلاق الدرور أولاً
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryManagementScreen()));
           }),
 
-          // 2. أيقونة إدارة المناديب (الصفحة الجديدة للأهداف وكروت المشرفين)
           _drawerItem(Icons.people_alt, "إدارة المناديب", () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const DeliveryFleetScreen()),
-            );
+            Navigator.pop(context);
+            Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryFleetScreen()));
           }),
 
-          // 3. أيقونة مناطق التوصيل (تظهر للمدير فقط لوضع المناطق العامة)
           if (_userData?['role'] == 'delivery_manager')
             _drawerItem(Icons.map, "مناطق التوصيل", () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ManagerGeoDistScreen()),
-              );
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (context) => const ManagerGeoDistScreen()));
             }),
 
           const Divider(),
+          
+          // أيقونة تسجيل الخروج مع التنبيه
           _drawerItem(Icons.logout, "تسجيل الخروج", () {
-            FirebaseAuth.instance.signOut();
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                content: const Text("هل أنت متأكد أنك تريد مغادرة لوحة التحكم؟", style: TextStyle(fontFamily: 'Cairo')),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context), 
+                    child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey))
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+                    ),
+                    onPressed: () async {
+                      await FirebaseAuth.instance.signOut();
+                      if (context.mounted) {
+                        // يتم الانتقال لصفحة تسجيل الدخول وحذف كل السجلات السابقة
+                        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+                      }
+                    },
+                    child: const Text("خروج", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
+                  ),
+                ],
+              ),
+            );
           }),
         ],
       ),
     );
   }
 
-  Widget _drawerItem(Icons.logout, "تسجيل الخروج", () {
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo')),
-      content: const Text("هل أنت متأكد أنك تريد مغادرة لوحة التحكم؟", style: TextStyle(fontFamily: 'Cairo')),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء")),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-          onPressed: () async {
-            await FirebaseAuth.instance.signOut();
-            if (context.mounted) {
-              Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-            }
-          },
-          child: const Text("خروج", style: TextStyle(color: Colors.white)),
-        ),
-      ],
-    ),
-  );
-});
-
-
+  Widget _drawerItem(IconData icon, String title, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: const Color(0xFF1ABC9C)),
+      title: Text(title, style: TextStyle(fontSize: 12.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+      onTap: onTap,
+    );
+  }
+}
