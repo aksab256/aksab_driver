@@ -1,4 +1,3 @@
-// lib/screens/orders_history_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -16,7 +15,7 @@ class OrdersHistoryScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text("سجل الرحلات المكتملة", 
-          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18)),
+          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 20)), // تكبير عنوان الـ AppBar
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0.5,
@@ -24,8 +23,6 @@ class OrdersHistoryScreen extends StatelessWidget {
       ),
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot>(
-          // ✅ نصيحة: إذا استمر السجل فارغاً، جرب حذف سطر الـ orderBy مؤقتاً
-          // إذا اشتغل، فالمشكلة هي Index 100% وتحتاج لضغط الرابط في الكونسول
           stream: FirebaseFirestore.instance
               .collection('specialRequests')
               .where('driverId', isEqualTo: uid)
@@ -34,7 +31,7 @@ class OrdersHistoryScreen extends StatelessWidget {
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return Center(child: Text("يجب تفعيل الفهرسة (Index) من لوحة تحكم فايربيز", style: TextStyle(fontFamily: 'Cairo')));
+              return Center(child: Text("خطأ في تحميل البيانات", style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp)));
             }
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator(color: Colors.orange));
@@ -44,7 +41,8 @@ class OrdersHistoryScreen extends StatelessWidget {
             }
 
             return ListView.builder(
-              padding: EdgeInsets.fromLTRB(12.sp, 12.sp, 12.sp, 80.sp),
+              // ✅ زيادة المسافة السفلية لـ 100sp لضمان عدم نزول الكروت تحت أزرار القائمة
+              padding: EdgeInsets.fromLTRB(12.sp, 15.sp, 12.sp, 100.sp), 
               itemCount: snapshot.data!.docs.length,
               itemBuilder: (context, index) {
                 var order = snapshot.data!.docs[index].data() as Map<String, dynamic>;
@@ -58,58 +56,61 @@ class OrdersHistoryScreen extends StatelessWidget {
   }
 
   Widget _buildOrderCard(Map<String, dynamic> order) {
-    // ✅ التأكد من جلب التاريخ بشكل صحيح
     DateTime? date;
     if (order['completedAt'] is Timestamp) {
       date = (order['completedAt'] as Timestamp).toDate();
     }
-    
     String formattedDate = date != null ? DateFormat('dd/MM/yyyy | hh:mm a').format(date) : "تاريخ غير معروف";
     
-    // حسابات المالية - التأكد من أسماء الحقول كما في "أكسب"
-    double totalPrice = double.tryParse(order['price']?.toString() ?? '0') ?? 0.0;
-    // في تطبيقك استخدمنا driverNet للربح الصافي
-    double netEarnings = double.tryParse(order['driverNet']?.toString() ?? '0') ?? 0.0;
-    double commission = totalPrice - netEarnings;
+    double total = double.tryParse(order['totalPrice']?.toString() ?? '0') ?? 0.0;
+    double net = double.tryParse(order['driverNet']?.toString() ?? '0') ?? 0.0;
+    double commission = (total > 0) ? (total - net) : 0.0;
 
     return Container(
-      margin: EdgeInsets.only(bottom: 15.sp),
+      margin: EdgeInsets.only(bottom: 18.sp), // زيادة المسافة بين الكروت
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5))],
+        borderRadius: BorderRadius.circular(25), // زيادة تدوير الحواف
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 8))],
       ),
       child: Column(
         children: [
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 15.sp, vertical: 8.sp),
-            color: Colors.orange[50], // تغيير اللون ليتماشى مع هوية المندوب
+            padding: EdgeInsets.symmetric(horizontal: 15.sp, vertical: 10.sp),
+            decoration: BoxDecoration(
+              color: Colors.orange[50],
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(formattedDate, style: TextStyle(color: Colors.orange[900], fontSize: 8.5.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-                Text("#${order['orderId']?.toString().substring(0, 5) ?? 'رحلة'}", 
-                  style: TextStyle(color: Colors.grey[600], fontSize: 8.sp)),
+                Text(formattedDate, 
+                  style: TextStyle(color: Colors.orange[900], fontSize: 10.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                Text("#${order['orderId']?.toString().toUpperCase().substring(0, 5) ?? 'رحلة'}", 
+                  style: TextStyle(color: Colors.grey[600], fontSize: 10.sp, fontWeight: FontWeight.w600)),
               ],
             ),
           ),
           
           Padding(
-            padding: EdgeInsets.all(15.sp),
+            padding: EdgeInsets.all(18.sp), // زيادة البادينج الداخلي
             child: Column(
               children: [
                 _buildLocationRow(Icons.radio_button_checked, Colors.green, "من:", order['pickupAddress'] ?? "موقع الاستلام"),
-                SizedBox(height: 1.h),
+                SizedBox(height: 2.h), // زيادة المسافة بين الموقعين
                 _buildLocationRow(Icons.location_on, Colors.redAccent, "إلى:", order['dropoffAddress'] ?? "موقع التسليم"),
                 
-                const Divider(height: 30),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 15),
+                  child: Divider(height: 1, thickness: 0.8),
+                ),
 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildFinanceStat("إجمالي", "${totalPrice.toStringAsFixed(0)}", Colors.black87),
-                    _buildFinanceStat("العمولة", "${commission.toStringAsFixed(0)}", Colors.red),
-                    _buildFinanceStat("ربحك", "${netEarnings.toStringAsFixed(0)}", Colors.green[700]!),
+                    _buildFinanceStat("إجمالي", total.toStringAsFixed(1), Colors.black87),
+                    _buildFinanceStat("العمولة", commission.abs().toStringAsFixed(1), Colors.red),
+                    _buildFinanceStat("ربحك", net.toStringAsFixed(1), Colors.green[700]!),
                   ],
                 ),
               ],
@@ -124,12 +125,12 @@ class OrdersHistoryScreen extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: color, size: 14.sp),
-        const SizedBox(width: 8),
+        Icon(icon, color: color, size: 16.sp), // تكبير الأيقونات
+        const SizedBox(width: 10),
         Expanded(
           child: Text(address, 
-            style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.w500, fontFamily: 'Cairo'),
-            maxLines: 1, overflow: TextOverflow.ellipsis),
+            style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', height: 1.3), // تكبير خط العنوان
+            maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
       ],
     );
@@ -138,9 +139,10 @@ class OrdersHistoryScreen extends StatelessWidget {
   Widget _buildFinanceStat(String label, String value, Color valueColor) {
     return Column(
       children: [
-        Text(label, style: TextStyle(color: Colors.grey, fontSize: 8.sp, fontFamily: 'Cairo')),
+        Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 10.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
         Text("$value ج.م", 
-          style: TextStyle(color: valueColor, fontSize: 11.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+          style: TextStyle(color: valueColor, fontSize: 13.sp, fontWeight: FontWeight.black, fontFamily: 'Cairo')), // تكبير خط المبالغ المالية
       ],
     );
   }
@@ -150,9 +152,10 @@ class OrdersHistoryScreen extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.history_rounded, size: 60.sp, color: Colors.grey[300]),
-          SizedBox(height: 2.h),
-          Text("لا توجد رحلات مكتملة بعد", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.grey[600])),
+          Icon(Icons.history_rounded, size: 70.sp, color: Colors.grey[200]),
+          SizedBox(height: 3.h),
+          Text("لا توجد رحلات مكتملة حالياً", 
+            style: TextStyle(fontFamily: 'Cairo', fontSize: 15.sp, color: Colors.grey[500], fontWeight: FontWeight.bold)),
         ],
       ),
     );
