@@ -97,13 +97,17 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // دالة زر العمليات (كانت مفقودة في كودك)
+  // ✅ تم إصلاح Border.all هنا ليتوافق مع متطلبات BoxDecoration
   Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 15),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), border: BorderSide(color: Colors.grey[200]!)),
+        decoration: BoxDecoration(
+          color: Colors.white, 
+          borderRadius: BorderRadius.circular(15), 
+          border: Border.all(color: Colors.grey[200]!), // الإصلاح هنا
+        ),
         child: Column(
           children: [
             Icon(icon, color: color, size: 24.sp),
@@ -115,7 +119,6 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // دالة رأس القسم (كانت مفقودة في كودك)
   Widget _sectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
