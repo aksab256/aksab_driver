@@ -20,8 +20,8 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
   List<Map<String, dynamic>> myReps = [];
   bool isLoading = true;
   
-  // لطباعة تقارير الفحص على الشاشة
-  String debugConsole = "🚀 بدء تشغيل نظام التوجيه الجغرافي...";
+  // الكونسول الأسود للتشخيص المباشر
+  String debugConsole = "🚀 بدء تشغيل النظام...";
 
   @override
   void initState() {
@@ -34,19 +34,18 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       setState(() {
         debugConsole = "$msg\n$debugConsole";
       });
+      print(msg); // للرؤية في الـ Debug Console الخاص بالكمبيوتر أيضاً
     }
   }
 
   Future<void> _initializeData() async {
-    try {
-      await _loadGeoJson();
-      await _getUserData();
-      _updateLog("✅ النظام جاهز لاستقبال الطلبات");
-    } catch (e) {
-      _updateLog("❌ خطأ في التهيئة: $e");
-    } finally {
-      if (mounted) setState(() => isLoading = false);
-    }
+    _updateLog("⏳ جاري جلب بيانات المستخدم...");
+    await _getUserData();
+    
+    _updateLog("⏳ جاري تحميل الخريطة في الخلفية...");
+    _loadGeoJson().then((_) => _updateLog("✅ الخريطة جاهزة"));
+
+    if (mounted) setState(() => isLoading = false);
   }
 
   Future<void> _loadGeoJson() async {
@@ -54,50 +53,51 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       final String response = await rootBundle.loadString(
           'assets/OSMB-bc319d822a17aa9ad1089fc05e7d4e752460f877.geojson');
       geoJsonData = json.decode(response);
-      _updateLog("📂 ملف الخريطة محمل: ${geoJsonData!['features'].length} منطقة");
     } catch (e) {
-      _updateLog("❌ فشل تحميل ملف الـ GeoJSON: $e");
+      _updateLog("❌ خطأ في ملف الخريطة: $e");
     }
   }
 
   Future<void> _getUserData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _updateLog("❌ لا يوجد مستخدم مسجل دخول");
-      return;
-    }
-    
-    final snap = await FirebaseFirestore.instance
-        .collection('managers')
-        .where('uid', isEqualTo: user.uid)
-        .get();
-
-    if (snap.docs.isNotEmpty) {
-      var doc = snap.docs.first;
-      var data = doc.data();
-      role = data['role'];
-      myAreas = List<String>.from(data['geographicArea'] ?? []);
-      _updateLog("👤 المستخدم: ${data['fullname']} | الدور: $role");
-      _updateLog("📍 نطاق العمل: ${myAreas.join(' - ')}");
-
-      if (role == 'delivery_supervisor') {
-        final repsSnap = await FirebaseFirestore.instance
-            .collection('deliveryReps')
-            .where('supervisorId', isEqualTo: doc.id)
-            .get();
-        myReps = repsSnap.docs.map((d) => {
-          'id': d.id, 
-          'fullname': d['fullname'], 
-          'repCode': d['repCode']
-        }).toList();
-        _updateLog("👥 فريقك: ${myReps.length} مناديب");
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _updateLog("❌ لا يوجد مستخدم مسجل");
+        return;
       }
-    } else {
-      _updateLog("⚠️ لم يتم العثور على بيانات المستخدم في Firestore");
+      
+      final snap = await FirebaseFirestore.instance
+          .collection('managers')
+          .where('uid', isEqualTo: user.uid)
+          .get();
+
+      if (snap.docs.isNotEmpty) {
+        var doc = snap.docs.first;
+        var data = doc.data();
+        role = data['role'];
+        myAreas = List<String>.from(data['geographicArea'] ?? []);
+        _updateLog("👤 الدور: $role | المناطق: ${myAreas.length}");
+
+        if (role == 'delivery_supervisor') {
+          final repsSnap = await FirebaseFirestore.instance
+              .collection('deliveryReps')
+              .where('supervisorId', isEqualTo: doc.id)
+              .get();
+          myReps = repsSnap.docs.map((d) => {
+            'id': d.id, 
+            'fullname': d['fullname'], 
+            'repCode': d['repCode']
+          }).toList();
+          _updateLog("👥 الفريق: ${myReps.length} مناديب");
+        }
+      } else {
+        _updateLog("❌ لم يتم العثور على حسابك في Firestore");
+      }
+    } catch (e) {
+      _updateLog("❌ خطأ في الـ User Data: $e");
     }
   }
 
-  // دالة رياضية لفحص النقطة داخل المضلع
   bool _isPointInPolygon(LatLng point, List<LatLng> polygon) {
     var lat = point.latitude;
     var lng = point.longitude;
@@ -120,17 +120,12 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     double lng = (locationData['lng'] as num).toDouble();
     LatLng orderPoint = LatLng(lat, lng);
 
-    _updateLog("🔎 فحص الطلب ($orderId) إحداثيات: $lat, $lng");
-
     for (var areaName in myAreas) {
       var feature = geoJsonData!['features'].firstWhere(
           (f) => f['properties']['name'].toString().trim() == areaName.trim(), 
           orElse: () => null);
 
-      if (feature == null) {
-        _updateLog("⚠️ المنطقة '$areaName' غير معرفة في ملف الخريطة");
-        continue;
-      }
+      if (feature == null) continue;
 
       try {
         var geometry = feature['geometry'];
@@ -141,31 +136,22 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
           for (var ring in coords) {
             List<LatLng> polyPoints = (ring as List).map<LatLng>((c) =>
                 LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble())).toList();
-            if (_isPointInPolygon(orderPoint, polyPoints)) {
-              _updateLog("🎯 طلب $orderId يقع داخل $areaName");
-              return true;
-            }
+            if (_isPointInPolygon(orderPoint, polyPoints)) return true;
           }
         } 
         else if (type == 'MultiPolygon') {
-          // حل مشكلة الإسكندرية (المناطق المتعددة)
           for (var polygonData in coords) {
             for (var ring in polygonData) {
               List<LatLng> polyPoints = (ring as List).map<LatLng>((c) =>
                   LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble())).toList();
-              if (_isPointInPolygon(orderPoint, polyPoints)) {
-                _updateLog("🎯 طلب $orderId يقع داخل $areaName (Multi)");
-                return true;
-              }
+              if (_isPointInPolygon(orderPoint, polyPoints)) return true;
             }
           }
         }
       } catch (e) {
-        _updateLog("🚨 خطأ في هيكلة مصفوفة $areaName");
+        _updateLog("🚨 خطأ في منطقة $areaName");
       }
     }
-    
-    _updateLog("🔕 طلب $orderId خارج نطاقك الجغرافي");
     return false;
   }
 
@@ -178,19 +164,19 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       ),
       body: Column(
         children: [
-          // كونسول المراقبة
-          if (role == 'delivery_supervisor')
-            Container(
-              height: 18.h,
-              width: double.infinity,
-              margin: const EdgeInsets.all(8),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(10)),
-              child: SingleChildScrollView(
-                reverse: true,
-                child: Text(debugConsole, style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontFamily: 'monospace')),
-              ),
+          // كونسول المراقبة لمتابعة الاتصال
+          Container(
+            height: 12.h,
+            width: double.infinity,
+            margin: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(10)),
+            child: SingleChildScrollView(
+              reverse: true,
+              child: Text(debugConsole, 
+                style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontFamily: 'monospace')),
             ),
+          ),
           
           Expanded(
             child: isLoading
@@ -198,10 +184,18 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
                 : StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance.collection('orders').snapshots(),
                     builder: (context, snapshot) {
-                      if (snapshot.hasError) return Center(child: Text("خطأ: ${snapshot.error}"));
-                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: Text("جاري الاتصال بالسيرفر..."));
+                      }
+                      if (snapshot.hasError) {
+                        _updateLog("🚨 خطأ فايربيز: ${snapshot.error}");
+                        return Center(child: Text("حدث خطأ في جلب البيانات"));
+                      }
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return const Center(child: Text("لا توجد طلبات في السجل"));
+                      }
 
-                      _updateLog("📥 تم استلام ${snapshot.data!.docs.length} طلبات من Firestore");
+                      _updateLog("📥 استلمت ${snapshot.data!.docs.length} طلبات");
 
                       var filteredOrders = snapshot.data!.docs.where((doc) {
                         var data = doc.data() as Map<String, dynamic>;
@@ -209,31 +203,30 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
                         if (role == 'delivery_manager') {
                           return data['status'] == 'new-order' && data['deliveryManagerAssigned'] != true;
                         } else if (role == 'delivery_supervisor') {
-                          // شروط الظهور للمشرف
                           bool isApproved = data['deliveryManagerAssigned'] == true;
                           bool noRep = data['deliveryRepId'] == null;
                           bool active = data['status'] != 'delivered';
                           
                           if (isApproved && noRep && active) {
                             if (data['buyer'] != null && data['buyer']['location'] != null) {
-                              return _isOrderInMyArea(data['buyer']['location'], doc.id.substring(0,5));
-                            } else {
-                              _updateLog("⚠️ طلب ${doc.id.substring(0,5)} ليس له إحداثيات");
+                              return _isOrderInMyArea(data['buyer']['location'], doc.id);
                             }
                           }
                         }
                         return false;
                       }).toList();
 
+                      _updateLog("🎯 متاح لمنطقتك: ${filteredOrders.length} طلب");
+
                       if (filteredOrders.isEmpty) {
-                        return const Center(child: Text("لا توجد طلبات متاحة في منطقتك حالياً"));
+                        return const Center(child: Text("لا توجد طلبات مطابقة لمنطقتك"));
                       }
 
                       return ListView.builder(
                         itemCount: filteredOrders.length,
                         itemBuilder: (context, index) {
-                          var orderData = filteredOrders[index].data() as Map<String, dynamic>;
-                          return _buildOrderCard(filteredOrders[index].id, orderData);
+                          return _buildOrderCard(filteredOrders[index].id, 
+                              filteredOrders[index].data() as Map<String, dynamic>);
                         },
                       );
                     },
@@ -244,7 +237,6 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     );
   }
 
-  // دالة عرض الكارت والدوال الأخرى تبقى كما هي مع التأكد من وجودها
   Widget _buildOrderCard(String orderId, Map<String, dynamic> order) {
     return Card(
       margin: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
@@ -254,14 +246,15 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
         child: Column(
           children: [
             ListTile(
-              title: Text("طلب: #$orderId", style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text("العميل: ${order['buyer']['name']}\nالعنوان: ${order['buyer']['address']}"),
-              trailing: Text("${order['total']} ج.م", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              title: Text("طلب: #${orderId.substring(0,6)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text("العميل: ${order['buyer']['name']}"),
+              trailing: Text("${order['total']} ج.م", style: const TextStyle(color: Colors.green)),
             ),
             if (role == 'delivery_manager')
               ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
                 onPressed: () => _managerMoveToDelivery(orderId),
-                child: const Text("الموافقة ونقل للمشرف الجغرافي"),
+                child: const Text("موافقة ونقل للمشرف الجغرافي", style: TextStyle(color: Colors.white)),
               ),
             if (role == 'delivery_supervisor') _buildSupervisorAction(orderId, order),
           ],
@@ -272,31 +265,40 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
 
   Future<void> _managerMoveToDelivery(String id) async {
     await FirebaseFirestore.instance.collection('orders').doc(id).update({'deliveryManagerAssigned': true});
-    _updateLog("✅ تم نقل الطلب $id للمشرف بنجاح");
+    _updateLog("✅ تم نقل الطلب $id للمشرف");
   }
 
   Widget _buildSupervisorAction(String orderId, Map<String, dynamic> orderData) {
-    return DropdownButton<String>(
-      isExpanded: true,
-      hint: const Text("إسناد لمندوب من فريقك"),
-      items: myReps.map((rep) => DropdownMenuItem(
-        value: rep['repCode'].toString(),
-        child: Text(rep['fullname']),
-      )).toList(),
-      onChanged: (val) {
-        if (val != null) {
-          var rep = myReps.firstWhere((r) => r['repCode'] == val);
-          _assignToRep(orderId, orderData, rep);
-        }
-      },
+    return Column(
+      children: [
+        const Divider(),
+        DropdownButton<String>(
+          isExpanded: true,
+          hint: const Text("اختر مندوب للإسناد"),
+          items: myReps.map((rep) => DropdownMenuItem(
+            value: rep['repCode'].toString(),
+            child: Text(rep['fullname']),
+          )).toList(),
+          onChanged: (val) {
+            if (val != null) {
+              var rep = myReps.firstWhere((r) => r['repCode'] == val);
+              _assignToRep(orderId, orderData, rep);
+            }
+          },
+        ),
+      ],
     );
   }
 
   Future<void> _assignToRep(String id, Map<String, dynamic> data, Map rep) async {
-    await FirebaseFirestore.instance.collection('orders').doc(id).update({
-      'deliveryRepId': rep['repCode'],
-      'repName': rep['fullname'],
-    });
-    _updateLog("✅ تم إسناد الطلب للمندوب ${rep['fullname']}");
+    try {
+      await FirebaseFirestore.instance.collection('orders').doc(id).update({
+        'deliveryRepId': rep['repCode'],
+        'repName': rep['fullname'],
+      });
+      _updateLog("✅ تم الإسناد لـ ${rep['fullname']}");
+    } catch (e) {
+      _updateLog("❌ فشل الإسناد: $e");
+    }
   }
 }
