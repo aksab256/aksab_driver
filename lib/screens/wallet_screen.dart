@@ -201,7 +201,11 @@ class WalletScreen extends StatelessWidget {
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), border: Border.all(color: isPending ? Colors.orange : Colors.grey[100]!)),
+                  shape: RoundedRectangleBorder(
+  borderRadius: BorderRadius.circular(15), 
+  side: BorderSide(color: isPending ? Colors.orange : Colors.grey[100]!), // هذا هو الصحيح
+),
+
                   child: ListTile(
                     leading: Icon(isPending ? Icons.pending_actions : Icons.history, color: isPending ? Colors.orange : Colors.grey),
                     title: Text(isPending ? "فاتورة رسوم جاهزة" : (amount > 0 ? "تسوية (+) " : "خصم عمولة (-)"),
