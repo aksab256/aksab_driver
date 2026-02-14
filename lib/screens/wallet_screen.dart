@@ -23,7 +23,7 @@ class WalletScreen extends StatelessWidget {
       _showInfoSheet(context, "تم استلام طلبك", "جاري تجهيز الرابط، سيظهر هنا خلال ثوانٍ.");
     } catch (e) {
       if (context.mounted) Navigator.pop(context);
-      _showInfoSheet(context, "خطأ", "فشل الاتصال.");
+      _showInfoSheet(context, "خطأ", "فشل الاتصال بالخادم.");
     }
   }
 
@@ -45,7 +45,7 @@ class WalletScreen extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         Navigator.pop(context);
-        _showInfoSheet(context, "خطأ", "حاول مجدداً.");
+        _showInfoSheet(context, "خطأ", "فشل إرسال الطلب، حاول مجدداً.");
       }
     }
   }
@@ -57,12 +57,15 @@ class WalletScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFFBFBFB),
       appBar: AppBar(
         title: const Text("المحفظة الذكية", style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-        centerTitle: true, backgroundColor: Colors.white, elevation: 0,
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        foregroundColor: Colors.black,
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
         builder: (context, driverSnap) {
-          if (!driverSnap.hasData) return const Center(child: CircularProgressIndicator());
+          if (!driverSnap.hasData) return const Center(child: CircularProgressIndicator(color: Colors.orange));
           var userData = driverSnap.data!.data() as Map<String, dynamic>?;
           double walletBalance = (userData?['walletBalance'] ?? 0.0).toDouble();
           double finalLimit = (userData?['creditLimit'] ?? 50.0).toDouble();
@@ -73,7 +76,7 @@ class WalletScreen extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 child: Text("الرصيد القابل للسحب: ${walletBalance.toStringAsFixed(2)} ج.م",
-                  style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                  style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.blueGrey[800])),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -85,7 +88,7 @@ class WalletScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              _sectionHeader("سجل العمليات"),
+              _sectionHeader("سجل العمليات والروابط النشطة"),
               Expanded(child: _buildCombinedHistory(uid)),
             ],
           );
@@ -96,27 +99,36 @@ class WalletScreen extends StatelessWidget {
 
   Widget _buildCombinedHistory(String? uid) {
     return StreamBuilder<QuerySnapshot>(
+      // ✅ تم حذف الترتيب (orderBy) لضمان اشتغال الاستعلام فوراً بدون Index
       stream: FirebaseFirestore.instance.collection('pendingInvoices')
           .where('driverId', isEqualTo: uid)
           .where('status', isEqualTo: 'ready_for_payment')
-          .orderBy('createdAt', descending: true).limit(1).snapshots(),
+          .snapshots(),
       builder: (context, pendingSnap) {
         return StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance.collection('walletLogs')
               .where('driverId', isEqualTo: uid)
-              .orderBy('timestamp', descending: true).limit(10).snapshots(),
+              .orderBy('timestamp', descending: true)
+              .limit(10)
+              .snapshots(),
           builder: (context, logSnap) {
             List<Map<String, dynamic>> allItems = [];
+
+            // 1. إضافة الروابط الجاهزة للدفع أولاً
             if (pendingSnap.hasData && pendingSnap.data!.docs.isNotEmpty) {
-              var d = pendingSnap.data!.docs.first.data() as Map<String, dynamic>;
-              if (d['createdAt'] != null) {
-                DateTime createdTime = (d['createdAt'] as Timestamp).toDate();
-                if (DateTime.now().difference(createdTime).inMinutes < 120) {
-                  d['isPendingLink'] = true;
-                  allItems.add(d);
+              for (var doc in pendingSnap.data!.docs) {
+                var d = doc.data() as Map<String, dynamic>;
+                if (d['createdAt'] != null) {
+                  DateTime createdTime = (d['createdAt'] as Timestamp).toDate();
+                  if (DateTime.now().difference(createdTime).inMinutes < 120) {
+                    d['isPendingLink'] = true;
+                    allItems.add(d);
+                  }
                 }
               }
             }
+
+            // 2. إضافة السجل التاريخي
             if (logSnap.hasData) {
               for (var doc in logSnap.data!.docs) {
                 var d = doc.data() as Map<String, dynamic>;
@@ -124,21 +136,42 @@ class WalletScreen extends StatelessWidget {
                 allItems.add(d);
               }
             }
+
+            if (allItems.isEmpty) {
+              return Center(child: Text("لا توجد عمليات سابقة", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[400])));
+            }
+
             return ListView.builder(
-              padding: const EdgeInsets.only(left: 20, right: 20, bottom: 20), // ✅ تم إصلاح الخطأ هنا
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 30),
               itemCount: allItems.length,
               itemBuilder: (context, index) {
                 var item = allItems[index];
                 bool isPending = item['isPendingLink'] ?? false;
                 double amount = (item['amount'] ?? 0.0).toDouble();
+
                 return Card(
-                  margin: const EdgeInsets.only(bottom: 10),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  elevation: isPending ? 3 : 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    side: BorderSide(color: isPending ? Colors.orange : Colors.grey[200]!),
+                  ),
                   child: ListTile(
-                    leading: Icon(isPending ? Icons.link : Icons.history, color: isPending ? Colors.orange : Colors.grey),
-                    title: Text(isPending ? "رابط دفع نشط" : (amount > 0 ? "شحن" : "خصم"), style: const TextStyle(fontFamily: 'Cairo')),
+                    leading: CircleAvatar(
+                      backgroundColor: isPending ? Colors.orange[50] : Colors.grey[50],
+                      child: Icon(isPending ? Icons.link : Icons.history, 
+                        color: isPending ? Colors.orange[900] : Colors.grey),
+                    ),
+                    title: Text(isPending ? "رابط شحن متاح" : (amount > 0 ? "شحن رصيد" : "خصم / سحب"),
+                        style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14)),
                     trailing: isPending 
-                      ? ElevatedButton(onPressed: () => launchUrl(Uri.parse(item['paymentUrl'])), child: const Text("ادفع"))
-                      : Text("${amount.toStringAsFixed(2)}"),
+                      ? ElevatedButton(
+                          onPressed: () => _launchPaymentUrl(item['paymentUrl']),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]),
+                          child: const Text("ادفع", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
+                        )
+                      : Text("${amount.toStringAsFixed(2)} ج.م", 
+                          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: amount > 0 ? Colors.green : Colors.red)),
                   ),
                 );
               },
@@ -149,30 +182,72 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // --- دوال مساعدة مختصرة للـ UI ---
+  void _launchPaymentUrl(String? url) async {
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   Widget _buildAdvancedBalanceCard(double w, double c, double t) => Container(
     margin: const EdgeInsets.all(20), padding: const EdgeInsets.all(25),
-    decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF1a1a1a), Color(0xFF3a3a3a)]), borderRadius: BorderRadius.circular(30)),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(colors: [Color(0xFF1a1a1a), Color(0xFF3a3a3a)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+      borderRadius: BorderRadius.circular(30),
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 5))]
+    ),
     child: Column(children: [
-      const Text("إجمالي الرصيد", style: TextStyle(color: Colors.white70, fontFamily: 'Cairo')),
-      Text("${t.toStringAsFixed(2)} ج.م", style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+      const Text("إجمالي المحفظة المتوفر", style: TextStyle(color: Colors.white70, fontFamily: 'Cairo', fontSize: 14)),
+      const SizedBox(height: 5),
+      Text("${t.toStringAsFixed(2)} ج.م", style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+      const Divider(color: Colors.white24, height: 30),
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        _miniInfo("كاش", "${w.toStringAsFixed(1)}"),
+        _miniInfo("مديونية", "${c.toStringAsFixed(1)}"),
+      ])
     ]),
   );
 
-  void _showLoading(BuildContext context) => showDialog(context: context, builder: (c) => const Center(child: CircularProgressIndicator()));
+  Widget _miniInfo(String l, String v) => Column(children: [
+    Text(l, style: const TextStyle(color: Colors.white60, fontSize: 12, fontFamily: 'Cairo')),
+    Text(v, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+  ]);
+
+  void _showLoading(BuildContext context) => showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
   
-  void _showInfoSheet(BuildContext context, String t, String m) => showModalBottomSheet(context: context, builder: (c) => Padding(padding: const EdgeInsets.all(20), child: Text("$t\n$m", textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo'))));
+  void _showInfoSheet(BuildContext context, String t, String m) => showModalBottomSheet(
+    context: context, 
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (c) => Padding(padding: const EdgeInsets.all(25), child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'Cairo')),
+      const SizedBox(height: 10),
+      Text(m, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+      const SizedBox(height: 20),
+      SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("تم", style: TextStyle(fontFamily: 'Cairo'))))
+    ]))
+  );
 
   void _showChargePicker(BuildContext context) {
-    showModalBottomSheet(context: context, builder: (c) => Wrap(children: [50, 100, 200].map((a) => ListTile(title: Text("$a ج.م"), onTap: () { Navigator.pop(context); _processCharge(context, a.toDouble()); })).toList()));
+    showModalBottomSheet(
+      context: context, 
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (c) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Wrap(children: [50, 100, 200, 500].map((a) => ListTile(
+          leading: const Icon(Icons.add_circle_outline, color: Colors.green),
+          title: Text("شحن مبلغ $a ج.م", style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+          onTap: () { Navigator.pop(context); _processCharge(context, a.toDouble()); }
+        )).toList()),
+      )
+    );
   }
 
   void _showWithdrawDialog(BuildContext context, double current) {
     final ctrl = TextEditingController();
-    showDialog(context: context, builder: (c) => AlertDialog(title: const Text("سحب"), content: TextField(controller: ctrl, keyboardType: TextInputType.number), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء")), TextButton(onPressed: () { Navigator.pop(context); _executeWithdrawal(context, double.parse(ctrl.text)); }, child: const Text("سحب"))]));
-  }
-
-  Widget _sectionHeader(String t) => Padding(padding: const EdgeInsets.all(20), child: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')));
-
-  Widget _actionBtn(IconData i, String l, Color c, VoidCallback o) => ElevatedButton.icon(onPressed: o, icon: Icon(i), label: Text(l, style: const TextStyle(fontFamily: 'Cairo')), style: ElevatedButton.styleFrom(backgroundColor: c, foregroundColor: Colors.white));
-}
+    showDialog(context: context, builder: (c) => AlertDialog(
+      title: const Text("طلب سحب كاش", style: TextStyle(fontFamily: 'Cairo')),
+      content: TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: "أدخل المبلغ")),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo'))),
+        ElevatedButton(on
