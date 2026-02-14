@@ -29,7 +29,9 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     await _getUserData();
     try {
       final response = await rootBundle.loadString('assets/OSMB-bc319d822a17aa9ad1089fc05e7d4e752460f877.geojson');
-      geoJsonData = json.decode(response);
+      setState(() {
+        geoJsonData = json.decode(response);
+      });
     } catch (e) {
       debugPrint("Error loading GeoJSON: $e");
     }
@@ -47,8 +49,12 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       myAreas = List<String>.from(doc['geographicArea'] ?? []);
 
       if (role == 'delivery_supervisor') {
+        // جلب المناديب التابعين لهذا المشرف
         final reps = await FirebaseFirestore.instance.collection('deliveryReps').where('supervisorId', isEqualTo: doc.id).get();
-        myReps = reps.docs.map((d) => {'fullname': d['fullname'], 'repCode': d['repCode']}).toList();
+        myReps = reps.docs.map((d) => {
+          'fullname': d['fullname'], 
+          'repCode': d['repCode'].toString() 
+        }).toList();
       }
     }
   }
@@ -95,9 +101,11 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF1F2F6),
       appBar: AppBar(
         title: Text(role == 'delivery_manager' ? "إدارة التوصيل (مدير)" : "توجيه الطلبات (مشرف)"),
         backgroundColor: const Color(0xFF2F3542),
+        centerTitle: true,
       ),
       body: isLoading 
         ? const Center(child: CircularProgressIndicator()) 
@@ -105,8 +113,6 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
             stream: FirebaseFirestore.instance.collection('orders').snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) return Center(child: Text("حدث خطأ: ${snapshot.error}"));
-              
-              // كسر حالة التعليق إذا كانت البيانات موجودة فعلياً
               if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
@@ -115,12 +121,10 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
               var filtered = docs.where((doc) {
                 var data = doc.data() as Map<String, dynamic>;
                 
-                // منطق المدير
                 if (role == 'delivery_manager') {
                   return data['status'] == 'new-order' && data['deliveryManagerAssigned'] != true;
                 }
                 
-                // منطق المشرف
                 bool isApproved = data['deliveryManagerAssigned'] == true;
                 bool isNotAssignedToRep = data['deliveryRepId'] == null;
                 if (isApproved && isNotAssignedToRep && data['buyer']?['location'] != null) {
@@ -130,45 +134,45 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
               }).toList();
 
               if (filtered.isEmpty) {
-                return const Center(child: Text("لا توجد طلبات بانتظار الإجراء حالياً"));
+                return const Center(child: Text("لا توجد طلبات جديدة في منطقتك حالياً"));
               }
 
               return ListView.builder(
                 padding: const EdgeInsets.all(10),
                 itemCount: filtered.length,
-                itemBuilder: (context, index) => _buildOrderCard(
-                  filtered[index].id, 
-                  filtered[index].data() as Map<String, dynamic>
-                ),
+                itemBuilder: (context, index) {
+                  final doc = filtered[index];
+                  return _buildOrderCard(doc.id, doc.data() as Map<String, dynamic>);
+                },
               );
             },
           ),
     );
   }
 
-  Widget _buildOrderCard(String id, Map data) {
+  Widget _buildOrderCard(String id, Map<String, dynamic> data) {
     return Card(
-      elevation: 3,
+      elevation: 2,
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         contentPadding: const EdgeInsets.all(15),
-        title: Text("طلب #${id.substring(0,6)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text("طلب #${id.substring(0,6)}", style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2F3542))),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 5),
-            Text("العميل: ${data['buyer']['name']}"),
-            Text("العنوان: ${data['buyer']['address']}"),
+            const Divider(),
+            Text("العميل: ${data['buyer']?['name'] ?? 'غير معروف'}", style: const TextStyle(color: Colors.black87)),
+            Text("العنوان: ${data['buyer']?['address'] ?? 'غير محدد'}", style: const TextStyle(fontSize: 12)),
           ],
         ),
         trailing: role == 'delivery_manager' 
           ? ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
               onPressed: () => _approveOrder(id),
               child: const Text("نقل للمشرف"),
             )
-          : _buildRepPicker(id),
+          : _buildRepPicker(id, data),
       ),
     );
   }
@@ -177,24 +181,56 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     await FirebaseFirestore.instance.collection('orders').doc(id).update({
       'deliveryManagerAssigned': true,
     });
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم تحويل الطلب للمشرف المختص")));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم تحويل الطلب للمشرف المختص")));
+    }
   }
 
-  Widget _buildRepPicker(String id) {
-    return DropdownButton<String>(
-      hint: const Text("إسناد لمندوب"),
-      underline: const SizedBox(),
-      icon: const Icon(Icons.delivery_dining, color: Color(0xFF2F3542)),
-      items: myReps.map((r) => DropdownMenuItem(value: r['repCode'].toString(), child: Text(r['fullname']))).toList(),
-      onChanged: (val) async {
-        if (val == null) return;
-        var rep = myReps.firstWhere((r) => r['repCode'] == val);
-        await FirebaseFirestore.instance.collection('orders').doc(id).update({
-          'deliveryRepId': val, 
-          'repName': rep['fullname']
-        });
-        // هنا يمكنك إضافة منطق نقل الطلب لمجموعة waitingdelivery إذا كان مطلوباً
-      },
+  Widget _buildRepPicker(String id, Map<String, dynamic> orderData) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F2F6),
+        borderRadius: BorderRadius.circular(8)
+      ),
+      child: DropdownButton<String>(
+        hint: const Text("إسناد"),
+        underline: const SizedBox(),
+        icon: const Icon(Icons.delivery_dining, color: Color(0xFF2F3542)),
+        items: myReps.map((r) => DropdownMenuItem(
+          value: r['repCode'], 
+          child: Text(r['fullname'], style: const TextStyle(fontSize: 13))
+        )).toList(),
+        onChanged: (val) async {
+          if (val == null) return;
+          var rep = myReps.firstWhere((r) => r['repCode'] == val);
+
+          try {
+            // منطق "ساعي البريد": نرسل نسخة فقط لمجموعة المندوب
+            DocumentReference waitingRef = FirebaseFirestore.instance.collection('waitingdelivery').doc(id);
+            
+            Map<String, dynamic> taskData = Map.from(orderData);
+            taskData['repCode'] = val; // المفتاح الأساسي لظهور المهمة عند المندوب
+            taskData['repName'] = rep['fullname'];
+            taskData['assignedAt'] = FieldValue.serverTimestamp();
+            taskData['deliveryTaskStatus'] = 'pending'; 
+
+            // إضافة الوثيقة لمجموعة الانتظار دون تغيير مجموعة orders الأصلية
+            await waitingRef.set(taskData);
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: Colors.blueAccent,
+                  content: Text("🚀 تم إرسال المهمة للمندوب: ${rep['fullname']}")
+                )
+              );
+            }
+          } catch (e) {
+            debugPrint("Error in sending task: $e");
+          }
+        },
+      ),
     );
   }
 }
