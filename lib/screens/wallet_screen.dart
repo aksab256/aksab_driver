@@ -97,9 +97,37 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
+  // دالة زر العمليات (كانت مفقودة في كودك)
+  Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), border: BorderSide(color: Colors.grey[200]!)),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 24.sp),
+            const SizedBox(height: 8),
+            Text(label, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // دالة رأس القسم (كانت مفقودة في كودك)
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16)),
+      ),
+    );
+  }
+
   Widget _buildCombinedHistory(String? uid) {
     return StreamBuilder<QuerySnapshot>(
-      // ✅ تم حذف الترتيب (orderBy) لضمان اشتغال الاستعلام فوراً بدون Index
       stream: FirebaseFirestore.instance.collection('pendingInvoices')
           .where('driverId', isEqualTo: uid)
           .where('status', isEqualTo: 'ready_for_payment')
@@ -114,7 +142,6 @@ class WalletScreen extends StatelessWidget {
           builder: (context, logSnap) {
             List<Map<String, dynamic>> allItems = [];
 
-            // 1. إضافة الروابط الجاهزة للدفع أولاً
             if (pendingSnap.hasData && pendingSnap.data!.docs.isNotEmpty) {
               for (var doc in pendingSnap.data!.docs) {
                 var d = doc.data() as Map<String, dynamic>;
@@ -128,7 +155,6 @@ class WalletScreen extends StatelessWidget {
               }
             }
 
-            // 2. إضافة السجل التاريخي
             if (logSnap.hasData) {
               for (var doc in logSnap.data!.docs) {
                 var d = doc.data() as Map<String, dynamic>;
@@ -245,9 +271,33 @@ class WalletScreen extends StatelessWidget {
 
   void _showWithdrawDialog(BuildContext context, double current) {
     final ctrl = TextEditingController();
-    showDialog(context: context, builder: (c) => AlertDialog(
-      title: const Text("طلب سحب كاش", style: TextStyle(fontFamily: 'Cairo')),
-      content: TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: "أدخل المبلغ")),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo'))),
-        ElevatedButton(on
+    showDialog(
+      context: context, 
+      builder: (c) => AlertDialog(
+        title: const Text("طلب سحب كاش", style: TextStyle(fontFamily: 'Cairo')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text("الرصيد المتاح: $current ج.م", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: "أدخل المبلغ")),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo'))),
+          ElevatedButton(
+            onPressed: () {
+              double? amount = double.tryParse(ctrl.text);
+              if (amount != null && amount > 0 && amount <= current) {
+                Navigator.pop(context);
+                _executeWithdrawal(context, amount);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تأكد من المبلغ المكتوب")));
+              }
+            },
+            child: const Text("سحب", style: TextStyle(fontFamily: 'Cairo')),
+          )
+        ],
+      )
+    );
+  }
+}
