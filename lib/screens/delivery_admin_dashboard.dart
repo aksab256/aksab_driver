@@ -203,12 +203,27 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     );
   }
 
-  Widget _drawerItem(IconData icon, String title, VoidCallback onTap) {
-    return ListTile(
-      leading: Icon(icon, color: const Color(0xFF1ABC9C)),
-      title: Text(title, style: TextStyle(fontSize: 12.sp)),
-      onTap: onTap,
-    );
-  }
-}
+  Widget _drawerItem(Icons.logout, "تسجيل الخروج", () {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo')),
+      content: const Text("هل أنت متأكد أنك تريد مغادرة لوحة التحكم؟", style: TextStyle(fontFamily: 'Cairo')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء")),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: () async {
+            await FirebaseAuth.instance.signOut();
+            if (context.mounted) {
+              Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+            }
+          },
+          child: const Text("خروج", style: TextStyle(color: Colors.white)),
+        ),
+      ],
+    ),
+  );
+});
+
 
