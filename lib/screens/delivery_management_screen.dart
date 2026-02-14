@@ -49,12 +49,13 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       myAreas = List<String>.from(doc['geographicArea'] ?? []);
 
       if (role == 'delivery_supervisor') {
-        // جلب المناديب التابعين لهذا المشرف
         final reps = await FirebaseFirestore.instance.collection('deliveryReps').where('supervisorId', isEqualTo: doc.id).get();
-        myReps = reps.docs.map((d) => {
-          'fullname': d['fullname'], 
-          'repCode': d['repCode'].toString() 
-        }).toList();
+        setState(() {
+          myReps = reps.docs.map((d) => {
+            'fullname': d['fullname'], 
+            'repCode': d['repCode'].toString() 
+          }).toList();
+        });
       }
     }
   }
@@ -134,7 +135,7 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
               }).toList();
 
               if (filtered.isEmpty) {
-                return const Center(child: Text("لا توجد طلبات جديدة في منطقتك حالياً"));
+                return const Center(child: Text("لا توجد طلبات جديدة حالياً"));
               }
 
               return ListView.builder(
@@ -182,7 +183,7 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       'deliveryManagerAssigned': true,
     });
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم تحويل الطلب للمشرف المختص")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم تحويل الطلب للمشرف")));
     }
   }
 
@@ -197,37 +198,36 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
         hint: const Text("إسناد"),
         underline: const SizedBox(),
         icon: const Icon(Icons.delivery_dining, color: Color(0xFF2F3542)),
-        items: myReps.map((r) => DropdownMenuItem(
-          value: r['repCode'], 
-          child: Text(r['fullname'], style: const TextStyle(fontSize: 13))
-        )).toList(),
+        // التصحيح هنا: تحديد نوع البيانات <String> لمنع خطأ الـ Object
+        items: myReps.map<DropdownMenuItem<String>>((Map<String, dynamic> r) {
+          return DropdownMenuItem<String>(
+            value: r['repCode'].toString(),
+            child: Text(r['fullname'], style: const TextStyle(fontSize: 13)),
+          );
+        }).toList(),
         onChanged: (val) async {
           if (val == null) return;
           var rep = myReps.firstWhere((r) => r['repCode'] == val);
 
           try {
-            // منطق "ساعي البريد": نرسل نسخة فقط لمجموعة المندوب
+            // منطق "ساعي البريد": نسخة فقط لمجموعة المندوب لضمان استقرار المجموعة الأصلية
             DocumentReference waitingRef = FirebaseFirestore.instance.collection('waitingdelivery').doc(id);
             
             Map<String, dynamic> taskData = Map.from(orderData);
-            taskData['repCode'] = val; // المفتاح الأساسي لظهور المهمة عند المندوب
+            taskData['repCode'] = val; // الكود المطلوب لظهور المهمة
             taskData['repName'] = rep['fullname'];
             taskData['assignedAt'] = FieldValue.serverTimestamp();
             taskData['deliveryTaskStatus'] = 'pending'; 
 
-            // إضافة الوثيقة لمجموعة الانتظار دون تغيير مجموعة orders الأصلية
             await waitingRef.set(taskData);
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  backgroundColor: Colors.blueAccent,
-                  content: Text("🚀 تم إرسال المهمة للمندوب: ${rep['fullname']}")
-                )
+                SnackBar(content: Text("🚀 تم إرسال المهمة للمندوب: ${rep['fullname']}"))
               );
             }
           } catch (e) {
-            debugPrint("Error in sending task: $e");
+            debugPrint("Error: $e");
           }
         },
       ),
