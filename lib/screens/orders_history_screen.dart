@@ -109,7 +109,7 @@ class OrdersHistoryScreen extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _buildFinanceStat("إجمالي", total.toStringAsFixed(1), Colors.black87),
-                    _buildFinanceStat("العمولة", commission.abs().toStringAsFixed(1), Colors.red),
+                    _buildFinanceStat("رسوم المنصة", commission.abs().toStringAsFixed(1), Colors.red),
                     _buildFinanceStat("ربحك", net.toStringAsFixed(1), Colors.green[700]!),
                   ],
                 ),
