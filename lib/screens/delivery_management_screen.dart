@@ -1,10 +1,9 @@
-import 'dart:convert';
+دimport 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:sizer/sizer.dart';
 
 class DeliveryManagementScreen extends StatefulWidget {
   const DeliveryManagementScreen({super.key});
@@ -19,7 +18,6 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
   Map<String, dynamic>? geoJsonData;
   List<Map<String, dynamic>> myReps = [];
   bool isLoading = true;
-  String debugConsole = "🚀 فحص الاتصال المباشر...";
 
   @override
   void initState() {
@@ -27,38 +25,26 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     _initializeData();
   }
 
-  void _updateLog(String msg) {
-    if (mounted) {
-      setState(() => debugConsole = "$msg\n$debugConsole");
-    }
-  }
-
   Future<void> _initializeData() async {
-    _updateLog("⏳ جاري سحب بيانات المشرف...");
     await _getUserData();
-    
-    _updateLog("⏳ تحميل ملف الخريطة...");
     try {
       final response = await rootBundle.loadString('assets/OSMB-bc319d822a17aa9ad1089fc05e7d4e752460f877.geojson');
       geoJsonData = json.decode(response);
-      _updateLog("✅ الخريطة جاهزة (${geoJsonData!['features'].length} منطقة)");
     } catch (e) {
-      _updateLog("❌ خطأ خريطة: $e");
+      debugPrint("Error loading GeoJSON: $e");
     }
-
     if (mounted) setState(() => isLoading = false);
   }
 
   Future<void> _getUserData() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) { _updateLog("❌ لا يوجد مستخدم!"); return; }
+    if (user == null) return;
     
     final snap = await FirebaseFirestore.instance.collection('managers').where('uid', isEqualTo: user.uid).get();
     if (snap.docs.isNotEmpty) {
       var doc = snap.docs.first;
       role = doc['role'];
       myAreas = List<String>.from(doc['geographicArea'] ?? []);
-      _updateLog("👤 $role | مناطق: ${myAreas.length}");
 
       if (role == 'delivery_supervisor') {
         final reps = await FirebaseFirestore.instance.collection('deliveryReps').where('supervisorId', isEqualTo: doc.id).get();
@@ -109,77 +95,105 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("نظام التوجيه الجغرافي"), backgroundColor: const Color(0xFF2F3542)),
-      body: Column(
-        children: [
-          Container(
-            height: 15.h, width: double.infinity, margin: const EdgeInsets.all(5),
-            padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(10)),
-            child: SingleChildScrollView(reverse: true, child: Text(debugConsole, style: const TextStyle(color: Colors.greenAccent, fontSize: 10, fontFamily: 'monospace'))),
-          ),
-          Expanded(
-            child: isLoading ? const Center(child: CircularProgressIndicator()) : StreamBuilder<QuerySnapshot>(
-              // تم تبسيط الاستعلام لأقصى درجة لتجنب أي تعليق
-              stream: FirebaseFirestore.instance.collection('orders').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  _updateLog("🚨 خطأ صريح: ${snapshot.error}");
-                  return Center(child: Text("خطأ: ${snapshot.error}"));
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: Text("⏳ بانتظار رد السيرفر..."));
+      appBar: AppBar(
+        title: Text(role == 'delivery_manager' ? "إدارة التوصيل (مدير)" : "توجيه الطلبات (مشرف)"),
+        backgroundColor: const Color(0xFF2F3542),
+      ),
+      body: isLoading 
+        ? const Center(child: CircularProgressIndicator()) 
+        : StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('orders').snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) return Center(child: Text("حدث خطأ: ${snapshot.error}"));
+              
+              // كسر حالة التعليق إذا كانت البيانات موجودة فعلياً
+              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              
+              var docs = snapshot.data?.docs ?? [];
+              var filtered = docs.where((doc) {
+                var data = doc.data() as Map<String, dynamic>;
+                
+                // منطق المدير
+                if (role == 'delivery_manager') {
+                  return data['status'] == 'new-order' && data['deliveryManagerAssigned'] != true;
                 }
                 
-                var docs = snapshot.data?.docs ?? [];
-                _updateLog("📥 تم استلام ${docs.length} طلبات");
+                // منطق المشرف
+                bool isApproved = data['deliveryManagerAssigned'] == true;
+                bool isNotAssignedToRep = data['deliveryRepId'] == null;
+                if (isApproved && isNotAssignedToRep && data['buyer']?['location'] != null) {
+                  return _isOrderInMyArea(data['buyer']['location']);
+                }
+                return false;
+              }).toList();
 
-                var filtered = docs.where((doc) {
-                  var data = doc.data() as Map<String, dynamic>;
-                  if (role == 'delivery_manager') return data['status'] == 'new-order' && data['deliveryManagerAssigned'] != true;
-                  
-                  // شروط المشرف
-                  bool cond = data['deliveryManagerAssigned'] == true && data['deliveryRepId'] == null;
-                  if (cond && data['buyer']?['location'] != null) {
-                    return _isOrderInMyArea(data['buyer']['location']);
-                  }
-                  return false;
-                }).toList();
+              if (filtered.isEmpty) {
+                return const Center(child: Text("لا توجد طلبات بانتظار الإجراء حالياً"));
+              }
 
-                _updateLog("🎯 متاح للعرض: ${filtered.length}");
-
-                if (filtered.isEmpty) return const Center(child: Text("لا توجد طلبات مطابقة"));
-
-                return ListView.builder(
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) => _buildOrderCard(filtered[index].id, filtered[index].data() as Map<String, dynamic>),
-                );
-              },
-            ),
+              return ListView.builder(
+                padding: const EdgeInsets.all(10),
+                itemCount: filtered.length,
+                itemBuilder: (context, index) => _buildOrderCard(
+                  filtered[index].id, 
+                  filtered[index].data() as Map<String, dynamic>
+                ),
+              );
+            },
           ),
-        ],
-      ),
     );
   }
 
   Widget _buildOrderCard(String id, Map data) {
     return Card(
-      margin: const EdgeInsets.all(8),
+      elevation: 3,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: ListTile(
-        title: Text("طلب #${id.substring(0,5)}"),
-        subtitle: Text("العميل: ${data['buyer']['name']}"),
-        trailing: role == 'delivery_supervisor' ? _buildRepPicker(id, data) : null,
+        contentPadding: const EdgeInsets.all(15),
+        title: Text("طلب #${id.substring(0,6)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 5),
+            Text("العميل: ${data['buyer']['name']}"),
+            Text("العنوان: ${data['buyer']['address']}"),
+          ],
+        ),
+        trailing: role == 'delivery_manager' 
+          ? ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              onPressed: () => _approveOrder(id),
+              child: const Text("نقل للمشرف"),
+            )
+          : _buildRepPicker(id),
       ),
     );
   }
 
-  Widget _buildRepPicker(String id, Map data) {
+  Future<void> _approveOrder(String id) async {
+    await FirebaseFirestore.instance.collection('orders').doc(id).update({
+      'deliveryManagerAssigned': true,
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم تحويل الطلب للمشرف المختص")));
+  }
+
+  Widget _buildRepPicker(String id) {
     return DropdownButton<String>(
-      hint: const Text("إسناد"),
+      hint: const Text("إسناد لمندوب"),
+      underline: const SizedBox(),
+      icon: const Icon(Icons.delivery_dining, color: Color(0xFF2F3542)),
       items: myReps.map((r) => DropdownMenuItem(value: r['repCode'].toString(), child: Text(r['fullname']))).toList(),
       onChanged: (val) async {
+        if (val == null) return;
         var rep = myReps.firstWhere((r) => r['repCode'] == val);
-        await FirebaseFirestore.instance.collection('orders').doc(id).update({'deliveryRepId': val, 'repName': rep['fullname']});
-        _updateLog("✅ تم إسناد الطلب لـ ${rep['fullname']}");
+        await FirebaseFirestore.instance.collection('orders').doc(id).update({
+          'deliveryRepId': val, 
+          'repName': rep['fullname']
+        });
+        // هنا يمكنك إضافة منطق نقل الطلب لمجموعة waitingdelivery إذا كان مطلوباً
       },
     );
   }
