@@ -35,18 +35,67 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     _fetchInitialStatus(); 
     _listenToActiveOrders();
     
+    // طلب الإذن بعد رسم الواجهة مع رسالة إفصاح
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestNotificationPermissionOnce();
+      _requestNotificationPermissionWithDisclosure();
     });
   }
 
-  Future<void> _requestNotificationPermissionOnce() async {
+  // --- 🛡️ دالة الإفصاح وطلب إذن الإشعارات ---
+  Future<void> _requestNotificationPermissionWithDisclosure() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
-    await messaging.requestPermission(alert: true, badge: true, sound: true);
+    
+    // التحقق من حالة الإذن الحالية
+    NotificationSettings settings = await messaging.getNotificationSettings();
+    
+    // إذا كان الإذن لم يُحدد بعد (أول مرة)، نظهر رسالة الإفصاح
+    if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+      if (!mounted) return;
+      
+      bool? proceed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+          title: Column(
+            children: [
+              Icon(Icons.notifications_active, size: 50, color: Colors.orange[900]),
+              const SizedBox(height: 15),
+              const Text("تفعيل التنبيهات", 
+                style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900)),
+            ],
+          ),
+          content: const Text(
+            "يحتاج تطبيق أكسب لإرسال إشعارات إليك لتنبيهك بالطلبات الجديدة القريبة منك وتحديثات الرحلات الجارية. هل توافق على تفعيلها؟",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Cairo', fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("ليس الآن", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange[900],
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("موافق", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+
+      if (proceed == true) {
+        await messaging.requestPermission(alert: true, badge: true, sound: true);
+      }
+    }
   }
 
   Future<void> _launchPrivacyPolicy() async {
-    final Uri url = Uri.parse('https://aksab-app.com/privacy-policy');
+    // تم تحديث الرابط ليكون الرابط الرسمي للمنصة كما اتفقنا
+    final Uri url = Uri.parse('https://aksab.shop/');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       debugPrint("Could not launch $url");
     }
@@ -83,7 +132,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- 🛡️ الشريط الجانبي (Drawer) مع المسافات الآمنة ---
+  // --- 🛡️ الشريط الجانبي (Drawer) ---
   Widget _buildSideDrawer() {
     return Drawer(
       width: 75.w,
@@ -92,7 +141,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       ),
       child: Column(
         children: [
-          // رأس القائمة مع مراعاة منطقة الـ Notch
           Container(
             padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
             decoration: BoxDecoration(
@@ -122,10 +170,9 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
             ),
           ),
           
-          // محتوى القائمة مع SafeArea داخلية
           Expanded(
             child: ListView(
-              padding: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
               children: [
                 _buildDrawerItem(Icons.account_circle_outlined, "حسابي الشخصي", () {
                   Navigator.pop(context);
@@ -140,7 +187,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
             ),
           ),
           
-          // الجزء السفلي (تسجيل الخروج) مع مسافة أمان سفلية
           Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 20),
             child: Column(
@@ -194,7 +240,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text("أهلاً بك 👋", style: TextStyle(fontSize: 14, color: Colors.blueGrey, fontFamily: 'Cairo')),
-                          Text("كابتن أكسب", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.black, fontFamily: 'Cairo')),
+                          const Text("كابتن أكسب", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.black, fontFamily: 'Cairo')),
                         ],
                       ),
                     ],
@@ -376,7 +422,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         color: Colors.white,
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20, offset: const Offset(0, -5))],
       ),
-      child: SafeArea( // 🛡️ حماية شريط التنقل السفلي
+      child: SafeArea(
         child: BottomNavigationBar(
           currentIndex: _selectedIndex,
           onTap: _onItemTapped,
