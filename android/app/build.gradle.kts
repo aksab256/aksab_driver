@@ -36,23 +36,30 @@ android {
     }
 
     kotlinOptions {
+        // تحديث jvmTarget للصيغة الجديدة لتجنب التحذيرات
         jvmTarget = "1.8"
     }
 
     defaultConfig {
         applicationId = "com.example.aksab_driver"
-        minSdk = 21
+        // يفضل أن يكون الـ minSdk متوافق مع متطلبات المكتبات الجديدة
+        minSdk = 21 
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
     buildTypes {
-        release {
-            // 3. ربط وضع الـ Release بالتوقيع الجديد بدل الـ Debug
+        getByName("release") {
+            // 3. التصحيح الجوهري هنا: إضافة حرف 'is' واستخدام getByName
             signingConfig = signingConfigs.getByName("release")
-            minifyEnabled = false
-            shrinkResources = false
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }
@@ -64,4 +71,3 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }
-
