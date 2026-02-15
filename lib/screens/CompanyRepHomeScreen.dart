@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // إضافة المكتبة
 import 'dart:convert';
 
 // استيراد الصفحات التابعة
@@ -28,6 +29,60 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   void initState() {
     super.initState();
     _fetchRepData();
+    
+    // طلب إذن الإشعارات مع رسالة إفصاح عند فتح التطبيق
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestNotificationPermissionWithDisclosure();
+    });
+  }
+
+  // --- 🔔 دالة الإفصاح وطلب إذن الإشعارات للمندوب ---
+  Future<void> _requestNotificationPermissionWithDisclosure() async {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    NotificationSettings settings = await messaging.getNotificationSettings();
+    
+    if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+      if (!mounted) return;
+      
+      bool? proceed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+          title: Column(
+            children: [
+              Icon(Icons.notifications_active, size: 45, color: const Color(0xFF2C3E50)),
+              const SizedBox(height: 15),
+              const Text("تنبيهات المهام", 
+                style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18)),
+            ],
+          ),
+          content: const Text(
+            "يحتاج مندوب شركة أكسب لتفعيل الإشعارات لاستلام تكليفات المهام اليومية، تحديثات التحصيل، والرسائل الهامة من الإدارة.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Cairo', fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("ليس الآن", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2C3E50),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("تفعيل", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+
+      if (proceed == true) {
+        await messaging.requestPermission(alert: true, badge: true, sound: true);
+      }
+    }
   }
 
   Future<void> _fetchRepData() async {
@@ -63,8 +118,8 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   }
 
   Future<void> _launchPrivacyPolicy() async {
-    final Uri url = Uri.parse('https://aksab-app.com/privacy-policy'); 
-    if (!await launchUrl(url)) {
+    final Uri url = Uri.parse('https://aksab.shop/'); // تحديث الرابط للموحد
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       debugPrint("Could not launch $url");
     }
   }
@@ -77,7 +132,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
       drawer: _buildSideDrawer(),
       appBar: AppBar(
         title: Text("لوحة التحكم",
-            style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: Colors.white)),
+            style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Cairo')),
         centerTitle: true,
         backgroundColor: const Color(0xFF2C3E50),
         elevation: 4,
@@ -86,7 +141,6 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
       ),
-      // استخدام SafeArea هنا لحماية المحتوى بالكامل من التداخل مع الحواف
       body: SafeArea(
         child: _isLoading
             ? const Center(child: CircularProgressIndicator(color: Colors.blue))
@@ -99,7 +153,6 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
                     _buildStatsSection(),
                     SizedBox(height: 4.h),
                     _buildQuickActions(),
-                    // إضافة مساحة أمان سفلية إضافية بعد آخر زرار
                     SizedBox(height: MediaQuery.of(context).padding.bottom + 5.h),
                   ],
                 ),
@@ -111,16 +164,16 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   Widget _buildSideDrawer() {
     return Drawer(
       width: 80.w,
-      child: SafeArea( // حماية محتوى Drawer أيضاً
-        top: false, // نترك الـ Header يأخذ المساحة العلوية بلونه
+      child: SafeArea( 
+        top: false, 
         child: Column(
           children: [
             UserAccountsDrawerHeader(
               decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
               accountName: Text(_repData?['fullname'] ?? "المندوب", 
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, fontFamily: 'Cairo')),
               accountEmail: Text(_repData?['repCode'] ?? "REP-XXXX", 
-                style: TextStyle(fontSize: 12.sp, color: Colors.white70)),
+                style: TextStyle(fontSize: 12.sp, color: Colors.white70, fontFamily: 'Cairo')),
               currentAccountPicture: CircleAvatar(
                 backgroundColor: Colors.white,
                 child: Icon(Icons.person, size: 38.sp, color: const Color(0xFF2C3E50)),
@@ -128,7 +181,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
             ),
             ListTile(
               leading: Icon(Icons.account_circle, color: Colors.blue, size: 22.sp),
-              title: Text("حسابي الشخصي", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
+              title: Text("حسابي الشخصي", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600, fontFamily: 'Cairo')),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(context, MaterialPageRoute(builder: (context) => ProfileScreen(repData: _repData)));
@@ -136,7 +189,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
             ),
             ListTile(
               leading: Icon(Icons.security, color: Colors.green, size: 22.sp),
-              title: Text("سياسة الخصوصية", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
+              title: Text("سياسة الخصوصية", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600, fontFamily: 'Cairo')),
               onTap: () {
                 Navigator.pop(context);
                 _launchPrivacyPolicy();
@@ -146,10 +199,9 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
             const Divider(),
             ListTile(
               leading: Icon(Icons.logout_rounded, color: Colors.red, size: 22.sp),
-              title: Text("تسجيل الخروج", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 14.sp)),
+              title: Text("تسجيل الخروج", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo')),
               onTap: _handleLogout,
             ),
-            // مسافة أمان سفلية داخل الـ Drawer
             SizedBox(height: 2.h),
           ],
         ),
@@ -179,9 +231,9 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("${_repData?['fullname'] ?? 'المندوب'}",
-                    style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.bold, color: const Color(0xFF2C3E50))),
+                    style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.bold, color: const Color(0xFF2C3E50), fontFamily: 'Cairo')),
                 Text("كود الموظف: ${_repData?['repCode'] ?? 'REP-XXXX'}",
-                    style: TextStyle(fontSize: 12.sp, color: Colors.blueGrey, fontWeight: FontWeight.w600)),
+                    style: TextStyle(fontSize: 12.sp, color: Colors.blueGrey, fontWeight: FontWeight.w600, fontFamily: 'Cairo')),
               ],
             ),
           ),
@@ -202,7 +254,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
       child: Column(
         children: [
           Text("ملخص الإنتاجية",
-              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
+              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.blue[900], fontFamily: 'Cairo')),
           const Divider(height: 30, thickness: 1),
           _buildDetailRow(Icons.phone_android, "الهاتف:", _repData?['phone'] ?? "-"),
           SizedBox(height: 1.h),
@@ -219,9 +271,9 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
         children: [
           Icon(icon, size: 16.sp, color: const Color(0xFF3498DB)),
           SizedBox(width: 12.sp),
-          Text(label, style: TextStyle(fontSize: 13.5.sp, color: Colors.grey[700])),
+          Text(label, style: TextStyle(fontSize: 13.5.sp, color: Colors.grey[700], fontFamily: 'Cairo')),
           const Spacer(),
-          Text(value, style: TextStyle(fontSize: 13.5.sp, fontWeight: FontWeight.bold, color: Colors.black87)),
+          Text(value, style: TextStyle(fontSize: 13.5.sp, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Cairo')),
         ],
       ),
     );
@@ -245,7 +297,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
           },
           icon: Icon(Icons.list_alt_rounded, color: Colors.white, size: 24.sp),
           label: Text("مـهام الـيوم",
-              style: TextStyle(fontSize: 16.sp, color: Colors.white, fontWeight: FontWeight.bold)),
+              style: TextStyle(fontSize: 16.sp, color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
         ),
         SizedBox(height: 2.5.h),
         OutlinedButton.icon(
@@ -262,7 +314,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
           },
           icon: Icon(Icons.insights_rounded, size: 22.sp, color: const Color(0xFF2C3E50)),
           label: Text("التقارير والتحصيل",
-              style: TextStyle(fontSize: 15.sp, color: const Color(0xFF2C3E50), fontWeight: FontWeight.bold)),
+              style: TextStyle(fontSize: 15.sp, color: const Color(0xFF2C3E50), fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
         ),
       ],
     );
