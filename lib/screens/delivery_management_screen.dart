@@ -26,18 +26,20 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     _initializeData();
   }
 
-  // ... (تحميل البيانات والـ GeoJSON كما هو بدون تغيير) ...
   Future<void> _initializeData() async {
-    await _getUserData();
     try {
+      await _getUserData();
       final response = await rootBundle.loadString('assets/OSMB-bc319d822a17aa9ad1089fc05e7d4e752460f877.geojson');
-      setState(() {
-        geoJsonData = json.decode(response);
-      });
+      if (mounted) {
+        setState(() {
+          geoJsonData = json.decode(response);
+          isLoading = false;
+        });
+      }
     } catch (e) {
-      debugPrint("Error loading GeoJSON: $e");
+      debugPrint("Error loading data: $e");
+      if (mounted) setState(() => isLoading = false);
     }
-    if (mounted) setState(() => isLoading = false);
   }
 
   Future<void> _getUserData() async {
@@ -52,17 +54,15 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
 
       if (role == 'delivery_supervisor') {
         final reps = await FirebaseFirestore.instance.collection('deliveryReps').where('supervisorId', isEqualTo: doc.id).get();
-        setState(() {
-          myReps = reps.docs.map((d) => {
-            'fullname': d['fullname'], 
-            'repCode': d['repCode'].toString() 
-          }).toList();
-        });
+        myReps = reps.docs.map((d) => {
+          'fullname': d['fullname'], 
+          'repCode': d['repCode'].toString() 
+        }).toList();
       }
     }
   }
 
-  // ... (دوال الفحص الجغرافي كما هي بدون تغيير لضمان الدقة) ...
+  // دالة الفحص الجغرافي (بدون تعديل لضمان الدقة)
   bool _isOrderInMyArea(Map<String, dynamic> locationData) {
     if (role == 'delivery_manager') return true;
     if (geoJsonData == null) return false;
@@ -97,21 +97,18 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       backgroundColor: const Color(0xFFF1F2F6),
       appBar: AppBar(
         title: Text(role == 'delivery_manager' ? "إدارة التوصيل (مدير)" : "توجيه الطلبات (مشرف)",
-            style: TextStyle(fontSize: 15.sp, color: Colors.white, fontWeight: FontWeight.bold)),
+            style: TextStyle(fontSize: 16.sp, color: Colors.white, fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF2C3E50),
         centerTitle: true,
       ),
-      // --- التعديل: إضافة SafeArea لحماية الصفحة بالكامل ---
-      body: SafeArea(
+      body: SafeArea( // حماية الصفحة بالكامل
         child: isLoading 
-          ? const Center(child: CircularProgressIndicator()) 
+          ? const Center(child: CircularProgressIndicator(color: Colors.blue)) 
           : StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('orders').snapshots(),
               builder: (context, snapshot) {
-                if (snapshot.hasError) return Center(child: Text("حدث خطأ: ${snapshot.error}"));
-                if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+                if (snapshot.hasError) return Center(child: Text("حدث خطأ في جلب البيانات"));
+                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                 
                 var docs = snapshot.data?.docs ?? [];
                 var filtered = docs.where((doc) {
@@ -128,7 +125,7 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
                 }).toList();
 
                 if (filtered.isEmpty) {
-                  return Center(child: Text("لا توجد طلبات جديدة حالياً", style: TextStyle(fontSize: 14.sp, color: Colors.grey)));
+                  return Center(child: Text("لا توجد طلبات جديدة حالياً", style: TextStyle(fontSize: 13.sp, color: Colors.grey)));
                 }
 
                 return ListView.builder(
@@ -147,14 +144,14 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
 
   Widget _buildOrderCard(String id, Map<String, dynamic> data) {
     return Card(
-      elevation: 4,
-      margin: EdgeInsets.only(bottom: 15.sp),
+      elevation: 3,
+      margin: EdgeInsets.only(bottom: 12.sp),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: InkWell( // تجعل الكارت بالكامل قابل للضغط
-        onTap: () => _showOrderDetails(id, data), // فتح المنبثقة
+      child: InkWell(
+        onTap: () => _showOrderDetails(id, data), // المنبثقة تعمل هنا
         borderRadius: BorderRadius.circular(15),
         child: Padding(
-          padding: EdgeInsets.all(12.sp),
+          padding: EdgeInsets.all(15.sp),
           child: Row(
             children: [
               Expanded(
@@ -162,25 +159,19 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text("طلب #${id.substring(0,8)}", 
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp, color: const Color(0xFF2C3E50))),
-                    SizedBox(height: 5.sp),
-                    Row(
-                      children: [
-                        Icon(Icons.person, size: 12.sp, color: Colors.grey),
-                        SizedBox(width: 5.sp),
-                        Text("${data['buyer']?['name'] ?? 'غير معروف'}", style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15.sp, color: const Color(0xFF2C3E50))),
+                    SizedBox(height: 6.sp),
+                    Text("العميل: ${data['buyer']?['name'] ?? 'غير معروف'}", style: TextStyle(fontSize: 13.sp, color: Colors.black87)),
                     Text("📍 ${data['buyer']?['address'] ?? 'بدون عنوان'}", 
-                        style: TextStyle(fontSize: 11.sp, color: Colors.blueGrey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        style: TextStyle(fontSize: 11.sp, color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
               role == 'delivery_manager' 
                 ? ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, padding: EdgeInsets.symmetric(horizontal: 10.sp)),
                     onPressed: () => _approveOrder(id),
-                    child: const Text("موافق", style: TextStyle(color: Colors.white)),
+                    child: Text("موافق", style: TextStyle(color: Colors.white, fontSize: 12.sp)),
                   )
                 : _buildRepPicker(id, data),
             ],
@@ -190,51 +181,39 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     );
   }
 
-  // --- المنبثقة: تفاصيل الطلب في مساحة آمنة ---
   void _showOrderDetails(String id, Map<String, dynamic> data) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => SafeArea( // حماية داخل المنبثقة
+      builder: (context) => SafeArea(
         child: Container(
-          height: 80.h,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-          ),
+          height: 70.h,
+          decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
           padding: EdgeInsets.all(20.sp),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(child: Container(width: 50, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)))),
-              SizedBox(height: 15.sp),
-              Text("تفاصيل الطلب بالكامل", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+              SizedBox(height: 20.sp),
+              Text("ملخص الطلب", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
               const Divider(),
               Expanded(
                 child: ListView(
                   children: [
-                    _detailItem("رقم الطلب", id),
-                    _detailItem("اسم المشتري", data['buyer']?['name'] ?? '---'),
-                    _detailItem("رقم الهاتف", data['buyer']?['phone'] ?? '---'),
-                    _detailItem("العنوان", data['buyer']?['address'] ?? '---'),
-                    _detailItem("المبلغ الإجمالي", "${data['total'] ?? 0} ج.م"),
-                    SizedBox(height: 15.sp),
-                    const Text("المنتجات:", style: TextStyle(fontWeight: FontWeight.bold)),
-                    ...(data['items'] as List? ?? []).map((item) => ListTile(
-                      title: Text(item['name'] ?? 'منتج'),
-                      trailing: Text("x${item['quantity']}"),
-                      subtitle: Text("${item['price']} ج.م"),
-                    )),
+                    _infoRow("رقم الطلب", id),
+                    _infoRow("المشتري", data['buyer']?['name'] ?? '-'),
+                    _infoRow("الهاتف", data['buyer']?['phone'] ?? '-'),
+                    _infoRow("العنوان", data['buyer']?['address'] ?? '-'),
+                    _infoRow("الإجمالي", "${data['total'] ?? 0} ج.م"),
                   ],
                 ),
               ),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2C3E50), padding: const EdgeInsets.symmetric(vertical: 15)),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2C3E50), padding: EdgeInsets.symmetric(vertical: 12.sp)),
                   onPressed: () => Navigator.pop(context),
-                  child: const Text("إغلاق", style: TextStyle(color: Colors.white)),
+                  child: const Text("رجوع", style: TextStyle(color: Colors.white)),
                 ),
               )
             ],
@@ -244,51 +223,47 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     );
   }
 
-  Widget _detailItem(String label, String value) {
+  Widget _infoRow(String label, String value) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 5.sp),
+      padding: EdgeInsets.symmetric(vertical: 8.sp),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.grey)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(label, style: TextStyle(color: Colors.grey, fontSize: 12.sp)),
+          Expanded(child: Text(value, textAlign: TextAlign.left, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.sp))),
         ],
       ),
     );
   }
 
   Future<void> _approveOrder(String id) async {
-    await FirebaseFirestore.instance.collection('orders').doc(id).update({'deliveryManagerAssigned': true});
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم تحويل الطلب للمشرف")));
+    try {
+      await FirebaseFirestore.instance.collection('orders').doc(id).update({'deliveryManagerAssigned': true});
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم النقل للمشرف بنجاح")));
+    } catch (e) {
+      debugPrint("Approve error: $e");
+    }
   }
 
   Widget _buildRepPicker(String id, Map<String, dynamic> orderData) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: EdgeInsets.symmetric(horizontal: 5.sp),
       decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(10)),
       child: DropdownButton<String>(
-        hint: Text("إسناد", style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
+        hint: Text("إسناد", style: TextStyle(fontSize: 11.sp, color: Colors.blue[900], fontWeight: FontWeight.bold)),
         underline: const SizedBox(),
-        icon: Icon(Icons.delivery_dining, color: Colors.blue[900]),
-        items: myReps.map<DropdownMenuItem<String>>((Map<String, dynamic> r) {
-          return DropdownMenuItem<String>(
-            value: r['repCode'].toString(),
-            child: Text(r['fullname'], style: TextStyle(fontSize: 12.sp)),
-          );
-        }).toList(),
+        items: myReps.map((r) => DropdownMenuItem(value: r['repCode'].toString(), child: Text(r['fullname'], style: TextStyle(fontSize: 11.sp)))).toList(),
         onChanged: (val) async {
           if (val == null) return;
           var rep = myReps.firstWhere((r) => r['repCode'] == val);
-          try {
-            DocumentReference waitingRef = FirebaseFirestore.instance.collection('waitingdelivery').doc(id);
-            Map<String, dynamic> taskData = Map.from(orderData);
-            taskData['repCode'] = val;
-            taskData['repName'] = rep['fullname'];
-            taskData['assignedAt'] = FieldValue.serverTimestamp();
-            taskData['deliveryTaskStatus'] = 'pending'; 
-            await waitingRef.set(taskData);
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("🚀 تم إسناد الطلب لـ: ${rep['fullname']}")));
-          } catch (e) { debugPrint("Error: $e"); }
+          await FirebaseFirestore.instance.collection('waitingdelivery').doc(id).set({
+            ...orderData,
+            'repCode': val,
+            'repName': rep['fullname'],
+            'assignedAt': FieldValue.serverTimestamp(),
+            'deliveryTaskStatus': 'pending',
+          });
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("تم الإسناد لـ ${rep['fullname']}")));
         },
       ),
     );
