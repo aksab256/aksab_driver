@@ -1,11 +1,11 @@
-// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // مكتبة الإشعارات
-import 'package:http/http.dart' as http; // مكتبة النداءات الخارجية
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart'; // مكتبة فتح الروابط
 import 'dart:convert';
 
 import 'free_driver_home_screen.dart';
@@ -25,7 +25,18 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
-  // دالة إرسال بيانات التوكن لـ AWS (نفس الرابط ونفس التنسيق)
+  // دالة فتح رابط سياسة الخصوصية
+  Future<void> _launchPrivacyPolicy() async {
+    final Uri url = Uri.parse('https://aksab.shop/');
+    try {
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        _showError("تعذر فتح الرابط حالياً");
+      }
+    } catch (e) {
+      debugPrint("Privacy Policy Error: $e");
+    }
+  }
+
   Future<void> _sendNotificationDataToAWS(String role) async {
     try {
       String? token = await FirebaseMessaging.instance.getToken();
@@ -42,7 +53,6 @@ class _LoginScreenState extends State<LoginScreen> {
             "role": role 
           }),
         );
-        debugPrint("✅ AWS Notification Data Sent Successfully for role: $role");
       }
     } catch (e) {
       debugPrint("❌ AWS Notification Error: $e");
@@ -71,20 +81,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
       String uid = userCredential.user!.uid;
 
-      // 1. فحص مندوب شركة (deliveryReps)
+      // 1. فحص مندوب شركة
       var repSnap = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repSnap.exists) {
         var userData = repSnap.data()!;
         if (userData['status'] == 'approved') {
-          // 🔥 إرسال البيانات لـ AWS قبل الانتقال
-          _sendNotificationDataToAWS('delivery_rep').catchError((e) => debugPrint(e.toString()));
-          
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const CompanyRepHomeScreen()),
-            );
-          }
+          _sendNotificationDataToAWS('delivery_rep');
+          if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const CompanyRepHomeScreen()));
           return;
         } else {
           await FirebaseAuth.instance.signOut();
@@ -93,23 +96,15 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 2. فحص مندوب حر (freeDrivers)
+      // 2. فحص مندوب حر
       var freeSnap = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeSnap.exists) {
         var userData = freeSnap.data()!;
         if (userData['status'] == 'approved') {
           String config = userData['vehicleConfig'] ?? 'motorcycleConfig';
           await _saveVehicleInfo(config);
-          
-          // 🔥 إرسال البيانات لـ AWS قبل الانتقال
-          _sendNotificationDataToAWS('free_driver').catchError((e) => debugPrint(e.toString()));
-
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const FreeDriverHomeScreen()),
-            );
-          }
+          _sendNotificationDataToAWS('free_driver');
+          if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const FreeDriverHomeScreen()));
           return;
         } else {
           await FirebaseAuth.instance.signOut();
@@ -118,26 +113,14 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 3. فحص طاقم الإدارة (managers)
+      // 3. فحص طاقم الإدارة
       var managerSnap = await FirebaseFirestore.instance.collection('managers').doc(uid).get();
       if (managerSnap.exists) {
         var managerData = managerSnap.data()!;
         String role = managerData['role'] ?? '';
-
         if (role == 'delivery_manager' || role == 'delivery_supervisor') {
-          // 🔥 إرسال البيانات لـ AWS للمديرين أيضاً لضمان وصول التنبيهات الإدارية
-          _sendNotificationDataToAWS(role).catchError((e) => debugPrint(e.toString()));
-
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const DeliveryAdminDashboard()),
-            );
-          }
-          return;
-        } else {
-          await FirebaseAuth.instance.signOut();
-          _showError("❌ هذا التطبيق مخصص لإدارة التوصيل فقط.");
+          _sendNotificationDataToAWS(role);
+          if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const DeliveryAdminDashboard()));
           return;
         }
       }
@@ -204,6 +187,20 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: () => Navigator.pushNamed(context, '/register'),
                       child: Text("ليس لديك حساب؟ سجل الآن",
                           style: TextStyle(color: Colors.orange[900], fontSize: 14.sp, fontWeight: FontWeight.w600, fontFamily: 'Cairo')),
+                    ),
+                    SizedBox(height: 3.h),
+                    // --- رابط سياسة الخصوصية ---
+                    GestureDetector(
+                      onTap: _launchPrivacyPolicy,
+                      child: Text(
+                        "سياسة الخصوصية والاستخدام",
+                        style: TextStyle(
+                          color: Colors.blueGrey,
+                          fontSize: 11.sp,
+                          decoration: TextDecoration.underline,
+                          fontFamily: 'Cairo'
+                        ),
+                      ),
                     ),
                     SizedBox(height: 2.h),
                   ],
