@@ -3,8 +3,12 @@ import 'package:sizer/sizer.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart'; // ستحتاجها لفتح رابط الخصوصية
 import 'dart:convert';
+
+// استيراد الصفحات التابعة
 import 'TodayTasksScreen.dart';
+import 'RepReportsScreen.dart'; // تأكد من تسمية الملف بهذا الاسم
 
 class CompanyRepHomeScreen extends StatefulWidget {
   const CompanyRepHomeScreen({super.key});
@@ -17,6 +21,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   Map<String, dynamic>? _repData;
   bool _isLoading = true;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -33,18 +38,19 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
 
       if (snapshot.exists) {
         final data = snapshot.data()!;
-        setState(() {
-          _repData = data;
-          _isLoading = false;
-        });
-
+        if (mounted) {
+          setState(() {
+            _repData = data;
+            _isLoading = false;
+          });
+        }
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('userData', jsonEncode(data));
         await prefs.setString('userRole', 'delivery_rep');
       }
     } catch (e) {
       debugPrint("Error fetching rep data: $e");
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -55,22 +61,30 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
     if (mounted) Navigator.pushReplacementNamed(context, '/login');
   }
 
+  // دالة لفتح رابط الخصوصية
+  Future<void> _launchPrivacyPolicy() async {
+    final Uri url = Uri.parse('https://aksab-app.com/privacy-policy'); 
+    if (!await launchUrl(url)) {
+      debugPrint("Could not launch $url");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey, // مفتاح التحكم في الـ Drawer
       backgroundColor: const Color(0xFFF0F2F5),
+      drawer: _buildSideDrawer(), // استدعاء الشريط الجانبي
       appBar: AppBar(
         title: Text("لوحة التحكم",
-            style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: Colors.white)),
+            style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.white)),
         centerTitle: true,
         backgroundColor: const Color(0xFF2C3E50),
-        elevation: 10,
-        actions: [
-          IconButton(
-            icon: Icon(Icons.logout, size: 20.sp, color: Colors.white),
-            onPressed: _handleLogout,
-          )
-        ],
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.menu_rounded, size: 22.sp, color: Colors.white),
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.blue))
@@ -91,6 +105,52 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
     );
   }
 
+  // --- 🛠️ بناء الشريط الجانبي (Drawer) ---
+  Widget _buildSideDrawer() {
+    return Drawer(
+      width: 80.w,
+      child: Column(
+        children: [
+          UserAccountsDrawerHeader(
+            decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
+            accountName: Text(_repData?['fullname'] ?? "المندوب", 
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+            accountEmail: Text(_repData?['repCode'] ?? "REP-XXXX"),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: Colors.white,
+              child: Icon(Icons.person, size: 35.sp, color: const Color(0xFF2C3E50)),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_circle_outlined, color: Colors.blue),
+            title: const Text("حسابي الشخصي"),
+            subtitle: const Text("تعديل البيانات أو حذف الحساب"),
+            onTap: () {
+              Navigator.pop(context);
+              // سنربط هنا صفحة الملف الشخصي لاحقاً
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined, color: Colors.green),
+            title: const Text("سياسة الخصوصية"),
+            onTap: () {
+              Navigator.pop(context);
+              _launchPrivacyPolicy();
+            },
+          ),
+          const Spacer(), // لدفع زر الخروج للأسفل
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout_rounded, color: Colors.red),
+            title: const Text("تسجيل الخروج", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            onTap: _handleLogout,
+          ),
+          SizedBox(height: 2.h),
+        ],
+      ),
+    );
+  }
+
   Widget _buildUserInfoCard() {
     return Container(
       padding: EdgeInsets.all(18.sp),
@@ -103,9 +163,9 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
       child: Row(
         children: [
           CircleAvatar(
-            radius: 28.sp,
+            radius: 25.sp,
             backgroundColor: const Color(0xFF3498DB).withOpacity(0.1),
-            child: Icon(Icons.person, size: 32.sp, color: const Color(0xFF2C3E50)),
+            child: Icon(Icons.delivery_dining, size: 25.sp, color: const Color(0xFF2C3E50)),
           ),
           SizedBox(width: 12.sp),
           Expanded(
@@ -113,9 +173,9 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("${_repData?['fullname'] ?? 'المندوب'}",
-                    style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: const Color(0xFF2C3E50))),
-                Text("كود: ${_repData?['repCode'] ?? 'REP-XXXX'}",
-                    style: TextStyle(fontSize: 13.sp, color: Colors.grey[600], fontWeight: FontWeight.w600)),
+                    style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, color: const Color(0xFF2C3E50))),
+                Text("كود الموظف: ${_repData?['repCode'] ?? 'REP-XXXX'}",
+                    style: TextStyle(fontSize: 11.sp, color: Colors.grey[600])),
               ],
             ),
           ),
@@ -135,12 +195,11 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
       ),
       child: Column(
         children: [
-          Text("ملخص الحساب",
-              style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
+          Text("ملخص الأداء",
+              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
           const Divider(height: 25),
-          _buildDetailRow(Icons.email, "البريد:", _repData?['email'] ?? "-"),
-          _buildDetailRow(Icons.phone, "الهاتف:", _repData?['phone'] ?? "-"),
-          _buildDetailRow(Icons.check_circle, "الطلبات الناجحة:", "${_repData?['successfulDeliveries'] ?? 0}"),
+          _buildDetailRow(Icons.phone_android, "الهاتف:", _repData?['phone'] ?? "-"),
+          _buildDetailRow(Icons.task_alt, "إجمالي التسليمات:", "${_repData?['successfulDeliveries'] ?? 0}"),
         ],
       ),
     );
@@ -148,14 +207,14 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
 
   Widget _buildDetailRow(IconData icon, String label, String value) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 7.sp),
+      padding: EdgeInsets.symmetric(vertical: 6.sp),
       child: Row(
         children: [
-          Icon(icon, size: 15.sp, color: const Color(0xFF3498DB)),
+          Icon(icon, size: 14.sp, color: const Color(0xFF3498DB)),
           SizedBox(width: 10.sp),
-          Text(label, style: TextStyle(fontSize: 13.sp, color: Colors.grey[700])),
+          Text(label, style: TextStyle(fontSize: 12.sp, color: Colors.grey[700])),
           const Spacer(),
-          Text(value, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, color: Colors.black87)),
+          Text(value, style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold, color: Colors.black87)),
         ],
       ),
     );
@@ -169,10 +228,9 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
             backgroundColor: const Color(0xFF4CAF50),
             minimumSize: Size(100.w, 8.h),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-            elevation: 5,
+            elevation: 4,
           ),
           onPressed: () {
-            // التعديل الجوهري هنا لإصلاح خطأ البناء
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -182,26 +240,33 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
               ),
             );
           },
-          icon: Icon(Icons.assignment, color: Colors.white, size: 20.sp),
+          icon: Icon(Icons.playlist_add_check_circle_rounded, color: Colors.white, size: 20.sp),
           label: Text("مهام اليوم",
-              style: TextStyle(fontSize: 15.sp, color: Colors.white, fontWeight: FontWeight.bold)),
+              style: TextStyle(fontSize: 14.sp, color: Colors.white, fontWeight: FontWeight.bold)),
         ),
         SizedBox(height: 2.h),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             minimumSize: Size(100.w, 7.h),
-            side: const BorderSide(color: Color(0xFF2C3E50), width: 2),
+            side: const BorderSide(color: Color(0xFF2C3E50), width: 1.5),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           ),
           onPressed: () {
-            // سيتم ربط التقارير لاحقاً
+            // تفعيل ربط صفحة التقارير المصممة
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => RepReportsScreen(
+                  repCode: _repData?['repCode'] ?? '',
+                ),
+              ),
+            );
           },
-          icon: Icon(Icons.bar_chart, size: 18.sp, color: const Color(0xFF2C3E50)),
-          label: Text("عرض التقارير",
-              style: TextStyle(fontSize: 14.sp, color: const Color(0xFF2C3E50), fontWeight: FontWeight.bold)),
+          icon: Icon(Icons.analytics_outlined, size: 18.sp, color: const Color(0xFF2C3E50)),
+          label: Text("عرض التقارير والتحصيل",
+              style: TextStyle(fontSize: 13.sp, color: const Color(0xFF2C3E50), fontWeight: FontWeight.bold)),
         ),
       ],
     );
   }
 }
-
