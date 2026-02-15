@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart'; // مكتبة فتح الروابط
+import 'package:url_launcher/url_launcher.dart'; 
 import 'dart:convert';
 
 import 'free_driver_home_screen.dart';
@@ -25,7 +25,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
-  // دالة فتح رابط سياسة الخصوصية
   Future<void> _launchPrivacyPolicy() async {
     final Uri url = Uri.parse('https://aksab.shop/');
     try {
@@ -81,7 +80,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
       String uid = userCredential.user!.uid;
 
-      // 1. فحص مندوب شركة
       var repSnap = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repSnap.exists) {
         var userData = repSnap.data()!;
@@ -96,7 +94,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 2. فحص مندوب حر
       var freeSnap = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeSnap.exists) {
         var userData = freeSnap.data()!;
@@ -113,7 +110,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 3. فحص طاقم الإدارة
       var managerSnap = await FirebaseFirestore.instance.collection('managers').doc(uid).get();
       if (managerSnap.exists) {
         var managerData = managerSnap.data()!;
@@ -153,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
                 child: Column(
                   children: [
-                    SizedBox(height: 3.h),
+                    SizedBox(height: 5.h),
                     Container(
                       padding: const EdgeInsets.all(15),
                       decoration: BoxDecoration(
@@ -169,7 +165,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: TextStyle(fontSize: 14.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
                     SizedBox(height: 4.h),
                     _buildInput(_phoneController, "رقم الهاتف", Icons.phone, type: TextInputType.phone),
-                    _buildInput(_passwordController, "كلمة المرور", Icons.lock, isPass: true),
+                    _buildInput(_passwordController, "كلمة مرور", Icons.lock, isPass: true),
                     SizedBox(height: 1.h),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -182,23 +178,28 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Text("دخول للنظام",
                           style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
                     ),
-                    SizedBox(height: 2.h),
+                    SizedBox(height: 1.h),
                     TextButton(
                       onPressed: () => Navigator.pushNamed(context, '/register'),
                       child: Text("ليس لديك حساب؟ سجل الآن",
                           style: TextStyle(color: Colors.orange[900], fontSize: 14.sp, fontWeight: FontWeight.w600, fontFamily: 'Cairo')),
                     ),
-                    SizedBox(height: 3.h),
-                    // --- رابط سياسة الخصوصية ---
+                    
+                    // --- رابط سياسة الخصوصية المحدث ---
+                    SizedBox(height: 2.h),
                     GestureDetector(
                       onTap: _launchPrivacyPolicy,
-                      child: Text(
-                        "سياسة الخصوصية والاستخدام",
-                        style: TextStyle(
-                          color: Colors.blueGrey,
-                          fontSize: 11.sp,
-                          decoration: TextDecoration.underline,
-                          fontFamily: 'Cairo'
+                      child: Padding(
+                        padding: EdgeInsets.all(10.sp), // مساحة ضغط واسعة
+                        child: Text(
+                          "سياسة الخصوصية والاستخدام",
+                          style: TextStyle(
+                            color: Colors.blueGrey[700],
+                            fontSize: 13.sp, // تكبير الخط لسهولة القراءة
+                            decoration: TextDecoration.underline,
+                            fontFamily: 'Cairo',
+                            fontWeight: FontWeight.w500
+                          ),
                         ),
                       ),
                     ),
@@ -219,10 +220,10 @@ class _LoginScreenState extends State<LoginScreen> {
         obscureText: isPass ? _obscurePassword : false,
         keyboardType: type,
         textAlign: TextAlign.right,
-        style: TextStyle(fontSize: 15.sp),
+        style: TextStyle(fontSize: 15.sp, fontFamily: 'Cairo'),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo'),
+          labelStyle: TextStyle(fontSize: 13.sp, fontFamily: 'Cairo'),
           contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 5.w),
           prefixIcon: Icon(icon, color: Colors.orange[800], size: 22.sp),
           suffixIcon: isPass
