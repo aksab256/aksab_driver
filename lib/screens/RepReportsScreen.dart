@@ -12,6 +12,7 @@ class RepReportsScreen extends StatefulWidget {
 }
 
 class _RepReportsScreenState extends State<RepReportsScreen> {
+  // الفلترة الافتراضية: من أول يوم في الشهر الحالي حتى اللحظة
   DateTime _startDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _endDate = DateTime.now();
 
@@ -23,20 +24,17 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
         title: const Text("تقارير الأداء والتحصيل", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         backgroundColor: const Color(0xFF2C3E50),
         centerTitle: true,
-        elevation: 0,
       ),
       body: Column(
         children: [
           _buildFilterHeader(),
-          Expanded(
-            child: _buildReportContent(),
-          ),
+          Expanded(child: _buildReportContent()),
         ],
       ),
     );
   }
 
-  // --- 1. هيدر الفلترة (يظهر الشهر الحالي افتراضياً) ---
+  // هيدر اختيار التاريخ
   Widget _buildFilterHeader() {
     return Container(
       padding: EdgeInsets.all(12.sp),
@@ -61,8 +59,8 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
         DateTime? picked = await showDatePicker(
           context: context,
           initialDate: date,
-          firstDate: DateTime(2024),
-          lastDate: DateTime.now(),
+          firstDate: DateTime(2025),
+          lastDate: DateTime.now().add(const Duration(days: 1)),
         );
         if (picked != null) onSelect(picked);
       },
@@ -80,21 +78,31 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
     );
   }
 
-  // --- 2. محتوى التقارير (StreamBuilder لربط البيانات) ---
   Widget _buildReportContent() {
     return StreamBuilder<QuerySnapshot>(
+      // الاستعلام البسيط: نفلتر بكود المندوب فقط لتجنب الفهرس المركب
       stream: FirebaseFirestore.instance
           .collection('deliveredorders')
           .where('handledByRepId', isEqualTo: widget.repCode)
-          .where('timestamp', isGreaterThanOrEqualTo: _startDate)
-          .where('timestamp', isLessThanOrEqualTo: _endDate.add(const Duration(days: 1)))
           .snapshots(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) return Center(child: Text("خطأ في البيانات: ${snapshot.error}"));
         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
         
+        // فلترة البيانات يدوياً داخل الكود (Client-side Filtering)
+        final allDocs = snapshot.data?.docs ?? [];
+        final filteredDocs = allDocs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          if (data['timestamp'] == null) return false;
+          DateTime orderDate = (data['timestamp'] as Timestamp).toDate();
+          // مقارنة التاريخ (بدون الساعات لضمان الدقة)
+          return orderDate.isAfter(_startDate.subtract(const Duration(seconds: 1))) && 
+                 orderDate.isBefore(_endDate.add(const Duration(days: 1)));
+        }).toList();
+
+        // حساب الإجماليات من القائمة المفلترة
         double totalCash = 0;
-        int count = snapshot.data?.docs.length ?? 0;
-        for (var doc in snapshot.data?.docs ?? []) {
+        for (var doc in filteredDocs) {
           totalCash += (doc['total'] ?? 0).toDouble();
         }
 
@@ -102,14 +110,11 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
           padding: EdgeInsets.all(15.sp),
           child: Column(
             children: [
-              _buildSummaryCards(totalCash, count),
+              _buildSummaryCards(totalCash, filteredDocs.length),
               SizedBox(height: 20.sp),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(" تفاصيل العمليات:", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
-              ),
+              const Align(alignment: Alignment.centerRight, child: Text(" سجل العمليات المفلترة:", style: TextStyle(fontWeight: FontWeight.bold))),
               const Divider(),
-              _buildOrdersList(snapshot.data?.docs ?? []),
+              _buildOrdersList(filteredDocs),
             ],
           ),
         );
@@ -120,7 +125,7 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
   Widget _buildSummaryCards(double cash, int count) {
     return Row(
       children: [
-        _statCard("إجمالي التحصيل", "${cash.toStringAsFixed(0)} ج.م", Icons.account_balance_wallet, Colors.green),
+        _statCard("إجمالي التحصيل", "${cash.toStringAsFixed(2)} ج.م", Icons.account_balance_wallet, Colors.green),
         SizedBox(width: 10.sp),
         _statCard("طلبات ناجحة", "$count", Icons.done_all, Colors.blue),
       ],
@@ -130,18 +135,14 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
   Widget _statCard(String title, String value, IconData icon, Color color) {
     return Expanded(
       child: Container(
-        padding: EdgeInsets.all(15.sp),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: color.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))],
-        ),
+        padding: EdgeInsets.all(12.sp),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), 
+          boxShadow: [BoxShadow(color: color.withOpacity(0.1), blurRadius: 10)]),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 25.sp),
-            SizedBox(height: 10.sp),
-            Text(value, style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w900, color: color)),
-            Text(title, style: TextStyle(fontSize: 10.sp, color: Colors.grey[600])),
+            Icon(icon, color: color, size: 22.sp),
+            Text(value, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w900, color: color)),
+            Text(title, style: TextStyle(fontSize: 9.sp, color: Colors.grey)),
           ],
         ),
       ),
@@ -149,7 +150,7 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
   }
 
   Widget _buildOrdersList(List<QueryDocumentSnapshot> docs) {
-    if (docs.isEmpty) return Padding(padding: EdgeInsets.only(top: 20.h), child: const Text("لا توجد بيانات لهذه الفترة"));
+    if (docs.isEmpty) return Padding(padding: EdgeInsets.only(top: 10.h), child: const Text("لا توجد بيانات للفترة المختارة"));
     
     return ListView.builder(
       shrinkWrap: true,
@@ -157,15 +158,11 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
       itemCount: docs.length,
       itemBuilder: (context, index) {
         var data = docs[index].data() as Map<String, dynamic>;
-        return Card(
-          margin: EdgeInsets.symmetric(vertical: 5.sp),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-          child: ListTile(
-            leading: CircleAvatar(backgroundColor: Colors.blue[50], child: const Icon(Icons.receipt, color: Colors.blue)),
-            title: Text("طلب #${docs[index].id.substring(0,6)}", style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(DateFormat('dd/MM/yyyy hh:mm a').format((data['timestamp'] as Timestamp).toDate())),
-            trailing: Text("${data['total']} ج.م", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-          ),
+        return ListTile(
+          leading: const Icon(Icons.receipt_long, color: Colors.blueGrey),
+          title: Text("طلب #${docs[index].id.substring(0,6)}"),
+          subtitle: Text(DateFormat('dd/MM/yyyy').format((data['timestamp'] as Timestamp).toDate())),
+          trailing: Text("${data['total']} ج.م", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
         );
       },
     );
