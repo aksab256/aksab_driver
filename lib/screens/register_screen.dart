@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:url_launcher/url_launcher.dart'; // مكتبة فتح الروابط
+import 'package:url_launcher/url_launcher.dart'; 
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -23,7 +23,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  // دالة فتح رابط سياسة الخصوصية
   Future<void> _launchPrivacyPolicy() async {
     final Uri url = Uri.parse('https://aksab.shop/');
     try {
@@ -113,7 +112,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       _buildInput(_phoneController, "رقم الهاتف", Icons.phone, type: TextInputType.phone),
                       _buildInput(_addressController, "محل الإقامة الحالي", Icons.map),
                       _buildInput(_passwordController, "كلمة مرور قوية", Icons.lock, isPass: true),
-                      const Divider(height: 50, thickness: 1.2),
+                      const Divider(height: 40, thickness: 1.2),
                       Align(
                         alignment: Alignment.centerRight,
                         child: Text(
@@ -121,7 +120,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, color: Colors.black87, fontFamily: 'Cairo'),
                         ),
                       ),
-                      SizedBox(height: 2.h),
+                      SizedBox(height: 1.h),
                       
                       _roleOption("مندوب توصيل حر (امتلك مركبة)", "free_driver"),
                       if (_selectedRole == 'free_driver') _buildVehiclePicker(),
@@ -129,26 +128,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       _roleOption("مشرف تحصيل (إشراف ميداني)", "delivery_supervisor"),
                       _roleOption("مدير تحصيل (إدارة النظام)", "delivery_manager"),
 
-                      SizedBox(height: 3.h),
+                      SizedBox(height: 2.h),
 
-                      // --- إضافة رابط سياسة الخصوصية قبل الزر ---
+                      // --- رابط سياسة الخصوصية المعدل (أكبر وأوضح) ---
                       GestureDetector(
                         onTap: _launchPrivacyPolicy,
                         child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 10.sp),
+                          padding: EdgeInsets.symmetric(vertical: 12.sp), // زيادة مساحة الضغط
                           child: Text(
                             "بتسجيلك أنت توافق على سياسة الخصوصية",
                             style: TextStyle(
-                              fontSize: 11.sp,
-                              color: Colors.blueGrey,
+                              fontSize: 13.sp, // تكبير الخط ليكون واضحاً للمراجعين
+                              color: Colors.blueGrey[700], // لون أغمق قليلاً
                               decoration: TextDecoration.underline,
-                              fontFamily: 'Cairo'
+                              fontFamily: 'Cairo',
+                              fontWeight: FontWeight.w500
                             ),
                           ),
                         ),
                       ),
 
-                      SizedBox(height: 2.h),
+                      SizedBox(height: 1.h),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.black87,
@@ -170,7 +170,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // ... بقية الـ Widgets (VehiclePicker, roleOption, buildInput, etc.) كما هي في الكود السابق ...
   Widget _buildVehiclePicker() {
     return Container(
       margin: EdgeInsets.symmetric(vertical: 2.h),
@@ -183,12 +182,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("اختر نوع مركبتك:", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: Colors.orange[900])),
+          Text("اختر نوع مركبتك:", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: Colors.orange[900], fontFamily: 'Cairo')),
           DropdownButtonFormField<String>(
             value: _vehicleConfig,
             isExpanded: true,
             dropdownColor: Colors.orange[50],
-            style: TextStyle(fontSize: 14.sp, color: Colors.black, fontWeight: FontWeight.w500),
+            style: TextStyle(fontSize: 14.sp, color: Colors.black, fontWeight: FontWeight.w500, fontFamily: 'Cairo'),
             decoration: const InputDecoration(border: InputBorder.none),
             items: const [
               DropdownMenuItem(value: 'motorcycleConfig', child: Text("موتوسيكل (Motorcycle)")),
@@ -204,7 +203,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Widget _roleOption(String title, String value) {
     return RadioListTile(
-      title: Text(title, style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600)),
+      title: Text(title, style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600, fontFamily: 'Cairo')),
       value: value,
       groupValue: _selectedRole,
       onChanged: (v) => setState(() => _selectedRole = v.toString()),
@@ -221,8 +220,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         obscureText: isPass ? _obscurePassword : false,
         keyboardType: type,
         textAlign: TextAlign.right,
+        style: TextStyle(fontSize: 15.sp, fontFamily: 'Cairo'),
         decoration: InputDecoration(
           labelText: label,
+          labelStyle: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp),
           prefixIcon: Icon(icon, color: Colors.orange[900]),
           suffixIcon: isPass ? IconButton(icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility), onPressed: () => setState(() => _obscurePassword = !_obscurePassword)) : null,
           filled: true,
@@ -234,7 +235,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  void _showMsg(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _showMsg(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, style: const TextStyle(fontFamily: 'Cairo'))));
 
   void _showSuccessDialog() {
     showDialog(
@@ -243,9 +244,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       builder: (c) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
         title: const Icon(Icons.check_circle, color: Colors.green, size: 70),
-        content: const Text("تم استلام طلبك بنجاح!\nسيتم مراجعة البيانات وتفعيل الحساب قريباً.", textAlign: TextAlign.center),
+        content: Text("تم استلام طلبك بنجاح!\nسيتم مراجعة البيانات وتفعيل الحساب قريباً.", 
+          textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp)),
         actions: [
-          Center(child: ElevatedButton(onPressed: () { Navigator.pop(context); Navigator.pop(context); }, child: const Text("فهمت"))),
+          Center(child: ElevatedButton(onPressed: () { Navigator.pop(context); Navigator.pop(context); }, child: const Text("فهمت", style: TextStyle(fontFamily: 'Cairo')))),
         ],
       ),
     );
