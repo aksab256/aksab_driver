@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
+import 'package:firebase_messaging/firebase_messaging.dart'; // إضافة المكتبة
 
 // استدعاء الصفحات التابعة
 import 'delivery_management_screen.dart'; 
 import 'delivery_fleet_screen.dart';      
 import 'manager_geo_dist_screen.dart';    
-import 'ProfileScreen.dart'; // تأكد من وجود الصفحة
+import 'ProfileScreen.dart'; 
 
 class DeliveryAdminDashboard extends StatefulWidget {
   const DeliveryAdminDashboard({super.key});
@@ -29,6 +30,60 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
   void initState() {
     super.initState();
     _checkAuthAndLoadData();
+    
+    // طلب الإذن للإدارة فور الدخول مع الإفصاح
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestNotificationPermissionWithDisclosure();
+    });
+  }
+
+  // --- 🔔 دالة الإفصاح وطلب إذن الإشعارات للإدارة ---
+  Future<void> _requestNotificationPermissionWithDisclosure() async {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    NotificationSettings settings = await messaging.getNotificationSettings();
+    
+    if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+      if (!mounted) return;
+      
+      bool? proceed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+          title: Column(
+            children: [
+              Icon(Icons.admin_panel_settings_rounded, size: 45, color: const Color(0xFF2C3E50)),
+              const SizedBox(height: 15),
+              const Text("تفعيل إشعارات النظام", 
+                style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 16)),
+            ],
+          ),
+          content: const Text(
+            "بصفتك مسؤولاً في النظام، ننصح بتفعيل الإشعارات لتصلك تنبيهات العمليات الحرجة، تقارير الأداء، وأي تحديثات فورية تخص طاقم المناديب.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Cairo', fontSize: 13),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("تجاهل", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2C3E50),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("تفعيل الآن", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+
+      if (proceed == true) {
+        await messaging.requestPermission(alert: true, badge: true, sound: true);
+      }
+    }
   }
 
   Future<void> _checkAuthAndLoadData() async {
@@ -95,7 +150,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
         backgroundColor: const Color(0xFF2C3E50),
         centerTitle: true,
         elevation: 5,
-        iconTheme: IconThemeData(color: Colors.white, size: 22.sp), // تفتيح أيقونة المنيو
+        iconTheme: IconThemeData(color: Colors.white, size: 22.sp), 
       ),
       drawer: _buildDrawer(),
       body: SafeArea(
@@ -109,7 +164,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
               SizedBox(height: 3.h),
               Expanded(
                 child: GridView.count(
-                  crossAxisCount: 1, // جعل الكروت بعرض الشاشة لرؤية أوضح
+                  crossAxisCount: 1, 
                   childAspectRatio: 2.2,
                   mainAxisSpacing: 20,
                   children: [
@@ -163,7 +218,8 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
             decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
             accountName: Text(_userData?['fullname'] ?? "المدير", 
               style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14.sp)),
-            accountEmail: Text(_userData?['role'] == 'delivery_manager' ? "مدير نظام" : "مشرف ميداني"),
+            accountEmail: Text(_userData?['role'] == 'delivery_manager' ? "مدير نظام" : "مشرف ميداني", 
+              style: const TextStyle(fontFamily: 'Cairo')),
             currentAccountPicture: CircleAvatar(
               backgroundColor: Colors.white,
               child: Icon(Icons.admin_panel_settings, size: 35.sp, color: const Color(0xFF2C3E50)),
@@ -219,14 +275,14 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
         title: const Text("تأكيد الخروج", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
         content: const Text("هل تريد إغلاق لوحة التحكم؟", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء")),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo'))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
               if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
             },
-            child: const Text("خروج", style: TextStyle(color: Colors.white)),
+            child: const Text("خروج", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
           ),
         ],
       ),
