@@ -7,6 +7,7 @@ import 'package:sizer/sizer.dart';
 import 'delivery_management_screen.dart'; 
 import 'delivery_fleet_screen.dart';      
 import 'manager_geo_dist_screen.dart';    
+import 'ProfileScreen.dart'; // تأكد من وجود الصفحة
 
 class DeliveryAdminDashboard extends StatefulWidget {
   const DeliveryAdminDashboard({super.key});
@@ -20,11 +21,9 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
 
-  // إحصائيات اللوحة
   int _totalOrders = 0;
   double _totalSales = 0;
   int _totalReps = 0;
-  double _avgRating = 0;
 
   @override
   void initState() {
@@ -47,7 +46,6 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
 
         await _loadStats(role, managerDocId);
       }
-
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
       debugPrint("Dashboard Error: $e");
@@ -66,9 +64,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       if (myReps.docs.isNotEmpty) {
         List<String> repCodes = myReps.docs.map((d) => d['repCode'] as String).toList();
         ordersQuery = ordersQuery.where('buyer.repCode', whereIn: repCodes);
-      } else {
-        return;
-      }
+      } else { return; }
     } else {
       var allReps = await repsQuery.get();
       _totalReps = allReps.size;
@@ -78,58 +74,53 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     _totalOrders = ordersSnap.size;
 
     double salesSum = 0;
-    double ratingsSum = 0;
-    int ratedCount = 0;
-
     for (var doc in ordersSnap.docs) {
       var data = doc.data() as Map<String, dynamic>;
       salesSum += (data['total'] ?? 0).toDouble();
-      if (data['rating'] != null) {
-        ratingsSum += data['rating'].toDouble();
-        ratedCount++;
-      }
     }
-
     _totalSales = salesSum;
-    _avgRating = ratedCount > 0 ? ratingsSum / ratedCount : 0;
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.blue)));
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
+      backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
-        title: Text(_userData?['role'] == 'delivery_manager' ? "لوحة مدير التوصيل" : "لوحة مشرف التوصيل",
-            style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF2F3542),
+        title: Text(
+          _userData?['role'] == 'delivery_manager' ? "لوحة مدير التوصيل" : "لوحة مشرف التوصيل",
+          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16.sp),
+        ),
+        backgroundColor: const Color(0xFF2C3E50),
         centerTitle: true,
-        elevation: 0,
+        elevation: 5,
+        iconTheme: IconThemeData(color: Colors.white, size: 22.sp), // تفتيح أيقونة المنيو
       ),
       drawer: _buildDrawer(),
-      body: Padding(
-        padding: EdgeInsets.all(15.sp),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("مرحباً بك، ${_userData?['fullname'] ?? ''}",
-                style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-            SizedBox(height: 2.h),
-            Expanded(
-              child: GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 15,
-                mainAxisSpacing: 15,
-                children: [
-                  _buildStatCard("إجمالي الطلبات", "$_totalOrders", Icons.inventory_2, Colors.blue),
-                  _buildStatCard("إجمالي التحصيل", "${_totalSales.toStringAsFixed(0)} ج.م", Icons.payments, Colors.green),
-                  _buildStatCard("عدد المناديب", "$_totalReps", Icons.groups, Colors.orange),
-                  _buildStatCard("متوسط التقييم", _avgRating.toStringAsFixed(1), Icons.star, Colors.amber),
-                ],
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.all(18.sp),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("أهلاً بك، ${_userData?['fullname'] ?? ''}",
+                  style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Color(0xFF2C3E50))),
+              SizedBox(height: 3.h),
+              Expanded(
+                child: GridView.count(
+                  crossAxisCount: 1, // جعل الكروت بعرض الشاشة لرؤية أوضح
+                  childAspectRatio: 2.2,
+                  mainAxisSpacing: 20,
+                  children: [
+                    _buildStatCard("إجمالي الطلبات المستلمة", "$_totalOrders", Icons.inventory_2, Colors.blue),
+                    _buildStatCard("إجمالي مبالغ التحصيل", "${_totalSales.toStringAsFixed(0)} ج.م", Icons.payments, Colors.green),
+                    _buildStatCard("طاقم المناديب المسجل", "$_totalReps", Icons.groups, Colors.orange),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -137,23 +128,27 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
 
   Widget _buildStatCard(String title, String value, IconData icon, Color color) {
     return Container(
-      padding: EdgeInsets.all(12.sp),
+      padding: EdgeInsets.symmetric(horizontal: 20.sp),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+          BoxShadow(color: color.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 6))
         ],
+        border: Border(right: BorderSide(color: color, width: 8)),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Row(
         children: [
-          Icon(icon, color: color, size: 28.sp),
-          SizedBox(height: 1.h),
-          Text(title, style: TextStyle(fontSize: 10.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
-          Text(value,
-              style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, color: color, fontFamily: 'Cairo'),
-              textAlign: TextAlign.center),
+          Icon(icon, color: color, size: 35.sp),
+          SizedBox(width: 15.sp),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: TextStyle(fontSize: 13.sp, color: Colors.grey[700], fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+              Text(value, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Cairo')),
+            ],
+          ),
         ],
       ),
     );
@@ -161,75 +156,80 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
 
   Widget _buildDrawer() {
     return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
+      width: 75.w,
+      child: Column(
         children: [
-          DrawerHeader(
-            decoration: const BoxDecoration(color: Color(0xFF2F3542)),
-            child: Center(
-                child: Text("أكسب - إدارة التوصيل", 
-                  style: TextStyle(color: Colors.white, fontSize: 16.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold))),
+          UserAccountsDrawerHeader(
+            decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
+            accountName: Text(_userData?['fullname'] ?? "المدير", 
+              style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14.sp)),
+            accountEmail: Text(_userData?['role'] == 'delivery_manager' ? "مدير نظام" : "مشرف ميداني"),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: Colors.white,
+              child: Icon(Icons.admin_panel_settings, size: 35.sp, color: const Color(0xFF2C3E50)),
+            ),
           ),
           
-          _drawerItem(Icons.analytics, "تقارير الطلبات", () {
-            Navigator.pop(context); // إغلاق الدرور أولاً
+          _drawerItem(Icons.account_circle, "حسابي الشخصي", Colors.blue, () {
+            Navigator.pop(context);
+            Navigator.push(context, MaterialPageRoute(builder: (context) => ProfileScreen(repData: _userData)));
+          }),
+
+          _drawerItem(Icons.analytics_rounded, "تقارير العمليات", Colors.teal, () {
+            Navigator.pop(context);
             Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryManagementScreen()));
           }),
 
-          _drawerItem(Icons.people_alt, "إدارة المناديب", () {
+          _drawerItem(Icons.delivery_dining, "إدارة المناديب", Colors.orange, () {
             Navigator.pop(context);
             Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryFleetScreen()));
           }),
 
           if (_userData?['role'] == 'delivery_manager')
-            _drawerItem(Icons.map, "مناطق التوصيل", () {
+            _drawerItem(Icons.map_rounded, "نطاقات التوزيع", Colors.purple, () {
               Navigator.pop(context);
               Navigator.push(context, MaterialPageRoute(builder: (context) => const ManagerGeoDistScreen()));
             }),
 
+          const Spacer(),
           const Divider(),
           
-          // أيقونة تسجيل الخروج مع التنبيه
-          _drawerItem(Icons.logout, "تسجيل الخروج", () {
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-                content: const Text("هل أنت متأكد أنك تريد مغادرة لوحة التحكم؟", style: TextStyle(fontFamily: 'Cairo')),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context), 
-                    child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey))
-                  ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
-                    ),
-                    onPressed: () async {
-                      await FirebaseAuth.instance.signOut();
-                      if (context.mounted) {
-                        // يتم الانتقال لصفحة تسجيل الدخول وحذف كل السجلات السابقة
-                        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-                      }
-                    },
-                    child: const Text("خروج", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
-                  ),
-                ],
-              ),
-            );
+          _drawerItem(Icons.logout_rounded, "تسجيل الخروج", Colors.redAccent, () {
+            _showLogoutDialog();
           }),
+          SizedBox(height: 3.h),
         ],
       ),
     );
   }
 
-  Widget _drawerItem(IconData icon, String title, VoidCallback onTap) {
+  Widget _drawerItem(IconData icon, String title, Color color, VoidCallback onTap) {
     return ListTile(
-      leading: Icon(icon, color: const Color(0xFF1ABC9C)),
-      title: Text(title, style: TextStyle(fontSize: 12.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+      leading: Icon(icon, color: color, size: 22.sp),
+      title: Text(title, style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
       onTap: onTap,
+    );
+  }
+
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("تأكيد الخروج", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        content: const Text("هل تريد إغلاق لوحة التحكم؟", textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+              if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+            },
+            child: const Text("خروج", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 }
