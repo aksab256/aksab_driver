@@ -1,6 +1,6 @@
 import java.util.Properties
 
-// 1. تجهيز وقراءة ملف التوقيع
+// 1. تجهيز وقراءة ملف التوقيع (سيبقى الكود هنا للمستقبل عند إضافة ملف التوقيع الرسمي)
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
@@ -19,9 +19,10 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    // 2. إعدادات التوقيع (Signing Configs)
+    // 2. إعدادات التوقيع
     signingConfigs {
         create("release") {
+            // سيتم استخدام هذه الإعدادات لاحقاً عند رفع ملف الـ jks
             keyAlias = keystoreProperties["keyAlias"] as String?
             keyPassword = keystoreProperties["keyPassword"] as String?
             storeFile = keystoreProperties["storeFile"]?.let { file(it) }
@@ -36,13 +37,11 @@ android {
     }
 
     kotlinOptions {
-        // تحديث jvmTarget للصيغة الجديدة لتجنب التحذيرات
         jvmTarget = "1.8"
     }
 
     defaultConfig {
         applicationId = "com.example.aksab_driver"
-        // يفضل أن يكون الـ minSdk متوافق مع متطلبات المكتبات الجديدة
         minSdk = 21 
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -51,8 +50,9 @@ android {
 
     buildTypes {
         getByName("release") {
-            // 3. التصحيح الجوهري هنا: إضافة حرف 'is' واستخدام getByName
-            signingConfig = signingConfigs.getByName("release")
+            // التعديل الجوهري: استخدام توقيع الديباج مؤقتاً لنجاح بناء الـ APK على GitHub
+            signingConfig = signingConfigs.getByName("debug")
+            
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
