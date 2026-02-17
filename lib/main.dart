@@ -3,21 +3,21 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:sizer/sizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // سطر جديد
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_localizations/flutter_localizations.dart'; // سطر هام لدعم RTL
 
 import 'screens/delivery_admin_dashboard.dart';
 import 'screens/login_screen.dart';
 
-// --- إضافة تعريف القناة هنا ---
+// --- إعداد قناة الإشعارات ---
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
-  'high_importance_channel', // id
-  'High Importance Notifications', // title
-  description: 'This channel is used for important notifications.', // description
+  'high_importance_channel',
+  'High Importance Notifications',
+  description: 'This channel is used for important notifications.',
   importance: Importance.max,
 );
 
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-// ----------------------------
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -31,7 +31,7 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // --- إعداد القناة على أندرويد ---
+  // إعداد القناة على أندرويد
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
@@ -55,6 +55,18 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           title: 'أكسب كابتن',
           debugShowCheckedModeBanner: false,
+          
+          // --- إعدادات القراءة من اليمين للشمال (RTL) ---
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [
+            Locale('ar', 'AE'), // دعم اللغة العربية
+          ],
+          locale: const Locale('ar', 'AE'), // إجبار التطبيق على العربية
+          
           theme: ThemeData(
             primaryColor: const Color(0xFF2C3E50),
             colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2C3E50)),
@@ -84,19 +96,19 @@ class _AuthCheckState extends State<AuthCheck> {
   void initState() {
     super.initState();
     _setupTokenLog();
-    _listenToForegroundMessages(); // سطر جديد للاستماع للإشعارات والتطبيق مفتوح
+    _listenToForegroundMessages();
   }
 
   void _setupTokenLog() async {
     try {
       String? token = await FirebaseMessaging.instance.getToken();
-      debugPrint("🚀 FCM Token: $token"); 
+      debugPrint("🚀 FCM Token: $token");
     } catch (e) {
       debugPrint("❌ Error fetching token: $e");
     }
   }
 
-  // دالة لإظهار الإشعار فوراً لو المندوب فاتح التطبيق
+  // إظهار الإشعار بتنسيق Named Arguments المتوافق مع 2026
   void _listenToForegroundMessages() {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       RemoteNotification? notification = message.notification;
@@ -112,7 +124,7 @@ class _AuthCheckState extends State<AuthCheck> {
               channel.id,
               channel.name,
               channelDescription: channel.description,
-              icon: '@mipmap/ic_launcher', // تأكد من وجود الأيقونة
+              icon: '@mipmap/ic_launcher',
             ),
           ),
         );
@@ -138,3 +150,4 @@ class _AuthCheckState extends State<AuthCheck> {
     );
   }
 }
+

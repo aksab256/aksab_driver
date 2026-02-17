@@ -263,7 +263,6 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
       color: Colors.teal.withOpacity(0.3),
       borderStrokeWidth: 2,
       borderColor: Colors.teal,
-      isFilled: true,
     ));
   }
 }
