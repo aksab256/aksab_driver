@@ -1,48 +1,44 @@
-name: Build Flutter APK
+name: Flutter Build & Sign (APK & AAB)
 on:
   push:
     branches:
       - main
-      - master
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 🧩 Checkout Code
-        uses: actions/checkout@v4
-
-      - name: ☕️ Setup Java
+      - uses: actions/checkout@v4
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-
-      - name: 🔧 Setup Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
-
-      # --- الخطوات الجديدة للتوقيع ---
-      - name: 🔑 Decode Keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
-
-      - name: 📝 Create key.properties
-        run: |
-          echo "storePassword=${{ secrets.KEY_STORE_PASSWORD }}" > android/key.properties
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
-          echo "storeFile=app/upload-keystore.jks" >> android/key.properties
-      # ------------------------------
-
-      - name: 📦 Install Dependencies
+          flutter-version: '3.22.0'
+          channel: 'stable'
+          cache: true
+      - name: Get Dependencies
         run: flutter pub get
-
-      - name: 🏗️ Build Release APK
+      - name: Build Release Bundle (AAB)
+        run: flutter build appbundle --release
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEYSTORE_PATH: "android/app/upload-keystore.jks"
+      - name: Build Release APK
         run: flutter build apk --release
-
-      - name: 📤 Upload Release APK
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEYSTORE_PATH: "android/app/upload-keystore.jks"
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: release-builds
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab

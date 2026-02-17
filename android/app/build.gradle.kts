@@ -1,10 +1,11 @@
 import java.util.Properties
+import java.io.FileInputStream
 
-// 1. تجهيز وقراءة ملف التوقيع (سيبقى الكود هنا للمستقبل عند إضافة ملف التوقيع الرسمي)
+// 1. إعداد قراءة ملف الخصائص المحلي (اختياري للتطوير المحلي)
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(keystorePropertiesFile.inputStream())
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 plugins {
@@ -19,14 +20,17 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    // 2. إعدادات التوقيع
+    // 2. إعدادات التوقيع الاحترافية
     signingConfigs {
         create("release") {
-            // سيتم استخدام هذه الإعدادات لاحقاً عند رفع ملف الـ jks
-            keyAlias = keystoreProperties["keyAlias"] as String?
-            keyPassword = keystoreProperties["keyPassword"] as String?
-            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
-            storePassword = keystoreProperties["storePassword"] as String?
+            // الأولوية لمتغيرات GitHub Secrets، ثم لملف key.properties المحلي
+            keyAlias = System.getenv("KEY_ALIAS") ?: keystoreProperties["keyAlias"] as String?
+            keyPassword = System.getenv("KEY_PASSWORD") ?: keystoreProperties["keyPassword"] as String?
+            storePassword = System.getenv("STORE_PASSWORD") ?: keystoreProperties["storePassword"] as String?
+            
+            // تحديد مسار ملف الـ JKS الذي رأيناه في مجلد المشروع
+            val keystorePath = System.getenv("KEYSTORE_PATH") ?: "upload-keystore.jks"
+            storeFile = file(keystorePath)
         }
     }
 
@@ -42,7 +46,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.aksab_driver"
-        minSdk = 21 
+        minSdk = 21
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -50,14 +54,14 @@ android {
 
     buildTypes {
         getByName("release") {
-            // التعديل الجوهري: استخدام توقيع الديباج مؤقتاً لنجاح بناء الـ APK على GitHub
-            signingConfig = signingConfigs.getByName("debug")
-            
+            // تفعيل التوقيع الرسمي للنسخة النهائية
+            signingConfig = signingConfigs.getByName("release")
+
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-        
+
         getByName("debug") {
             signingConfig = signingConfigs.getByName("debug")
         }
@@ -71,3 +75,4 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }
+
