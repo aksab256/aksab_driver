@@ -27,16 +27,10 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build Release Bundle (AAB)
-        run: flutter build appbundle --release
-        env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-          KEYSTORE_PATH: "upload-keystore.jks"
-
-      - name: Build Release APK
-        run: flutter build apk --release
+      - name: Build Release APK & AAB
+        run: |
+          flutter build appbundle --release
+          flutter build apk --release
         env:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
