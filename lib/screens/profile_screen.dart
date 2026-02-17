@@ -1,4 +1,3 @@
-// lib/screens/profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +6,26 @@ import 'package:sizer/sizer.dart';
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
+  // دالة مساعدة لتحويل كود المركبة إلى نص عربي
+  String _getVehicleName(String? config) {
+    switch (config) {
+      case 'motorcycleConfig':
+        return "موتوسيكل";
+      case 'pickupConfig':
+        return "سيارة بيك أب (ربع نقل)";
+      case 'jumboConfig':
+        return "سيارة جامبو";
+      default:
+        return "مركبة نقل";
+    }
+  }
+
+  // دالة مساعدة لاختيار الأيقونة المناسبة
+  IconData _getVehicleIcon(String? config) {
+    if (config == 'motorcycleConfig') return Icons.motorcycle_rounded;
+    return Icons.local_shipping_rounded;
+  }
+
   @override
   Widget build(BuildContext context) {
     final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
@@ -14,7 +33,8 @@ class ProfileScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FA),
       appBar: AppBar(
-        title: const Text("حسابي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        title: const Text("حسابي الشخصي", 
+          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
@@ -30,76 +50,97 @@ class ProfileScreen extends StatelessWidget {
             return const Center(child: Text("لم يتم العثور على بيانات", style: TextStyle(fontFamily: 'Cairo')));
           }
 
+          // جلب البيانات بناءً على أسماء الحقول في الداتابيز الخاصة بك
           var userData = snapshot.data!.data() as Map<String, dynamic>;
+          String vehicleConfig = userData['vehicleConfig'] ?? "";
           
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
             child: Column(
               children: [
+                // رأس الصفحة (الصورة والاسم)
                 Center(
                   child: Column(
                     children: [
                       CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Colors.orange[100],
-                        child: const Icon(Icons.person, size: 60, color: Colors.orange),
+                        radius: 45.sp,
+                        backgroundColor: Colors.orange[50],
+                        child: Icon(Icons.person, size: 50.sp, color: Colors.orange[800]),
                       ),
-                      const SizedBox(height: 15),
+                      SizedBox(height: 2.h),
                       Text(
-                        userData['name'] ?? "كابتن أكسب",
-                        style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
+                        userData['fullname'] ?? "كابتن أكسب", // استخدام fullname
+                        style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
                       ),
                       Text(
                         userData['email'] ?? "",
-                        style: const TextStyle(color: Colors.grey, fontFamily: 'Cairo'),
+                        style: TextStyle(color: Colors.grey, fontSize: 11.sp, fontFamily: 'Cairo'),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 30),
+                SizedBox(height: 4.h),
+
+                // كروت البيانات
                 _buildInfoCard(
-                  title: "بيانات المركبة",
-                  icon: Icons.delivery_dining_rounded,
-                  content: userData['vehicleType'] == 'motorcycle' ? "موتوسيكل" : "سيارة",
+                  title: "نوع المركبة المسجلة",
+                  icon: _getVehicleIcon(vehicleConfig),
+                  content: _getVehicleName(vehicleConfig),
                   color: Colors.blue,
                 ),
-                const SizedBox(height: 15),
+                SizedBox(height: 2.h),
+
                 _buildInfoCard(
                   title: "رقم الهاتف",
                   icon: Icons.phone_android_rounded,
                   content: userData['phone'] ?? "غير مسجل",
-                  color: Colors.orange,
+                  color: Colors.green,
                 ),
-                const SizedBox(height: 15),
+                SizedBox(height: 2.h),
+
                 _buildInfoCard(
-                  title: "المنطقة النشطة",
-                  icon: Icons.map_rounded,
-                  content: userData['city'] ?? "الإسكندرية",
+                  title: "رصيد المحفظة",
+                  icon: Icons.account_balance_wallet_rounded,
+                  content: "${userData['walletBalance'] ?? 0} ج.م",
+                  color: (userData['walletBalance'] ?? 0) < 0 ? Colors.red : Colors.orange,
+                ),
+                SizedBox(height: 2.h),
+
+                _buildInfoCard(
+                  title: "العنوان / المنطقة",
+                  icon: Icons.location_on_rounded,
+                  content: userData['address'] ?? "غير محدد", // استخدام address
                   color: Colors.teal,
                 ),
-                const SizedBox(height: 30),
+
+                SizedBox(height: 4.h),
+
+                // زر تعديل البيانات
                 ElevatedButton.icon(
                   onPressed: () {
-                    // ✅ تم إصلاح الخطأ هنا (وضع الـ TextStyle داخل الـ Text)
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text(
-                          "ميزة تعديل البيانات ستتوفر قريباً", 
-                          style: TextStyle(fontFamily: 'Cairo'),
-                        ),
+                        content: Text("برجاء التواصل مع الإدارة لتعديل البيانات الأساسية", 
+                          style: TextStyle(fontFamily: 'Cairo')),
+                        backgroundColor: Color(0xFF2C3E50),
                       ),
                     );
                   },
-                  icon: const Icon(Icons.edit_note_rounded),
-                  label: const Text("تعديل البيانات", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.support_agent_rounded),
+                  label: const Text("طلب تعديل بيانات", 
+                    style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
-                    minimumSize: Size(100.w, 6.h),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: Colors.grey[300]!)),
+                    foregroundColor: const Color(0xFF2C3E50),
+                    minimumSize: Size(100.w, 7.h),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15), 
+                      side: BorderSide(color: Colors.grey[300]!)
+                    ),
                     elevation: 0,
                   ),
                 ),
+                SizedBox(height: 2.h),
               ],
             ),
           );
@@ -110,26 +151,31 @@ class ProfileScreen extends StatelessWidget {
 
   Widget _buildInfoCard({required String title, required IconData icon, required String content, required Color color}) {
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: EdgeInsets.all(12.sp),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 5))],
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))
+        ],
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: EdgeInsets.all(8.sp),
             decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-            child: Icon(icon, color: color),
+            child: Icon(icon, color: color, size: 20.sp),
           ),
-          const SizedBox(width: 15),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(color: Colors.grey, fontSize: 12, fontFamily: 'Cairo')),
-              Text(content, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, fontFamily: 'Cairo')),
-            ],
+          SizedBox(width: 4.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(color: Colors.grey, fontSize: 10.sp, fontFamily: 'Cairo')),
+                Text(content, 
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo', color: Colors.black87)),
+              ],
+            ),
           )
         ],
       ),
