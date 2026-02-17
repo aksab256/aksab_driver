@@ -29,7 +29,7 @@ android {
             storePassword = System.getenv("STORE_PASSWORD") ?: keystoreProperties["storePassword"] as String?
             
             // تحديد مسار ملف الـ JKS الذي رأيناه في مجلد المشروع
-            val keystorePath = System.getenv("KEYSTORE_PATH") ?: "upload-keystore.jks"
+            val keystorePath = System.getenv("KEY_FILE_NAME") ?: "upload-keystore.jks"
             storeFile = file(keystorePath)
         }
     }
