@@ -1,26 +1,32 @@
 name: Flutter Build & Sign (APK & AAB)
+
 on:
   push:
     branches:
       - main
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: "stable"
           channel: 'stable'
           cache: true
+
       - name: Get Dependencies
         run: flutter pub get
+
       - name: Build Release Bundle (AAB)
         run: flutter build appbundle --release
         env:
@@ -28,6 +34,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEYSTORE_PATH: "android/app/upload-keystore.jks"
+
       - name: Build Release APK
         run: flutter build apk --release
         env:
@@ -35,6 +42,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEYSTORE_PATH: "android/app/upload-keystore.jks"
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
