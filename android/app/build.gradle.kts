@@ -24,9 +24,9 @@ android {
     signingConfigs {
         create("release") {
             // الأولوية لمتغيرات GitHub Secrets، ثم لملف key.properties المحلي
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
-            storePassword = System.getenv("STORE_PASSWORD")
+            keyAlias = "upload"
+            keyPassword = "1151983aA"
+            storePassword = "1151983aA"
             
             // تحديد مسار ملف الـ JKS الذي رأيناه في مجلد المشروع
             val keystorePath = System.getenv("KEY_FILE_NAME") ?: "upload-keystore.jks"
