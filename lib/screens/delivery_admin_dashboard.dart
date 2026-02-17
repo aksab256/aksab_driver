@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // إضافة المكتبة
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 // استدعاء الصفحات التابعة
 import 'delivery_management_screen.dart'; 
@@ -31,17 +31,21 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     super.initState();
     _checkAuthAndLoadData();
     
-    // طلب الإذن للإدارة فور الدخول مع الإفصاح
+    // التعديل هنا: إضافة Future.delayed لضمان استقرار الواجهة قبل طلب الحوار
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestNotificationPermissionWithDisclosure();
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _requestNotificationPermissionWithDisclosure();
+      });
     });
   }
 
-  // --- 🔔 دالة الإفصاح وطلب إذن الإشعارات للإدارة ---
   Future<void> _requestNotificationPermissionWithDisclosure() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
+    
+    // التحقق من الإذن الحالي
     NotificationSettings settings = await messaging.getNotificationSettings();
     
+    // إذا لم يسبق للمستخدم اتخاذ قرار (الحالة الخام)
     if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
       if (!mounted) return;
       
@@ -81,11 +85,14 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       );
 
       if (proceed == true) {
+        // طلب الإذن الرسمي من النظام (تظهر رسالة الهاتف الرسمية هنا)
         await messaging.requestPermission(alert: true, badge: true, sound: true);
       }
     }
   }
 
+  // ... باقي الدوال (FetchData, Stats, Build) تظل كما هي في كودك لأنها سليمة ...
+  
   Future<void> _checkAuthAndLoadData() async {
     try {
       var managerSnap = await FirebaseFirestore.instance
@@ -98,12 +105,10 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
         _userData = doc.data();
         String role = _userData!['role'] ?? 'delivery_supervisor';
         String managerDocId = doc.id;
-
         await _loadStats(role, managerDocId);
       }
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
-      debugPrint("Dashboard Error: $e");
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -111,11 +116,9 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
   Future<void> _loadStats(String role, String managerDocId) async {
     Query ordersQuery = FirebaseFirestore.instance.collection('orders');
     Query repsQuery = FirebaseFirestore.instance.collection('deliveryReps');
-
     if (role == 'delivery_supervisor') {
       var myReps = await repsQuery.where('supervisorId', isEqualTo: managerDocId).get();
       _totalReps = myReps.size;
-
       if (myReps.docs.isNotEmpty) {
         List<String> repCodes = myReps.docs.map((d) => d['repCode'] as String).toList();
         ordersQuery = ordersQuery.where('buyer.repCode', whereIn: repCodes);
@@ -124,10 +127,8 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       var allReps = await repsQuery.get();
       _totalReps = allReps.size;
     }
-
     var ordersSnap = await ordersQuery.get();
     _totalOrders = ordersSnap.size;
-
     double salesSum = 0;
     for (var doc in ordersSnap.docs) {
       var data = doc.data() as Map<String, dynamic>;
@@ -139,14 +140,11 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.blue)));
-
     return Scaffold(
       backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
-        title: Text(
-          _userData?['role'] == 'delivery_manager' ? "لوحة مدير التوصيل" : "لوحة مشرف التوصيل",
-          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16.sp),
-        ),
+        title: Text(_userData?['role'] == 'delivery_manager' ? "لوحة مدير التوصيل" : "لوحة مشرف التوصيل",
+          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16.sp)),
         backgroundColor: const Color(0xFF2C3E50),
         centerTitle: true,
         elevation: 5,
@@ -160,7 +158,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text("أهلاً بك، ${_userData?['fullname'] ?? ''}",
-                  style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Color(0xFF2C3E50))),
+                  style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: const Color(0xFF2C3E50))),
               SizedBox(height: 3.h),
               Expanded(
                 child: GridView.count(
@@ -187,22 +185,22 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: color.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 6))
-        ],
+        boxShadow: [BoxShadow(color: color.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 6))],
         border: Border(right: BorderSide(color: color, width: 8)),
       ),
       child: Row(
         children: [
           Icon(icon, color: color, size: 35.sp),
           SizedBox(width: 15.sp),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: TextStyle(fontSize: 13.sp, color: Colors.grey[700], fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
-              Text(value, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Cairo')),
-            ],
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontSize: 13.sp, color: Colors.grey[700], fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+                Text(value, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Cairo')),
+              ],
+            ),
           ),
         ],
       ),
@@ -216,43 +214,30 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
         children: [
           UserAccountsDrawerHeader(
             decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
-            accountName: Text(_userData?['fullname'] ?? "المدير", 
-              style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14.sp)),
-            accountEmail: Text(_userData?['role'] == 'delivery_manager' ? "مدير نظام" : "مشرف ميداني", 
-              style: const TextStyle(fontFamily: 'Cairo')),
-            currentAccountPicture: CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Icon(Icons.admin_panel_settings, size: 35.sp, color: const Color(0xFF2C3E50)),
-            ),
+            accountName: Text(_userData?['fullname'] ?? "المدير", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14.sp)),
+            accountEmail: Text(_userData?['role'] == 'delivery_manager' ? "مدير نظام" : "مشرف ميداني", style: const TextStyle(fontFamily: 'Cairo')),
+            currentAccountPicture: CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.admin_panel_settings, size: 35.sp, color: const Color(0xFF2C3E50))),
           ),
-          
           _drawerItem(Icons.account_circle, "حسابي الشخصي", Colors.blue, () {
             Navigator.pop(context);
             Navigator.push(context, MaterialPageRoute(builder: (context) => ProfileScreen(repData: _userData)));
           }),
-
           _drawerItem(Icons.analytics_rounded, "تقارير العمليات", Colors.teal, () {
             Navigator.pop(context);
             Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryManagementScreen()));
           }),
-
           _drawerItem(Icons.delivery_dining, "إدارة المناديب", Colors.orange, () {
             Navigator.pop(context);
             Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryFleetScreen()));
           }),
-
           if (_userData?['role'] == 'delivery_manager')
             _drawerItem(Icons.map_rounded, "نطاقات التوزيع", Colors.purple, () {
               Navigator.pop(context);
               Navigator.push(context, MaterialPageRoute(builder: (context) => const ManagerGeoDistScreen()));
             }),
-
           const Spacer(),
           const Divider(),
-          
-          _drawerItem(Icons.logout_rounded, "تسجيل الخروج", Colors.redAccent, () {
-            _showLogoutDialog();
-          }),
+          _drawerItem(Icons.logout_rounded, "تسجيل الخروج", Colors.redAccent, () => _showLogoutDialog()),
           SizedBox(height: 3.h),
         ],
       ),
