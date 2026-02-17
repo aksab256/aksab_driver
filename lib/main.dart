@@ -1,66 +1,68 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:sizer/sizer.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-// ✅ إضافات ضرورية للخدمات
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
+// استدعاء الشاشات - تأكد من مطابقة المسارات لمجلدات مشروعك
+import 'screens/delivery_admin_dashboard.dart';
 import 'screens/login_screen.dart';
-import 'screens/register_screen.dart';
-import 'screens/free_driver_home_screen.dart';
-import 'screens/CompanyRepHomeScreen.dart';
-import 'screens/delivery_admin_dashboard.dart'; 
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+// 1. معالج الإشعارات في الخلفية - يجب أن يكون خارج أي كلاس
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // تأكد من تهيئة Firebase داخل المعالج في الخلفية
   await Firebase.initializeApp();
-
-  // ✅ 1. تعريف قناة الإشعارات (هذا الجزء يمنع الـ Crash في أندرويد 13+)
-  const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'aksab_tracking_channel', // يجب أن يطابق المعرف في شاشة التتبع
-    'تتبع رحلات أكسب',
-    description: 'تستخدم لتتبع موقع المندوب أثناء الرحلة لضمان جودة الخدمة',
-    importance: Importance.high,
-  );
-
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-  
-  await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
-
-  runApp(AksabDriverApp());
+  debugPrint("📩 إشعار في الخلفية: ${message.messageId}");
 }
 
-class AksabDriverApp extends StatelessWidget {
+void main() async {
+  // 2. تأكيد تهيئة الـ Widgets قبل أي شيء
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // 3. تهيئة Firebase الأساسية
+  await Firebase.initializeApp();
+
+  // 4. إعداد معالج الخلفية
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // 5. إعدادات الإشعارات أثناء فتح التطبيق (Foreground)
+  await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
+    // استخدم Sizer لضمان استجابة التصميم (Responsive) في كل الشاشات
     return Sizer(
       builder: (context, orientation, deviceType) {
         return MaterialApp(
-          title: 'أكساب المندوب',
+          title: 'أكسب كابتن',
           debugShowCheckedModeBanner: false,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          supportedLocales: const [Locale('ar', 'EG')],
-          locale: const Locale('ar', 'EG'),
+          
+          // إعدادات السمات (Theme) والخطوط
           theme: ThemeData(
-            primarySwatch: Colors.orange,
-            fontFamily: 'Tajawal',
-            scaffoldBackgroundColor: Colors.white,
+            primaryColor: const Color(0xFF2C3E50),
+            colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2C3E50)),
+            fontFamily: 'Cairo', // يجب أن يكون معرفاً في pubspec.yaml
+            useMaterial3: true,
           ),
-          home: AuthWrapper(),
+
+          // 6. فحص حالة التوجيه (تلقائياً)
+          home: const AuthCheck(),
+
+          // تعريف المسارات (Routes) للتنقل السهل
           routes: {
-            '/login': (context) => LoginScreen(),
-            '/register': (context) => RegisterScreen(),
-            '/free_home': (context) => const FreeDriverHomeScreen(),
-            '/company_home': (context) => const CompanyRepHomeScreen(),
-            '/admin_dashboard': (context) => const DeliveryAdminDashboard(),
+            '/login': (context) => const LoginScreen(),
+            '/dashboard': (context) => const DeliveryAdminDashboard(),
           },
         );
       },
@@ -68,69 +70,52 @@ class AksabDriverApp extends StatelessWidget {
   }
 }
 
-// باقي كود AuthWrapper و _getUserRoleAndData كما هو في ملفك (سليم 100%)
-class AuthWrapper extends StatelessWidget {
+// كود فحص حالة تسجيل الدخول (الطبقة الواقية)
+class AuthCheck extends StatefulWidget {
+  const AuthCheck({super.key});
+
+  @override
+  State<AuthCheck> createState() => _AuthCheckState();
+}
+
+class _AuthCheckState extends State<AuthCheck> {
+  @override
+  void initState() {
+    super.initState();
+    _setupTokenLog();
+  }
+
+  // دالة اختيارية لمساعدتك في الحصول على الـ Token الخاص بالجهاز للتجربة
+  void _setupTokenLog() async {
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
+      debugPrint("🚀 FCM Token: $token"); 
+      // هذا الـ Token هو الذي تستخدمه لإرسال إشعار تجريبي من Firebase Console
+    } catch (e) {
+      debugPrint("❌ Error fetching token: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
+        // حالة التحميل
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-
-        if (snapshot.hasData) {
-          final uid = snapshot.data!.uid;
-
-          return FutureBuilder<Map<String, dynamic>?>(
-            future: _getUserRoleAndData(uid),
-            builder: (context, roleSnapshot) {
-              if (roleSnapshot.connectionState == ConnectionState.waiting) {
-                return const Scaffold(body: Center(child: CircularProgressIndicator()));
-              }
-
-              final userData = roleSnapshot.data;
-              if (userData != null) {
-                final String type = userData['type'];
-                final String status = userData['status'] ?? '';
-
-                if (type == 'deliveryRep' && status == 'approved') {
-                  return const CompanyRepHomeScreen();
-                } 
-                else if (type == 'freeDriver' && status == 'approved') {
-                  return const FreeDriverHomeScreen();
-                } 
-                else if (type == 'manager') {
-                  String role = userData['role'] ?? '';
-                  if (role == 'delivery_manager' || role == 'delivery_supervisor') {
-                    return const DeliveryAdminDashboard();
-                  }
-                }
-              }
-              return const LoginScreen();
-            },
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator(color: Color(0xFF2C3E50))),
           );
         }
+        
+        // إذا كان المستخدم مسجل دخول
+        if (snapshot.hasData && snapshot.data != null) {
+          return const DeliveryAdminDashboard();
+        }
+        
+        // إذا لم يكن مسجل دخول
         return const LoginScreen();
       },
     );
-  }
-
-  Future<Map<String, dynamic>?> _getUserRoleAndData(String uid) async {
-    var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
-    if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
-
-    var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
-    if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
-
-    var managerSnap = await FirebaseFirestore.instance
-        .collection('managers')
-        .where('uid', isEqualTo: uid)
-        .get();
-        
-    if (managerSnap.docs.isNotEmpty) {
-      return {...managerSnap.docs.first.data(), 'type': 'manager'};
-    }
-    return null;
   }
 }
