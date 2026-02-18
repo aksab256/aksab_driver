@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'FinancialSettlementScreen.dart'; // تأكد من وجود هذا الملف في نفس المجلد
+import 'FinancialSettlementScreen.dart';
 
 class DeliveryPerformanceScreen extends StatefulWidget {
   final String repId;    
@@ -21,7 +21,8 @@ class DeliveryPerformanceScreen extends StatefulWidget {
 }
 
 class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
-  DateTime startDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  // جعل بداية الفلتر من أول اليوم الحالي لضمان دقة البيانات المعروضة
+  DateTime startDate = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
   DateTime endDate = DateTime.now();
 
   @override
@@ -33,32 +34,104 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
         centerTitle: true,
         backgroundColor: const Color(0xFF007BFF),
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.account_balance_wallet, color: Colors.white),
-            onPressed: () => _navigateToSettlement(),
-            tooltip: "تسوية مالية",
-          )
-        ],
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(12.sp),
-        child: Column(
-          children: [
-            _buildDateFilter(),
-            SizedBox(height: 15.sp),
-            _buildCurrentLiveStatus(), // حالة waitingdelivery
-            SizedBox(height: 15.sp),
-            _buildHistoricalPerformance(), // إحصائيات delivered & false orders
-            SizedBox(height: 20.sp),
-            _buildSettlementButton(),
-          ],
-        ),
+      body: StreamBuilder<QuerySnapshot>(
+        // المصدر الواحد للحقيقة: الاستماع لمجموعة التوصيل فقط
+        stream: FirebaseFirestore.instance
+            .collection('waitingdelivery')
+            .where('repCode', isEqualTo: widget.repCode)
+            .where('assignedAt', isGreaterThanOrEqualTo: startDate)
+            .where('assignedAt', isLessThanOrEqualTo: endDate.add(const Duration(days: 1)))
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          var docs = snapshot.data?.docs ?? [];
+          
+          // فلترة الحالات برمجياً من الـ List المسحوبة
+          int pending = docs.where((d) => d['deliveryTaskStatus'] == 'pending').length;
+          int success = docs.where((d) => d['deliveryTaskStatus'] == 'delivered').length;
+          int failed = docs.where((d) => d['deliveryTaskStatus'] == 'failed').length;
+          
+          double totalCash = 0;
+          for (var d in docs) {
+            if (d['deliveryTaskStatus'] == 'delivered') {
+              totalCash += (d['total'] ?? 0);
+            }
+          }
+
+          return SingleChildScrollView(
+            padding: EdgeInsets.all(12.sp),
+            child: Column(
+              children: [
+                _buildDateFilter(),
+                SizedBox(height: 15.sp),
+                
+                // حالة المهام الحالية (Live Status)
+                _buildLiveStatusHeader(pending),
+                
+                SizedBox(height: 15.sp),
+                
+                // الإحصائيات (Success vs Failed)
+                Row(
+                  children: [
+                    _kpiCard("تسليم ناجح", "$success", Icons.done_all, Colors.green),
+                    _kpiCard("تسليم فاشل", "$failed", Icons.close, Colors.red),
+                  ],
+                ),
+                
+                SizedBox(height: 10.sp),
+                _wideKpiCard("إجمالي التحصيل المالي", "${totalCash.toStringAsFixed(2)} ج.م", Icons.payments, Colors.blue[900]!),
+                
+                SizedBox(height: 20.sp),
+                
+                if (success > 0 || failed > 0) ...[
+                  Text("تحليل نسبة النجاح", style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 10.sp),
+                  _buildPieChart(success, failed),
+                ] else 
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20.sp),
+                    child: Text("لا توجد عمليات مكتملة في هذه الفترة", style: TextStyle(color: Colors.grey, fontSize: 11.sp)),
+                  ),
+                
+                SizedBox(height: 20.sp),
+                _buildSettlementButton(),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  // فلتر اختيار الفترة الزمنية
+  Widget _buildLiveStatusHeader(int pendingCount) {
+    bool isDone = pendingCount == 0;
+    return Container(
+      padding: EdgeInsets.all(12.sp),
+      decoration: BoxDecoration(
+        color: isDone ? Colors.green[50] : Colors.orange[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isDone ? Colors.green : Colors.orange),
+      ),
+      child: Row(
+        children: [
+          Icon(isDone ? Icons.check_circle : Icons.pending_actions,
+              color: isDone ? Colors.green : Colors.orange[800]),
+          SizedBox(width: 10.sp),
+          Expanded(
+            child: Text(
+              isDone ? "أنهى جميع مهام اليوم ✅" : "متبقي $pendingCount مهام قيد التنفيذ حالياً",
+              style: TextStyle(fontWeight: FontWeight.bold, color: isDone ? Colors.green[800] : Colors.orange[900]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDateFilter() {
     return Card(
       elevation: 2,
@@ -97,104 +170,6 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.sp)),
         ],
       ),
-    );
-  }
-
-  // حالة المهام الحالية من كولكشن waitingdelivery
-  Widget _buildCurrentLiveStatus() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('waitingdelivery')
-          .where('repCode', isEqualTo: widget.repCode)
-          .snapshots(),
-      builder: (context, snapshot) {
-        int remaining = snapshot.hasData ? snapshot.data!.docs.length : 0;
-        bool isDone = remaining == 0;
-        return Container(
-          padding: EdgeInsets.all(12.sp),
-          decoration: BoxDecoration(
-            color: isDone ? Colors.green[50] : Colors.orange[50],
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: isDone ? Colors.green : Colors.orange),
-          ),
-          child: Row(
-            children: [
-              Icon(isDone ? Icons.check_circle : Icons.pending_actions,
-                  color: isDone ? Colors.green : Colors.orange[800]),
-              SizedBox(width: 10.sp),
-              Expanded(
-                child: Text(
-                  isDone ? "أنهى جميع مهام اليوم ✅" : "متبقي $remaining مهام قيد التنفيذ حالياً",
-                  style: TextStyle(fontWeight: FontWeight.bold, color: isDone ? Colors.green[800] : Colors.orange[900]),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // الأداء التاريخي بدمج كولكشن الناجح والفاشل
-  Widget _buildHistoricalPerformance() {
-    return Column(
-      children: [
-        StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('deliveredorders')
-              .where('repCode', isEqualTo: widget.repCode)
-              .where('timestamp', isGreaterThanOrEqualTo: startDate)
-              .where('timestamp', isLessThanOrEqualTo: endDate.add(const Duration(days: 1)))
-              .snapshots(),
-          builder: (context, delSnap) {
-            return StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('falseorder')
-                  .where('repCode', isEqualTo: widget.repCode)
-                  .where('timestamp', isGreaterThanOrEqualTo: startDate)
-                  .where('timestamp', isLessThanOrEqualTo: endDate.add(const Duration(days: 1)))
-                  .snapshots(),
-              builder: (context, failSnap) {
-                if (delSnap.connectionState == ConnectionState.waiting || failSnap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                int success = delSnap.data?.docs.length ?? 0;
-                int failed = failSnap.data?.docs.length ?? 0;
-                double totalCash = 0;
-
-                for (var d in delSnap.data?.docs ?? []) {
-                  totalCash += (d['total'] ?? 0);
-                }
-
-                if (success == 0 && failed == 0) {
-                  return Padding(
-                    padding: EdgeInsets.only(top: 20.sp),
-                    child: const Text("لا توجد بيانات مسجلة لهذه الفترة"),
-                  );
-                }
-
-                return Column(
-                  children: [
-                    Row(
-                      children: [
-                        _kpiCard("تسليم ناجح", "$success", Icons.done_all, Colors.green),
-                        _kpiCard("تسليم فاشل", "$failed", Icons.close, Colors.red),
-                      ],
-                    ),
-                    SizedBox(height: 10.sp),
-                    _wideKpiCard("إجمالي التحصيل المالي", "${totalCash.toStringAsFixed(2)} ج.م", Icons.payments, Colors.blue[900]!),
-                    SizedBox(height: 20.sp),
-                    Text("تحليل نسبة النجاح", style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 10.sp),
-                    _buildPieChart(success, failed),
-                  ],
-                );
-              },
-            );
-          },
-        ),
-      ],
     );
   }
 
@@ -240,7 +215,6 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
 
   Widget _buildPieChart(int success, int failed) {
     int total = success + failed;
-    if (total == 0) return const SizedBox();
     return SizedBox(
       height: 200,
       child: PieChart(
@@ -297,4 +271,3 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
     );
   }
 }
-
