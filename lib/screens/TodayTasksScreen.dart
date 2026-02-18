@@ -19,7 +19,7 @@ class TodayTasksScreen extends StatefulWidget {
 class _TodayTasksScreenState extends State<TodayTasksScreen> {
   bool _isProcessing = false;
 
-  // --- 1. التوجيه الخارجي (بدون طلب أذونات داخل التطبيق) ---
+  // --- التوجيه للخرائط ---
   Future<void> _navigateToCustomer(Map<String, dynamic>? location) async {
     if (location == null || location['lat'] == null || location['lng'] == null) {
       _showSnackBar("موقع العميل غير متوفر");
@@ -27,14 +27,11 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     }
     final double lat = (location['lat'] as num).toDouble();
     final double lng = (location['lng'] as num).toDouble();
-    
-    // روابط الخرائط الخارجية
     final Uri googleUri = Uri.parse("google.navigation:q=$lat,$lng");
     final Uri appleUri = Uri.parse("https://maps.apple.com/?q=$lat,$lng");
 
     try {
       if (Platform.isAndroid) {
-        // نفتح جوجل ماب مباشرة، هو اللي هيتعامل مع اللوكيشن
         await launchUrl(googleUri, mode: LaunchMode.externalNonBrowserApplication);
       } else {
         await launchUrl(appleUri);
@@ -44,7 +41,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     }
   }
 
-  // --- 2. طباعة الفاتورة PDF ---
+  // --- طباعة الفاتورة ---
   Future<void> _printInvoice(Map<String, dynamic> order) async {
     final pdf = pw.Document();
     final buyer = order['buyer'] ?? {};
@@ -83,53 +80,26 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
   }
 
-  // --- 3. نافذة تفاصيل الفاتورة (BottomSheet) ---
-  void _showOrderDetails(Map<String, dynamic> order) {
-    final items = order['items'] as List? ?? [];
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-        padding: EdgeInsets.fromLTRB(15.sp, 10.sp, 15.sp, 20.sp),
-        height: 75.h,
-        child: Column(
-          children: [
-            Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
-            SizedBox(height: 15.sp),
-            Text("تفاصيل الطلب", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
-            const Divider(),
-            Expanded(
-              child: ListView.builder(
-                itemCount: items.length,
-                itemBuilder: (context, i) => Card(
-                  elevation: 0,
-                  color: Colors.grey[50],
-                  margin: EdgeInsets.symmetric(vertical: 5.sp),
-                  child: ListTile(
-                    title: Text(items[i]['name'] ?? "-", style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600)),
-                    subtitle: Text("البائع: ${items[i]['sellerName'] ?? '-'}", style: TextStyle(fontSize: 10.sp)),
-                    trailing: Text("x${items[i]['quantity']}", style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, color: Colors.blue)),
-                  ),
-                ),
-              ),
-            ),
-            SizedBox(height: 10.sp),
-            SizedBox(
-              width: double.infinity,
-              height: 45.sp,
-              child: ElevatedButton.icon(
-                onPressed: () => _printInvoice(order),
-                icon: const Icon(Icons.print),
-                label: Text("طباعة الفاتورة", style: TextStyle(fontSize: 13.sp)),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-              ),
-            )
-          ],
-        ),
-      ),
-    );
+  // --- تحديث الحالة (النظام الجديد: تحديث في نفس المجموعة) ---
+  Future<void> _updateStatus(String docId, String status) async {
+    setState(() => _isProcessing = true);
+    try {
+      // نكتفي بتحديث الحقول داخل نفس الوثيقة
+      await FirebaseFirestore.instance
+          .collection('waitingdelivery')
+          .doc(docId)
+          .update({
+        'deliveryTaskStatus': status, // 'delivered' أو 'failed'
+        'completedAt': FieldValue.serverTimestamp(),
+        'isSettled': false, // جاهز للتصفية المالية مع المشرف لاحقاً
+      });
+
+      _showSnackBar(status == 'delivered' ? "تم التسليم بنجاح ✅" : "تم تسجيل فشل الطلب ❌");
+    } catch (e) {
+      _showSnackBar("خطأ في التحديث: $e");
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
   }
 
   @override
@@ -147,6 +117,8 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
           stream: FirebaseFirestore.instance
               .collection('waitingdelivery')
               .where('repCode', isEqualTo: widget.repCode)
+              // المندوب يرى فقط المهام التي لم تُغلق بعد (Pending)
+              .where('deliveryTaskStatus', isEqualTo: 'pending')
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
@@ -200,9 +172,9 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
                 const Divider(height: 30),
                 Row(
                   children: [
-                    _smallActionBtn("اتصال بالعميل", Colors.green, Icons.phone, () => launchUrl(Uri.parse("tel:${buyer['phone']}"))),
-                    SizedBox(width: 10.sp),
-                    _smallActionBtn("عرض الفاتورة", Colors.orange, Icons.receipt_long, () => _showOrderDetails(order)),
+                    _smallActionBtn("اتصال", Colors.green, Icons.phone, () => launchUrl(Uri.parse("tel:${buyer['phone']}"))),
+                    SizedBox(width: 5.sp),
+                    _smallActionBtn("الفاتورة", Colors.orange, Icons.receipt_long, () => _showOrderDetails(order)),
                   ],
                 ),
                 SizedBox(height: 15.sp),
@@ -210,9 +182,9 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
                 ? const LinearProgressIndicator()
                 : Row(
                   children: [
-                    _mainActionBtn("تـم التـسليم", Colors.green, Icons.check_circle, () => _updateStatus(docId, order, 'delivered')),
+                    _mainActionBtn("تـم التـسليم", Colors.green, Icons.check_circle, () => _updateStatus(docId, 'delivered')),
                     SizedBox(width: 10.sp),
-                    _mainActionBtn("فشل الشحن", Colors.red, Icons.cancel, () => _updateStatus(docId, order, 'failed')),
+                    _mainActionBtn("فشل", Colors.red, Icons.cancel, () => _updateStatus(docId, 'failed')),
                   ],
                 )
               ],
@@ -223,6 +195,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     );
   }
 
+  // --- دوال بناء الواجهة (نفس التي قدمتها مع تحسينات بسيطة) ---
   Widget _rowInfo(String label, String value, {bool isTotal = false, double fontSize = 12}) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 4.sp),
@@ -240,9 +213,9 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     return Expanded(
       child: OutlinedButton.icon(
         onPressed: onTap,
-        icon: Icon(icon, size: 16.sp, color: color),
+        icon: Icon(icon, size: 14.sp, color: color),
         label: Text(label, style: TextStyle(color: color, fontSize: 10.sp, fontWeight: FontWeight.bold)),
-        style: OutlinedButton.styleFrom(side: BorderSide(color: color), padding: EdgeInsets.symmetric(vertical: 10.sp), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        style: OutlinedButton.styleFrom(side: BorderSide(color: color), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
       ),
     );
   }
@@ -251,41 +224,53 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     return Expanded(
       child: ElevatedButton.icon(
         onPressed: onTap,
-        icon: Icon(icon, size: 18.sp),
-        label: Text(label, style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold)),
-        style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, padding: EdgeInsets.symmetric(vertical: 14.sp), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+        icon: Icon(icon, size: 16.sp),
+        label: Text(label, style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold)),
+        style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, padding: EdgeInsets.symmetric(vertical: 12.sp), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+      ),
+    );
+  }
+
+  void _showOrderDetails(Map<String, dynamic> order) {
+    final items = order['items'] as List? ?? [];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+        padding: EdgeInsets.all(15.sp),
+        height: 70.h,
+        child: Column(
+          children: [
+            Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+            SizedBox(height: 10.sp),
+            Text("تفاصيل الطلب", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
+            const Divider(),
+            Expanded(
+              child: ListView.builder(
+                itemCount: items.length,
+                itemBuilder: (context, i) => ListTile(
+                  title: Text(items[i]['name'] ?? "-"),
+                  trailing: Text("x${items[i]['quantity']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(onPressed: () => _printInvoice(order), icon: const Icon(Icons.print), label: const Text("طباعة")),
+            )
+          ],
+        ),
       ),
     );
   }
 
   void _showSnackBar(String msg) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: const TextStyle(fontWeight: FontWeight.bold)), behavior: SnackBarBehavior.floating, backgroundColor: Colors.blueGrey[800]));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
   }
 
   Widget _buildEmptyState() {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.inbox_outlined, size: 60.sp, color: Colors.grey[400]), SizedBox(height: 15.sp), Text("قائمة المهام فارغة", style: TextStyle(color: Colors.grey, fontSize: 14.sp))]));
-  }
-
-  Future<void> _updateStatus(String docId, Map<String, dynamic> orderData, String status) async {
-    setState(() => _isProcessing = true);
-    try {
-      String targetCollection = (status == 'delivered') ? "deliveredorders" : "falseorder";
-      WriteBatch batch = FirebaseFirestore.instance.batch();
-      DocumentReference oldRef = FirebaseFirestore.instance.collection('waitingdelivery').doc(docId);
-      DocumentReference newRef = FirebaseFirestore.instance.collection(targetCollection).doc(docId);
-      Map<String, dynamic> finalData = Map.from(orderData);
-      finalData['status'] = status;
-      finalData['timestamp'] = FieldValue.serverTimestamp();
-      finalData['handledByRepId'] = widget.repCode;
-      finalData['isSettled'] = false; 
-      batch.set(newRef, finalData);
-      batch.delete(oldRef);
-      await batch.commit();
-      _showSnackBar(status == 'delivered' ? "تم التسليم بنجاح ✅" : "تم تسجيل فشل الطلب ❌");
-    } catch (e) {
-      _showSnackBar("خطأ في التحديث: $e");
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
+    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.done_all, size: 60.sp, color: Colors.green[200]), SizedBox(height: 15.sp), Text("لا توجد مهام معلقة حالياً", style: TextStyle(color: Colors.grey, fontSize: 14.sp))]));
   }
 }
