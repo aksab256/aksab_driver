@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+// استيراد صفحة الشروط لربطها بالزر
+import 'freelance_terms_screen.dart'; 
 
 class SupportScreen extends StatelessWidget {
   const SupportScreen({super.key});
 
-  // دالة موحدة لفتح الروابط
+  // دالة موحدة لفتح الروابط (واتساب، اتصال، بريد)
   Future<void> _handleSupportAction(BuildContext context, String url) async {
     final Uri uri = Uri.parse(url);
     try {
@@ -16,7 +19,7 @@ class SupportScreen extends StatelessWidget {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("عذراً، لا يمكن فتح الرابط حالياً")),
+        const SnackBar(content: Text("عذراً، لا يمكن تنفيذ الإجراء حالياً")),
       );
     }
   }
@@ -29,14 +32,14 @@ class SupportScreen extends StatelessWidget {
         title: const Text("مركز الدعم والمساعدة", 
           style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.white)),
         centerTitle: true,
-        backgroundColor: const Color(0xFF2C3E50), // لون احترافي متناسق مع تطبيقاتك
+        backgroundColor: const Color(0xFF2C3E50),
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // رأس الصفحة بتصميم جذاب
+            // رأس الصفحة
             Container(
               width: 100.w,
               padding: EdgeInsets.all(20.sp),
@@ -65,47 +68,59 @@ class SupportScreen extends StatelessWidget {
               padding: EdgeInsets.all(15.sp),
               child: Column(
                 children: [
+                  // واتساب
                   _buildSupportCard(
                     context,
                     title: "محادثة واتساب مباشرة",
                     subtitle: "لحل مشاكل التحصيل والتوصيل السريعة",
-                    icon: Icons.chat_outlined,
+                    icon: Icons.chat_rounded,
                     color: Colors.green,
-                    onTap: () => _handleSupportAction(context, "https://wa.me/201021070462"), // استبدل بالرقم
+                    onTap: () => _handleSupportAction(context, "https://wa.me/201021070462"),
                   ),
                   
+                  // اتصال هاتفي
                   _buildSupportCard(
                     context,
                     title: "اتصال هاتفي",
                     subtitle: "للطوارئ والأعطال الفنية",
                     icon: Icons.phone_in_talk_rounded,
                     color: Colors.blue,
-                    onTap: () => _handleSupportAction(context, "tel:201128887752"), // استبدل بالرقم
+                    onTap: () => _handleSupportAction(context, "tel:201128887752"),
                   ),
 
+                  // البريد الإلكتروني الرسمي (بديل الشات الذكي)
                   _buildSupportCard(
                     context,
-                    title: "الشات الذكي (Smart Chat)",
-                    subtitle: "تواصل مع الإدارة عبر الرسائل الداخلية",
-                    icon: Icons.auto_awesome_rounded,
-                    color: Colors.purple,
-                    onTap: () {
-                      // هنا يمكنك فتح صفحة الشات التي برمجناها سابقاً
-                    },
+                    title: "البريد الإلكتروني الرسمي",
+                    subtitle: "support@aksab.shop",
+                    icon: Icons.alternate_email_rounded,
+                    color: Colors.redAccent,
+                    onTap: () => _handleSupportAction(context, "mailto:support@aksab.shop"),
                   ),
 
+                  // ربط سياسة المنصة بالشاشة البرمجية التي أنشأناها
                   _buildSupportCard(
                     context,
                     title: "سياسة المنصة وقواعد العمل",
-                    subtitle: "دليلك للعمل بكفاءة مع أكسب",
-                    icon: Icons.rule_rounded,
+                    subtitle: "راجع التزاماتك وحقوقك القانونية",
+                    icon: Icons.gavel_rounded,
                     color: Colors.orange,
-                    onTap: () => _handleSupportAction(context, "https://aksab.shop/terms"), 
+                    onTap: () {
+                      final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (context) => FreelanceTermsScreen(userId: uid),
+                      );
+                    }, 
                   ),
 
                   SizedBox(height: 3.h),
                   const Text("نسخة التطبيق: 1.0.10 (Build 10)", 
                     style: TextStyle(fontFamily: 'Cairo', fontSize: 10, color: Colors.grey)),
+                  const Text("جميع الحقوق محفوظة لمنصة أكسب 2026", 
+                    style: TextStyle(fontFamily: 'Cairo', fontSize: 9, color: Colors.grey)),
                 ],
               ),
             ),
