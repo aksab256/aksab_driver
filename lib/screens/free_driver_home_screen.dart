@@ -14,6 +14,8 @@ import 'active_order_screen.dart';
 import 'wallet_screen.dart';
 import 'orders_history_screen.dart';
 import 'profile_screen.dart';
+// استيراد صفحة الدعم الفني من مجلد السكرين
+import 'support_screen.dart'; 
 
 class FreeDriverHomeScreen extends StatefulWidget {
   const FreeDriverHomeScreen({super.key});
@@ -37,7 +39,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     _fetchInitialStatus(); 
     _listenToActiveOrders();
     
-    // طلب الإذن بعد رسم الواجهة بـ 1 ثانية
+    // طلب الإذن بعد رسم الواجهة بـ 1 ثانية لضمان تجربة مستخدم سلسة
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 1000), () {
         _requestNotificationPermissionWithDisclosure();
@@ -67,7 +69,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     }
   }
 
-  // --- 🛡️ دالة الإفصاح وطلب إذن الإشعارات ---
+  // --- 🛡️ دالة الإفصاح وطلب إذن الإشعارات المتوافقة مع سياسات المتجر ---
   Future<void> _requestNotificationPermissionWithDisclosure() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
     NotificationSettings settings = await messaging.getNotificationSettings();
@@ -232,7 +234,11 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
                   Navigator.pop(context);
                   _launchPrivacyPolicy();
                 }),
-                _buildDrawerItem(Icons.help_outline_rounded, "الدعم الفني", () {}),
+                // ربط زر الدعم الفني بالصفحة الجديدة
+                _buildDrawerItem(Icons.help_outline_rounded, "الدعم الفني", () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const SupportScreen()));
+                }),
               ],
             ),
           ),
