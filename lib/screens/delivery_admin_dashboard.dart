@@ -1,14 +1,16 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:http/http.dart' as http;
 
 // استدعاء الصفحات التابعة
-import 'delivery_management_screen.dart'; 
-import 'delivery_fleet_screen.dart';      
-import 'manager_geo_dist_screen.dart';    
-import 'ProfileScreen.dart'; 
+import 'delivery_management_screen.dart';
+import 'delivery_fleet_screen.dart';
+import 'manager_geo_dist_screen.dart';
+import 'ProfileScreen.dart';
 
 class DeliveryAdminDashboard extends StatefulWidget {
   const DeliveryAdminDashboard({super.key});
@@ -30,25 +32,46 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
   void initState() {
     super.initState();
     _checkAuthAndLoadData();
-    
-    // التعديل هنا: إضافة Future.delayed لضمان استقرار الواجهة قبل طلب الحوار
+
+    // تشغيل طلب الإذن بعد استقرار الواجهة لضمان التوافق مع Play Store
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 500), () {
+      Future.delayed(const Duration(milliseconds: 800), () {
         _requestNotificationPermissionWithDisclosure();
       });
     });
   }
 
+  // دالة تحديث التوكن في AWS لضمان وصول الإشعارات للمدير
+  Future<void> _syncNotificationWithAWS(String role) async {
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
+      if (token != null && _uid != null) {
+        const String apiUrl = "https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction";
+        await http.post(
+          Uri.parse(apiUrl),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({
+            "userId": _uid,
+            "fcmToken": token,
+            "role": role
+          }),
+        );
+        debugPrint("✅ AWS Sync Successful");
+      }
+    } catch (e) {
+      debugPrint("❌ AWS Sync Error: $e");
+    }
+  }
+
+  // دالة الإفصاح وطلب الإذن (Disclosure) - مطابقة لاشتراطات جوجل
   Future<void> _requestNotificationPermissionWithDisclosure() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
-    
-    // التحقق من الإذن الحالي
     NotificationSettings settings = await messaging.getNotificationSettings();
-    
-    // إذا لم يسبق للمستخدم اتخاذ قرار (الحالة الخام)
-    if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+
+    // نطلب الإذن إذا لم يكن مفعلاً بالفعل
+    if (settings.authorizationStatus != AuthorizationStatus.authorized) {
       if (!mounted) return;
-      
+
       bool? proceed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -58,12 +81,12 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
             children: [
               Icon(Icons.admin_panel_settings_rounded, size: 45, color: const Color(0xFF2C3E50)),
               const SizedBox(height: 15),
-              const Text("تفعيل إشعارات النظام", 
-                style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 16)),
+              const Text("تفعيل إشعارات النظام",
+                  style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 16)),
             ],
           ),
           content: const Text(
-            "بصفتك مسؤولاً في النظام، ننصح بتفعيل الإشعارات لتصلك تنبيهات العمليات الحرجة، تقارير الأداء، وأي تحديثات فورية تخص طاقم المناديب.",
+            "بصفتك مسؤولاً في النظام، يحتاج التطبيق لتفعيل الإشعارات لتزويدك بتنبيهات فورية عن العمليات الحرجة، تقارير الأداء، وتحديثات طاقم المناديب لضمان سير العمل بدقة.",
             textAlign: TextAlign.center,
             style: TextStyle(fontFamily: 'Cairo', fontSize: 13),
           ),
@@ -85,14 +108,20 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       );
 
       if (proceed == true) {
-        // طلب الإذن الرسمي من النظام (تظهر رسالة الهاتف الرسمية هنا)
-        await messaging.requestPermission(alert: true, badge: true, sound: true);
+        // طلب الإذن الرسمي من النظام
+        NotificationSettings newSettings = await messaging.requestPermission(
+          alert: true, badge: true, sound: true,
+        );
+
+        // إذا وافق، نقوم بتحديث الـ Endpoint فوراً لضمان الربط التقني
+        if (newSettings.authorizationStatus == AuthorizationStatus.authorized) {
+          String role = _userData?['role'] ?? 'delivery_manager';
+          await _syncNotificationWithAWS(role);
+        }
       }
     }
   }
 
-  // ... باقي الدوال (FetchData, Stats, Build) تظل كما هي في كودك لأنها سليمة ...
-  
   Future<void> _checkAuthAndLoadData() async {
     try {
       var managerSnap = await FirebaseFirestore.instance
@@ -122,7 +151,9 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       if (myReps.docs.isNotEmpty) {
         List<String> repCodes = myReps.docs.map((d) => d['repCode'] as String).toList();
         ordersQuery = ordersQuery.where('buyer.repCode', whereIn: repCodes);
-      } else { return; }
+      } else {
+        return;
+      }
     } else {
       var allReps = await repsQuery.get();
       _totalReps = allReps.size;
@@ -144,11 +175,11 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
         title: Text(_userData?['role'] == 'delivery_manager' ? "لوحة مدير التوصيل" : "لوحة مشرف التوصيل",
-          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16.sp)),
+            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16.sp)),
         backgroundColor: const Color(0xFF2C3E50),
         centerTitle: true,
         elevation: 5,
-        iconTheme: IconThemeData(color: Colors.white, size: 22.sp), 
+        iconTheme: IconThemeData(color: Colors.white, size: 22.sp),
       ),
       drawer: _buildDrawer(),
       body: SafeArea(
@@ -162,7 +193,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
               SizedBox(height: 3.h),
               Expanded(
                 child: GridView.count(
-                  crossAxisCount: 1, 
+                  crossAxisCount: 1,
                   childAspectRatio: 2.2,
                   mainAxisSpacing: 20,
                   children: [
@@ -274,3 +305,4 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     );
   }
 }
+
