@@ -14,8 +14,9 @@ import 'active_order_screen.dart';
 import 'wallet_screen.dart';
 import 'orders_history_screen.dart';
 import 'profile_screen.dart';
-// استيراد صفحة الدعم الفني من مجلد السكرين
 import 'support_screen.dart'; 
+// استيراد صفحة الشروط الجديدة
+import 'freelance_terms_screen.dart';
 
 class FreeDriverHomeScreen extends StatefulWidget {
   const FreeDriverHomeScreen({super.key});
@@ -39,12 +40,43 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     _fetchInitialStatus(); 
     _listenToActiveOrders();
     
-    // طلب الإذن بعد رسم الواجهة بـ 1 ثانية لضمان تجربة مستخدم سلسة
+    // فحص الشروط والأذونات بعد رسم الواجهة
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 1000), () {
-        _requestNotificationPermissionWithDisclosure();
-      });
+      _checkTermsAndPermissions();
     });
+  }
+
+  // --- 🛡️ منطق فحص الشروط ثم الأذونات بالترتيب ---
+  Future<void> _checkTermsAndPermissions() async {
+    try {
+      // 1. فحص هل وافق على الشروط من قبل في Firestore؟
+      // ملاحظة: نستخدم مجموعة deliveryReps كما حددنا في كود الشروط
+      var userDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
+      bool hasAccepted = userDoc.data()?['hasAcceptedTerms'] ?? false;
+
+      if (!hasAccepted) {
+        if (!mounted) return;
+        // إظهار صفحة الشروط كمنبثقة إجبارية بطول الشاشة
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          isDismissible: false,
+          enableDrag: false,
+          backgroundColor: Colors.transparent,
+          builder: (context) => FreelanceTermsScreen(userId: uid),
+        );
+        
+        // بعد إتمام الموافقة وإغلاق المنبثقة، ننتقل لطلب إذن الإشعارات
+        _requestNotificationPermissionWithDisclosure();
+      } else {
+        // إذا كان موافقاً بالفعل، نطلب الإشعارات بعد ثانية واحدة (تحسين تجربة مستخدم)
+        Future.delayed(const Duration(milliseconds: 1000), () {
+          _requestNotificationPermissionWithDisclosure();
+        });
+      }
+    } catch (e) {
+      debugPrint("Error checking terms: $e");
+    }
   }
 
   // --- 🔗 دالة ربط المندوب الحر بنظام إشعارات AWS الرادار ---
@@ -69,7 +101,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     }
   }
 
-  // --- 🛡️ دالة الإفصاح وطلب إذن الإشعارات المتوافقة مع سياسات المتجر ---
+  // --- 🛡️ دالة الإفصاح وطلب إذن الإشعارات المحدثة ---
   Future<void> _requestNotificationPermissionWithDisclosure() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
     NotificationSettings settings = await messaging.getNotificationSettings();
@@ -84,21 +116,21 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
           title: Column(
             children: [
-              Icon(Icons.radar_rounded, size: 50, color: Colors.orange[900]),
+              Icon(Icons.notifications_active_rounded, size: 50, color: Colors.orange[900]),
               const SizedBox(height: 15),
-              const Text("رادار الطلبات الجديدة", 
+              const Text("تفعيل تنبيهات الرادار", 
                 style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18)),
             ],
           ),
           content: const Text(
-            "كابتن أكسب، تفعيل الإشعارات يضمن ظهور الطلبات القريبة منك فور صدورها، لتتمكن من قبولها وزيادة أرباحك قبل الآخرين.",
+            "كابتن أكسب، لكي نتمكن من إرسال طلبات الشحن القريبة منك في وقتها الحقيقي (حتى والتطبيق مغلق)، نحتاج منك تفعيل إذن الإشعارات. هذا يضمن لك عدم ضياع فرص الربح وزيادة دخلك.",
             textAlign: TextAlign.center,
             style: TextStyle(fontFamily: 'Cairo', fontSize: 14),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text("ليس الآن", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+              child: const Text("تجاهل حالياً", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -106,7 +138,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
               ),
               onPressed: () => Navigator.pop(context, true),
-              child: const Text("تفعيل الرادار", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+              child: const Text("تفعيل التنبيهات", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
             ),
           ],
         ),
@@ -234,7 +266,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
                   Navigator.pop(context);
                   _launchPrivacyPolicy();
                 }),
-                // ربط زر الدعم الفني بالصفحة الجديدة
                 _buildDrawerItem(Icons.help_outline_rounded, "الدعم الفني", () {
                   Navigator.pop(context);
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const SupportScreen()));
