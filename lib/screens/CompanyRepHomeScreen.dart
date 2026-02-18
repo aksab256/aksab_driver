@@ -4,7 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // إضافة المكتبة
+import 'package:firebase_messaging/firebase_messaging.dart'; 
+import 'package:http/http.dart' as http; // إضافة http للربط مع AWS
 import 'dart:convert';
 
 // استيراد الصفحات التابعة
@@ -30,10 +31,34 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
     super.initState();
     _fetchRepData();
     
-    // طلب إذن الإشعارات مع رسالة إفصاح عند فتح التطبيق
+    // طلب الإذن بعد استقرار الواجهة لضمان ظهور الـ Dialog بسلاسة
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestNotificationPermissionWithDisclosure();
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        _requestNotificationPermissionWithDisclosure();
+      });
     });
+  }
+
+  // --- 🔗 دالة مزامنة التوكن مع AWS لضمان استلام المهام ---
+  Future<void> _syncNotificationWithAWS() async {
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
+      if (token != null && _uid != null) {
+        const String apiUrl = "https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction";
+        await http.post(
+          Uri.parse(apiUrl),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({
+            "userId": _uid,
+            "fcmToken": token,
+            "role": "delivery_rep"
+          }),
+        );
+        debugPrint("✅ Rep AWS Sync Successful");
+      }
+    } catch (e) {
+      debugPrint("❌ Rep AWS Sync Error: $e");
+    }
   }
 
   // --- 🔔 دالة الإفصاح وطلب إذن الإشعارات للمندوب ---
@@ -41,7 +66,8 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
     NotificationSettings settings = await messaging.getNotificationSettings();
     
-    if (settings.authorizationStatus == AuthorizationStatus.notDetermined) {
+    // يظهر الحوار إذا لم يتم التفعيل مسبقاً
+    if (settings.authorizationStatus != AuthorizationStatus.authorized) {
       if (!mounted) return;
       
       bool? proceed = await showDialog<bool>(
@@ -51,14 +77,14 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
           title: Column(
             children: [
-              Icon(Icons.notifications_active, size: 45, color: const Color(0xFF2C3E50)),
+              Icon(Icons.notifications_active_rounded, size: 45, color: const Color(0xFF2C3E50)),
               const SizedBox(height: 15),
-              const Text("تنبيهات المهام", 
+              const Text("تنبيهات المهام اليومية", 
                 style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18)),
             ],
           ),
           content: const Text(
-            "يحتاج مندوب شركة أكسب لتفعيل الإشعارات لاستلام تكليفات المهام اليومية، تحديثات التحصيل، والرسائل الهامة من الإدارة.",
+            "بصفتك مندوباً في شركة أكسب، يحتاج التطبيق لتفعيل الإشعارات لإرسال تكليفات المهام اليومية، تحديثات عناوين العملاء، والرسائل الإدارية العاجلة لضمان سرعة التوصيل.",
             textAlign: TextAlign.center,
             style: TextStyle(fontFamily: 'Cairo', fontSize: 14),
           ),
@@ -73,14 +99,21 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
               ),
               onPressed: () => Navigator.pop(context, true),
-              child: const Text("تفعيل", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+              child: const Text("تفعيل الآن", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
             ),
           ],
         ),
       );
 
       if (proceed == true) {
-        await messaging.requestPermission(alert: true, badge: true, sound: true);
+        NotificationSettings newSettings = await messaging.requestPermission(
+          alert: true, badge: true, sound: true,
+        );
+        
+        // إذا وافق المندوب، نربط التوكن فوراً بـ AWS
+        if (newSettings.authorizationStatus == AuthorizationStatus.authorized) {
+          await _syncNotificationWithAWS();
+        }
       }
     }
   }
@@ -111,6 +144,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   }
 
   Future<void> _handleLogout() async {
+    // يفضل مسح التوكن من AWS عند الخروج (اختياري ولكن أفضل للأمان)
     await FirebaseAuth.instance.signOut();
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
@@ -118,7 +152,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   }
 
   Future<void> _launchPrivacyPolicy() async {
-    final Uri url = Uri.parse('https://aksab.shop/'); // تحديث الرابط للموحد
+    final Uri url = Uri.parse('https://aksab.shop/'); 
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       debugPrint("Could not launch $url");
     }
@@ -161,6 +195,9 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
     );
   }
 
+  // ... (باقي الـ Widgets: _buildSideDrawer, _buildUserInfoCard, إلخ كما هي في كودك) ...
+  // تأكد من بقاء باقي الـ Widgets التي لم نعدل عليها ليعمل الكود بالكامل
+  
   Widget _buildSideDrawer() {
     return Drawer(
       width: 80.w,
