@@ -1,64 +1,66 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:sizer/sizer.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:sizer/sizer.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+// ✅ إضافات ضرورية للخدمات
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import 'screens/delivery_admin_dashboard.dart';
 import 'screens/login_screen.dart';
-
-const AndroidNotificationChannel channel = AndroidNotificationChannel(
-  'high_importance_channel',
-  'High Importance Notifications',
-  description: 'This channel is used for important notifications.',
-  importance: Importance.max,
-);
-
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-}
+import 'screens/register_screen.dart';
+import 'screens/free_driver_home_screen.dart';
+import 'screens/CompanyRepHomeScreen.dart';
+import 'screens/delivery_admin_dashboard.dart'; 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // ✅ 1. تعريف قناة الإشعارات (هذا الجزء يمنع الـ Crash في أندرويد 13+)
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'aksab_tracking_channel', // يجب أن يطابق المعرف في شاشة التتبع
+    'تتبع رحلات أكسب',
+    description: 'تستخدم لتتبع موقع المندوب أثناء الرحلة لضمان جودة الخدمة',
+    importance: Importance.high,
+  );
+
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
-  runApp(const MyApp());
+
+  runApp(AksabDriverApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class AksabDriverApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Sizer(
       builder: (context, orientation, deviceType) {
         return MaterialApp(
-          title: 'أكسب كابتن',
+          title: 'أكساب المندوب',
           debugShowCheckedModeBanner: false,
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          supportedLocales: const [Locale('ar', 'AE')],
-          locale: const Locale('ar', 'AE'),
+          supportedLocales: const [Locale('ar', 'EG')],
+          locale: const Locale('ar', 'EG'),
           theme: ThemeData(
-            primaryColor: const Color(0xFF2C3E50),
-            colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2C3E50)),
-            fontFamily: 'Cairo',
-            useMaterial3: true,
+            primarySwatch: Colors.orange,
+            fontFamily: 'Tajawal',
+            scaffoldBackgroundColor: Colors.white,
           ),
-          home: const AuthCheck(),
+          home: AuthWrapper(),
           routes: {
-            '/login': (context) => const LoginScreen(),
-            '/dashboard': (context) => const DeliveryAdminDashboard(),
+            '/login': (context) => LoginScreen(),
+            '/register': (context) => RegisterScreen(),
+            '/free_home': (context) => const FreeDriverHomeScreen(),
+            '/company_home': (context) => const CompanyRepHomeScreen(),
+            '/admin_dashboard': (context) => const DeliveryAdminDashboard(),
           },
         );
       },
@@ -66,42 +68,8 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthCheck extends StatefulWidget {
-  const AuthCheck({super.key});
-  @override
-  State<AuthCheck> createState() => _AuthCheckState();
-}
-
-class _AuthCheckState extends State<AuthCheck> {
-  @override
-  void initState() {
-    super.initState();
-    _listenToForegroundMessages();
-  }
-
-  void _listenToForegroundMessages() {
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
-      if (notification != null && android != null) {
-        // التعديل الجوهري هنا باستخدام Named Arguments
-        flutterLocalNotificationsPlugin.show(
-          id: notification.hashCode,
-          title: notification.title,
-          body: notification.body,
-          notificationDetails: NotificationDetails(
-            android: AndroidNotificationDetails(
-              channel.id,
-              channel.name,
-              channelDescription: channel.description,
-              icon: '@mipmap/ic_launcher',
-            ),
-          ),
-        );
-      }
-    });
-  }
-
+// باقي كود AuthWrapper و _getUserRoleAndData كما هو في ملفك (سليم 100%)
+class AuthWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -110,10 +78,59 @@ class _AuthCheckState extends State<AuthCheck> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
-        return (snapshot.hasData && snapshot.data != null) 
-            ? const DeliveryAdminDashboard() 
-            : const LoginScreen();
+
+        if (snapshot.hasData) {
+          final uid = snapshot.data!.uid;
+
+          return FutureBuilder<Map<String, dynamic>?>(
+            future: _getUserRoleAndData(uid),
+            builder: (context, roleSnapshot) {
+              if (roleSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              }
+
+              final userData = roleSnapshot.data;
+              if (userData != null) {
+                final String type = userData['type'];
+                final String status = userData['status'] ?? '';
+
+                if (type == 'deliveryRep' && status == 'approved') {
+                  return const CompanyRepHomeScreen();
+                } 
+                else if (type == 'freeDriver' && status == 'approved') {
+                  return const FreeDriverHomeScreen();
+                } 
+                else if (type == 'manager') {
+                  String role = userData['role'] ?? '';
+                  if (role == 'delivery_manager' || role == 'delivery_supervisor') {
+                    return const DeliveryAdminDashboard();
+                  }
+                }
+              }
+              return const LoginScreen();
+            },
+          );
+        }
+        return const LoginScreen();
       },
     );
+  }
+
+  Future<Map<String, dynamic>?> _getUserRoleAndData(String uid) async {
+    var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
+    if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
+
+    var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
+    if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
+
+    var managerSnap = await FirebaseFirestore.instance
+        .collection('managers')
+        .where('uid', isEqualTo: uid)
+        .get();
+        
+    if (managerSnap.docs.isNotEmpty) {
+      return {...managerSnap.docs.first.data(), 'type': 'manager'};
+    }
+    return null;
   }
 }
