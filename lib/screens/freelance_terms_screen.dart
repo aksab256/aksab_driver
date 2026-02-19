@@ -21,7 +21,7 @@ class _FreelanceTermsScreenState extends State<FreelanceTermsScreen> {
     try {
       // التحديث في مجموعة deliveryReps لضمان تزامن الأذونات
       await FirebaseFirestore.instance
-          .collection('deliveryReps')
+          .collection('freeDrivers')
           .doc(widget.userId)
           .set({
         'hasAcceptedTerms': true,
