@@ -15,7 +15,6 @@ import 'wallet_screen.dart';
 import 'orders_history_screen.dart';
 import 'profile_screen.dart';
 import 'support_screen.dart'; 
-// استيراد صفحة الشروط الجديدة
 import 'freelance_terms_screen.dart';
 
 class FreeDriverHomeScreen extends StatefulWidget {
@@ -46,18 +45,23 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     });
   }
 
-  // --- 🛡️ منطق فحص الشروط ثم الأذونات بالترتيب ---
+  // --- 🛡️ منطق فحص الشروط ثم الأذونات بالترتيب المؤمن ---
   Future<void> _checkTermsAndPermissions() async {
     try {
       // 1. فحص هل وافق على الشروط من قبل في Firestore؟
-      // ملاحظة: نستخدم مجموعة deliveryReps كما حددنا في كود الشروط
       var userDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
-      bool hasAccepted = userDoc.data()?['hasAcceptedTerms'] ?? false;
+      bool hasAccepted = false;
+      
+      if(userDoc.exists){
+        hasAccepted = userDoc.data()?['hasAcceptedTerms'] ?? false;
+      }
 
       if (!hasAccepted) {
         if (!mounted) return;
-        // إظهار صفحة الشروط كمنبثقة إجبارية بطول الشاشة
-        await showModalBottomSheet(
+        
+        // إظهار صفحة الشروط وانتظار النتيجة (await)
+        // القيمة الراجعة (result) ستكون true إذا تمت الموافقة وظهور علامة الصح
+        final result = await showModalBottomSheet<bool>(
           context: context,
           isScrollControlled: true,
           isDismissible: false,
@@ -66,13 +70,13 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           builder: (context) => FreelanceTermsScreen(userId: uid),
         );
         
-        // بعد إتمام الموافقة وإغلاق المنبثقة، ننتقل لطلب إذن الإشعارات
-        _requestNotificationPermissionWithDisclosure();
+        // إذا رجع true (يعني وافق)، اطلب الإشعارات فوراً
+        if (result == true) {
+           _requestNotificationPermissionWithDisclosure();
+        }
       } else {
-        // إذا كان موافقاً بالفعل، نطلب الإشعارات بعد ثانية واحدة (تحسين تجربة مستخدم)
-        Future.delayed(const Duration(milliseconds: 1000), () {
-          _requestNotificationPermissionWithDisclosure();
-        });
+        // إذا كان موافقاً مسبقاً، نطلب الإشعارات مباشرة
+        _requestNotificationPermissionWithDisclosure();
       }
     } catch (e) {
       debugPrint("Error checking terms: $e");
@@ -101,7 +105,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     }
   }
 
-  // --- 🛡️ دالة الإفصاح وطلب إذن الإشعارات المحدثة ---
+  // --- 🛡️ دالة الإفصاح وطلب إذن الإشعارات ---
   Future<void> _requestNotificationPermissionWithDisclosure() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
     NotificationSettings settings = await messaging.getNotificationSettings();
@@ -109,6 +113,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     if (settings.authorizationStatus != AuthorizationStatus.authorized) {
       if (!mounted) return;
       
+      // تأخير بسيط ثانية واحدة لراحة عين المستخدم بعد إغلاق شاشة الشروط
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      if (!mounted) return;
       bool? proceed = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -155,7 +163,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     }
   }
 
-  // --- ⚙️ الدوال الأساسية للنظام ---
+  // --- باقي الدوال والواجهات كما هي بدون تغيير ---
   void _loadVehicleConfig() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() => _vehicleConfig = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig');
@@ -225,7 +233,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- 🛡️ الواجهات الرسومية (UI Widgets) ---
   Widget _buildSideDrawer() {
     return Drawer(
       width: 75.w,
