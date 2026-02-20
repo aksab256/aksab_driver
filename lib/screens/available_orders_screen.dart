@@ -108,7 +108,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // ✅ إضافة دالة قبول الطلب البرمجية
   Future<void> _acceptOrder(String orderId, double commission, String customerId) async {
     try {
       showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
@@ -142,15 +141,55 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // ✅ دالة إرسال إشعار للعميل (اختيارية حسب إعدادات السيرفر عندك)
   void _notifyCustomerOrderAccepted(String customerId, String orderId) async {
-    // يمكن هنا استدعاء Cloud Function أو إرسال إشعار مباشر
     debugPrint("إشعار للعميل $customerId بقبول الطلب $orderId");
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isGettingLocation) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
+    
+    // --- تعديل: معالجة حالة عدم توفر الموقع (رفض الإذن) ---
+    if (_myCurrentLocation == null) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(title: const Text("الرادار متوقف", style: TextStyle(fontFamily: 'Cairo')), centerTitle: true, elevation: 0),
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(20.sp),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.location_off_rounded, size: 60.sp, color: Colors.orange[200]),
+                SizedBox(height: 2.h),
+                Text("الموقع غير مفعّل", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
+                SizedBox(height: 1.h),
+                Text(
+                  "لا يمكن عرض الطلبات المتاحة حالياً بدون الوصول لموقعك الجغرافي لتحديد المسافات.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[600], fontSize: 11.sp),
+                ),
+                SizedBox(height: 4.h),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 1.5.h),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  ),
+                  onPressed: () {
+                    setState(() => _isGettingLocation = true);
+                    _initSequence();
+                  },
+                  child: const Text("تفعيل الموقع الآن", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    // ---------------------------------------------------
+
     String cleanType = widget.vehicleType.replaceAll('Config', '');
 
     return Scaffold(
