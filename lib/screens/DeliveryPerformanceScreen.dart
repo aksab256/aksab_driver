@@ -21,7 +21,7 @@ class DeliveryPerformanceScreen extends StatefulWidget {
 }
 
 class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
-  // جعل بداية الفلتر من أول اليوم الحالي لضمان دقة البيانات المعروضة
+  // الفلتر الزمني للتقارير المالية والعمليات المنتهية
   DateTime startDate = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
   DateTime endDate = DateTime.now();
 
@@ -36,27 +36,42 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
         elevation: 0,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        // المصدر الواحد للحقيقة: الاستماع لمجموعة التوصيل فقط
+        // استعلام مرن: نعتمد على كود المندوب فقط في البداية لجلب كل الداتا المتعلقة به
         stream: FirebaseFirestore.instance
             .collection('waitingdelivery')
             .where('repCode', isEqualTo: widget.repCode)
-            .where('assignedAt', isGreaterThanOrEqualTo: startDate)
-            .where('assignedAt', isLessThanOrEqualTo: endDate.add(const Duration(days: 1)))
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          var docs = snapshot.data?.docs ?? [];
+          var allDocs = snapshot.data?.docs ?? [];
           
-          // فلترة الحالات برمجياً من الـ List المسحوبة
-          int pending = docs.where((d) => d['deliveryTaskStatus'] == 'pending').length;
-          int success = docs.where((d) => d['deliveryTaskStatus'] == 'delivered').length;
-          int failed = docs.where((d) => d['deliveryTaskStatus'] == 'failed').length;
+          // 1. استخراج المهام المعلقة (Pending) بغض النظر عن تاريخها لضمان عدم اختفائها
+          var pendingDocs = allDocs.where((d) => d['deliveryTaskStatus'] == 'pending').toList();
+          
+          // 2. فلترة المهام المكتملة بناءً على التاريخ المختار في الشاشة
+          var completedDocs = allDocs.where((d) {
+            var status = d['deliveryTaskStatus'];
+            if (status == 'pending') return false; // تم معالجتها في pendingDocs
+
+            Timestamp? ts = d['assignedAt'] as Timestamp?;
+            if (ts == null) return false;
+            DateTime taskDate = ts.toDate();
+
+            // التحقق من وقوع التاريخ داخل مدى الفلتر (من - إلى)
+            return taskDate.isAfter(startDate) && 
+                   taskDate.isBefore(endDate.add(const Duration(days: 1)));
+          }).toList();
+
+          // حساب الأرقام بناءً على القوائم المفلترة
+          int pending = pendingDocs.length;
+          int success = completedDocs.where((d) => d['deliveryTaskStatus'] == 'delivered').length;
+          int failed = completedDocs.where((d) => d['deliveryTaskStatus'] == 'failed').length;
           
           double totalCash = 0;
-          for (var d in docs) {
+          for (var d in completedDocs) {
             if (d['deliveryTaskStatus'] == 'delivered') {
               totalCash += (d['total'] ?? 0);
             }
@@ -69,12 +84,11 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
                 _buildDateFilter(),
                 SizedBox(height: 15.sp),
                 
-                // حالة المهام الحالية (Live Status)
+                // حالة المهام الحالية - ستظهر "متبقي مهام" طالما هناك pending فعلي
                 _buildLiveStatusHeader(pending),
                 
                 SizedBox(height: 15.sp),
                 
-                // الإحصائيات (Success vs Failed)
                 Row(
                   children: [
                     _kpiCard("تسليم ناجح", "$success", Icons.done_all, Colors.green),
@@ -256,6 +270,15 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
         label: const Text("تصفية الحساب (توريد كاش)", 
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
       ),
+    );
+  }
+
+  Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.blueGrey[700]), 
+      title: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600, fontSize: 15)), 
+      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey), 
+      onTap: onTap
     );
   }
 
