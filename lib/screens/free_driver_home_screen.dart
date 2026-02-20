@@ -238,63 +238,118 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      key: _scaffoldKey,
-      drawer: _buildSideDrawer(),
-      backgroundColor: const Color(0xFFF4F7FA),
-      body: _selectedIndex == 0 ? _buildModernDashboard() : _buildOtherPages(),
-      bottomNavigationBar: _buildBottomNav(),
-    );
-  }
-
-  // --- 🧱 واجهات العرض (Drawer, Dashboard, Nav) ---
-
-  Widget _buildSideDrawer() {
+    Widget _buildSideDrawer() {
     return Drawer(
       width: 75.w,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.only(topLeft: Radius.circular(35), bottomLeft: Radius.circular(35))),
+      backgroundColor: Colors.white, // ضمان خلفية بيضاء تحت الانحناءات
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(35), 
+          bottomLeft: Radius.circular(35),
+        ),
+      ),
       child: Column(
         children: [
+          // الجزء العلوي مع المساحة الآمنة
           Container(
-            padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-            decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.orange[900]!, Colors.orange[700]!]), borderRadius: const BorderRadius.only(bottomRight: Radius.circular(30))),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const CircleAvatar(radius: 35, backgroundColor: Colors.white, child: Icon(Icons.person, size: 45, color: Colors.orange)),
-                  const SizedBox(height: 15),
-                  const Text("كابتن أكسب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
-                  Text(FirebaseAuth.instance.currentUser?.email ?? "", style: const TextStyle(fontFamily: 'Cairo', color: Colors.white70, fontSize: 12)),
-                ],
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.orange[900]!, Colors.orange[700]!],
+              ),
+              borderRadius: const BorderRadius.only(
+                bottomRight: Radius.circular(30),
+              ),
+            ),
+            child: SafeArea( // 🛡️ المساحة الآمنة هنا لمنع تداخل المحتوى مع النوتش
+              bottom: false, // لا نحتاج مساحة آمنة من الأسفل هنا
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const CircleAvatar(
+                      radius: 35,
+                      backgroundColor: Colors.white,
+                      child: Icon(Icons.person, size: 45, color: Colors.orange),
+                    ),
+                    const SizedBox(height: 15),
+                    const Text(
+                      "كابتن أكسب",
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                    // عرض البريد الإلكتروني أو رقم الهاتف المسجل
+                    Text(
+                      FirebaseAuth.instance.currentUser?.email ?? 
+                      FirebaseAuth.instance.currentUser?.phoneNumber ?? "",
+                      style: const TextStyle(
+                        fontFamily: 'Cairo',
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
+          
+          // القائمة الوسطى
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
               children: [
-                _buildDrawerItem(Icons.account_circle_outlined, "حسابي الشخصي", () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen()))),
-                _buildDrawerItem(Icons.privacy_tip_outlined, "سياسة الخصوصية", _launchPrivacyPolicy),
-                _buildDrawerItem(Icons.help_outline_rounded, "الدعم الفني", () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SupportScreen()))),
+                _buildDrawerItem(
+                  Icons.account_circle_outlined, 
+                  "حسابي الشخصي", 
+                  () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen())),
+                ),
+                _buildDrawerItem(
+                  Icons.privacy_tip_outlined, 
+                  "سياسة الخصوصية", 
+                  _launchPrivacyPolicy,
+                ),
+                _buildDrawerItem(
+                  Icons.help_outline_rounded, 
+                  "الدعم الفني", 
+                  () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SupportScreen())),
+                ),
               ],
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.logout_rounded, color: Colors.redAccent),
-            title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo', color: Colors.redAccent, fontWeight: FontWeight.w900)),
-            onTap: () async {
-              await FirebaseAuth.instance.signOut();
-              if (mounted) Navigator.pushReplacementNamed(context, '/login');
-            },
+          
+          const Divider(indent: 20, endIndent: 20),
+
+          // زر تسجيل الخروج مع مساحة آمنة سفلية
+          SafeArea(
+            top: false,
+            child: ListTile(
+              leading: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+              title: const Text(
+                "تسجيل الخروج",
+                style: TextStyle(
+                  fontFamily: 'Cairo',
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              onTap: () async {
+                await FirebaseAuth.instance.signOut();
+                if (mounted) Navigator.pushReplacementNamed(context, '/login');
+              },
+            ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 10),
         ],
       ),
     );
   }
+
 
   Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap) {
     return ListTile(leading: Icon(icon, color: Colors.blueGrey[700]), title: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w600, fontSize: 15)), trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey), onTap: onTap);
