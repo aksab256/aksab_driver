@@ -237,11 +237,25 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
+  // ... (نفس الـ imports ونفس الـ initState والدوال السابقة دون تغيير)
+
   @override
-    Widget _buildSideDrawer() {
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: _scaffoldKey,
+      // تأكد أنك تنادي الدالة هنا
+      drawer: _buildSideDrawer(), 
+      backgroundColor: const Color(0xFFF4F7FA),
+      body: _selectedIndex == 0 ? _buildModernDashboard() : _buildOtherPages(),
+      bottomNavigationBar: _buildBottomNav(),
+    );
+  }
+
+  // --- تم نقل الدالة لتكون خارج الـ build الأساسي لضمان عملها بشكل صحيح ---
+  Widget _buildSideDrawer() {
     return Drawer(
       width: 75.w,
-      backgroundColor: Colors.white, // ضمان خلفية بيضاء تحت الانحناءات
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(35), 
@@ -250,7 +264,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       ),
       child: Column(
         children: [
-          // الجزء العلوي مع المساحة الآمنة
           Container(
             width: double.infinity,
             decoration: BoxDecoration(
@@ -261,8 +274,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
                 bottomRight: Radius.circular(30),
               ),
             ),
-            child: SafeArea( // 🛡️ المساحة الآمنة هنا لمنع تداخل المحتوى مع النوتش
-              bottom: false, // لا نحتاج مساحة آمنة من الأسفل هنا
+            child: SafeArea(
+              bottom: false,
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
@@ -283,7 +296,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
                         color: Colors.white,
                       ),
                     ),
-                    // عرض البريد الإلكتروني أو رقم الهاتف المسجل
                     Text(
                       FirebaseAuth.instance.currentUser?.email ?? 
                       FirebaseAuth.instance.currentUser?.phoneNumber ?? "",
@@ -298,8 +310,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
               ),
             ),
           ),
-          
-          // القائمة الوسطى
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
@@ -322,10 +332,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
               ],
             ),
           ),
-          
           const Divider(indent: 20, endIndent: 20),
-
-          // زر تسجيل الخروج مع مساحة آمنة سفلية
           SafeArea(
             top: false,
             child: ListTile(
@@ -349,6 +356,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       ),
     );
   }
+
+  // باقي الدوال (buildDrawerItem, buildModernDashboard, إلخ) تظل كما هي بالأسفل
+  // ...
+
 
 
   Widget _buildDrawerItem(IconData icon, String title, VoidCallback onTap) {
