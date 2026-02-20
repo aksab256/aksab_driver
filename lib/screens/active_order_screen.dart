@@ -1,3 +1,4 @@
+// lib/screens/active_order_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -44,7 +45,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     super.dispose();
   }
 
-  // حساب المسافة الذكية المتبقية
   double _getSmartDistance(Map<String, dynamic> data, String status) {
     if (_currentLocation == null) return 0.0;
     GeoPoint pickup = data['pickupLocation'];
@@ -274,7 +274,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     return InkWell(onTap: onTap, child: Column(children: [Container(padding: EdgeInsets.all(12.sp), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: color, size: 20.sp)), const SizedBox(height: 4), Text(label, style: TextStyle(color: color, fontSize: 9.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))]));
   }
 
-  // ✅ واجهة إدخال كود الاستلام الاحترافية (OTP Style)
   void _showProfessionalOTPDialog(String? correctCode) {
     List<TextEditingController> controllers = List.generate(4, (index) => TextEditingController());
     List<FocusNode> focusNodes = List.generate(4, (index) => FocusNode());
@@ -363,17 +362,75 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
+  // ✅ النسخة المعدلة لإنهاء الطلب بالخصم الذكي (ائتمان ثم محفظة)
   void _completeOrder() async {
-    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
+    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.green)));
     await _stopBackgroundTracking();
+
     try {
       await FirebaseFirestore.instance.runTransaction((transaction) async {
-        DocumentSnapshot orderSnap = await transaction.get(FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId));
-        double comm = (orderSnap.get('commissionAmount') ?? 0.0).toDouble();
-        transaction.update(orderSnap.reference, {'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
-        if (_uid != null) transaction.update(FirebaseFirestore.instance.collection('freeDrivers').doc(_uid!), {'walletBalance': FieldValue.increment(-comm)});
+        // 1. بيانات الطلب والعمولة
+        DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId);
+        DocumentSnapshot orderSnap = await transaction.get(orderRef);
+        double commission = double.tryParse(orderSnap.get('commissionAmount')?.toString() ?? '0') ?? 0.0;
+
+        // 2. بيانات المندوب (الائتمان والمحفظة)
+        DocumentReference driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(_uid!);
+        DocumentSnapshot driverSnap = await transaction.get(driverRef);
+
+        double currentCredit = double.tryParse(driverSnap.get('creditLimit')?.toString() ?? '0') ?? 0.0;
+
+        // --- حساب توزيع الخصم ---
+        double deductionFromCredit = 0;
+        double deductionFromWallet = 0;
+
+        if (currentCredit >= commission) {
+          deductionFromCredit = commission;
+        } else {
+          deductionFromCredit = currentCredit > 0 ? currentCredit : 0;
+          deductionFromWallet = commission - deductionFromCredit;
+        }
+
+        // 3. تحديث الطلب
+        transaction.update(orderRef, {
+          'status': 'delivered', 
+          'completedAt': FieldValue.serverTimestamp()
+        });
+
+        // 4. تحديث حساب المندوب
+        transaction.update(driverRef, {
+          'creditLimit': FieldValue.increment(-deductionFromCredit),
+          'walletBalance': FieldValue.increment(-deductionFromWallet),
+        });
+
+        // 5. تسجيل العملية في سجل العمليات
+        DocumentReference logRef = FirebaseFirestore.instance.collection('walletLogs').doc();
+        transaction.set(logRef, {
+          'driverId': _uid,
+          'orderId': widget.orderId,
+          'amount': -commission,
+          'fromCredit': deductionFromCredit,
+          'fromWallet': deductionFromWallet,
+          'timestamp': FieldValue.serverTimestamp(),
+          'type': 'COMMISSION_DEDUCTION',
+          'note': 'خصم عمولة طلب توصيل'
+        });
       });
-      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => AvailableOrdersScreen(vehicleType: 'motorcycleConfig')));
-    } catch (e) { Navigator.pop(context); }
+
+      if (mounted) {
+        Navigator.pop(context);
+        final prefs = await SharedPreferences.getInstance();
+        Navigator.pushReplacement(context, MaterialPageRoute(
+          builder: (context) => AvailableOrdersScreen(
+            vehicleType: prefs.getString('user_vehicle_config') ?? 'motorcycleConfig'
+          )
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("فشل إنهاء الطلب: $e"), backgroundColor: Colors.red));
+      }
+    }
   }
 }
