@@ -8,9 +8,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:32660558108:android:102632793b65058953ead9",
+        "mobilesdk_app_id": "1:32660558108:android:a6e0460d66579eea53ead9",
         "android_client_info": {
-          "package_name": "com.aksabeg500"
+          "package_name": "com.aksab.driver"
         }
       },
       "oauth_client": [
@@ -37,9 +37,9 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:32660558108:android:eeada3867f6fd89953ead9",
+        "mobilesdk_app_id": "1:32660558108:android:102632793b65058953ead9",
         "android_client_info": {
-          "package_name": "com.example.aksab_driver"
+          "package_name": "com.aksabeg500"
         }
       },
       "oauth_client": [
