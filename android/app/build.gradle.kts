@@ -1,7 +1,7 @@
 import java.util.Properties
 import java.io.FileInputStream
 
-// 1. إعداد قراءة ملف الخصائص المحلي (اختياري للتطوير المحلي)
+// 1. إعداد قراءة ملف الخصائص المحلي
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {
@@ -12,23 +12,24 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("com.google.gms.google-services")
+    // ✅ إضافة Plugin الكراشليتكس هنا
+    id("com.google.firebase.crashlytics") 
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
-    namespace = "com.example.aksab_driver"
+    // ⚠️ تأكد أن هذا الـ ID يطابق تماماً ما سجلته في Firebase Console
+    namespace = "com.aksab.driver" 
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     // 2. إعدادات التوقيع الاحترافية
     signingConfigs {
         create("release") {
-            // الأولوية لمتغيرات GitHub Secrets، ثم لملف key.properties المحلي
             keyAlias = "upload"
             keyPassword = "1151983aA"
             storePassword = "1151983aA"
             
-            // تحديد مسار ملف الـ JKS الذي رأيناه في مجلد المشروع
             val keystorePath = System.getenv("KEY_FILE_NAME") ?: "upload-keystore.jks"
             storeFile = file(keystorePath)
         }
@@ -45,7 +46,8 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.aksab_driver"
+        // ⚠️ يجب أن يطابق الـ Namespace فوق
+        applicationId = "com.aksab.driver"
         minSdk = 21
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -54,11 +56,11 @@ android {
 
     buildTypes {
         getByName("release") {
-            // تفعيل التوقيع الرسمي للنسخة النهائية
             signingConfig = signingConfigs.getByName("release")
 
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // تفعيل الـ Minify و Shrink مهم جداً لتصغير حجم تطبيق المندوب
+            isMinifyEnabled = true 
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
 
@@ -75,4 +77,3 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
-
