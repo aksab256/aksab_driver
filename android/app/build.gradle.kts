@@ -11,25 +11,28 @@ if (keystorePropertiesFile.exists()) {
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    id("com.google.gms.google-services")
-    // ✅ إضافة Plugin الكراشليتكس هنا
-    id("com.google.firebase.crashlytics") 
+    // ✅ تم نقل الـ Flutter Plugin ليكون قبل خدمات جوجل لضمان التوافق
     id("dev.flutter.flutter-gradle-plugin")
+    // ✅ خدمات جوجل تسبق الكراشليتكس دائماً
+    id("com.google.gms.google-services")
+    // ✅ كراشليتكس في النهاية ليتمكن من قراءة ملف google-services.json
+    id("com.google.firebase.crashlytics")
 }
 
 android {
-    // ⚠️ تأكد أن هذا الـ ID يطابق تماماً ما سجلته في Firebase Console
+    // تم التأكيد على أن الـ Namespace يطابق Firebase و Google Play
     namespace = "com.aksab.driver" 
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    // 2. إعدادات التوقيع الاحترافية
+    // 2. إعدادات التوقيع الاحترافية (Release Signing)
     signingConfigs {
         create("release") {
             keyAlias = "upload"
             keyPassword = "1151983aA"
             storePassword = "1151983aA"
             
+            // يقرأ ملف التوقيع من البيئة أو يستخدم الملف المحلي
             val keystorePath = System.getenv("KEY_FILE_NAME") ?: "upload-keystore.jks"
             storeFile = file(keystorePath)
         }
@@ -46,7 +49,7 @@ android {
     }
 
     defaultConfig {
-        // ⚠️ يجب أن يطابق الـ Namespace فوق
+        // الـ Application ID النهائي لتطبيق المندوب
         applicationId = "com.aksab.driver"
         minSdk = 21
         targetSdk = flutter.targetSdkVersion
@@ -58,7 +61,7 @@ android {
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
 
-            // تفعيل الـ Minify و Shrink مهم جداً لتصغير حجم تطبيق المندوب
+            // تحسينات لتقليل حجم الـ AAB وحماية الكود
             isMinifyEnabled = true 
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -75,5 +78,6 @@ flutter {
 }
 
 dependencies {
+    // لدعم الميزات الحديثة على إصدارات أندرويد القديمة
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
