@@ -16,7 +16,7 @@ dependencies:
   firebase_auth: ^6.1.4
   cloud_firestore: ^6.1.2
   firebase_messaging: ^16.1.1
-  firebase_crashlytics: ^4.4.1  # ✅ إضافة مكتبة تتبع الأعطال
+  firebase_crashlytics: ^5.0.7  # ✅ إضافة مكتبة تتبع الأعطال
 
   sizer: ^3.1.3
   font_awesome_flutter: ^10.7.0
