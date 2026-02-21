@@ -4,7 +4,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-// ✅ إضافات ضرورية للخدمات
+// ✅ إضافة مكتبة الكراشليتكس
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'dart:ui'; // ضرورية لـ FlutterError.onError
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'screens/login_screen.dart';
@@ -17,9 +20,16 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
-  // ✅ 1. تعريف قناة الإشعارات (هذا الجزء يمنع الـ Crash في أندرويد 13+)
+  // ✅ 1. إعدادات Crashlytics لتسجيل كافة الأعطال تلقائياً
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
+
+  // ✅ 2. تعريف قناة الإشعارات (تتبع الموقع)
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'aksab_tracking_channel', // يجب أن يطابق المعرف في شاشة التتبع
+    'aksab_tracking_channel', 
     'تتبع رحلات أكسب',
     description: 'تستخدم لتتبع موقع المندوب أثناء الرحلة لضمان جودة الخدمة',
     importance: Importance.high,
@@ -39,36 +49,44 @@ class AksabDriverApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return Sizer(
       builder: (context, orientation, deviceType) {
-        return MaterialApp(
-          title: 'أكساب المندوب',
-          debugShowCheckedModeBanner: false,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          supportedLocales: const [Locale('ar', 'EG')],
-          locale: const Locale('ar', 'EG'),
-          theme: ThemeData(
-            primarySwatch: Colors.orange,
-            fontFamily: 'Tajawal',
-            scaffoldBackgroundColor: Colors.white,
-          ),
-          home: AuthWrapper(),
-          routes: {
-            '/login': (context) => LoginScreen(),
-            '/register': (context) => RegisterScreen(),
-            '/free_home': (context) => const FreeDriverHomeScreen(),
-            '/company_home': (context) => const CompanyRepHomeScreen(),
-            '/admin_dashboard': (context) => const DeliveryAdminDashboard(),
+        // ✅ 3. إضافة PopScope لمنع الخروج بزر الرجوع للهاتف
+        return PopScope(
+          canPop: false, // يمنع الرجوع للخلف تماماً من الصفحة الرئيسية
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            // يمكنك هنا إظهار SnackBar بسيط إذا أردت تنبيه المندوب
           },
+          child: MaterialApp(
+            title: 'أكساب المندوب',
+            debugShowCheckedModeBanner: false,
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: const [Locale('ar', 'EG')],
+            locale: const Locale('ar', 'EG'),
+            theme: ThemeData(
+              primarySwatch: Colors.orange,
+              fontFamily: 'Tajawal',
+              scaffoldBackgroundColor: Colors.white,
+            ),
+            home: AuthWrapper(),
+            routes: {
+              '/login': (context) => LoginScreen(),
+              '/register': (context) => RegisterScreen(),
+              '/free_home': (context) => const FreeDriverHomeScreen(),
+              '/company_home': (context) => const CompanyRepHomeScreen(),
+              '/admin_dashboard': (context) => const DeliveryAdminDashboard(),
+            },
+          ),
         );
       },
     );
   }
 }
 
-// باقي كود AuthWrapper و _getUserRoleAndData كما هو في ملفك (سليم 100%)
+// كود AuthWrapper كما هو...
 class AuthWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
