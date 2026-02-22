@@ -25,7 +25,7 @@ pluginManagement {
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     // ✅ تم التحديث لـ 8.1.1 ليتوافق مع متطلبات فلاتر الحالية
-    id("com.android.application") version "8.1.1" apply false 
+    id("com.android.application") version "8.9.1" apply false 
     
     // ✅ حافظنا على 4.4.1 عشان مشكلة الكراشليتكس
     id("com.google.gms.google-services") version "4.4.1" apply false
