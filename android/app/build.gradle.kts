@@ -11,12 +11,14 @@ if (keystorePropertiesFile.exists()) {
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // ✅ تم نقل الـ Flutter Plugin ليكون قبل خدمات جوجل لضمان التوافق
+    // تم نقل الـ Flutter Plugin ليكون قبل خدمات جوجل لضمان التوافق
     id("dev.flutter.flutter-gradle-plugin")
-    // ✅ خدمات جوجل تسبق الكراشليتكس دائماً
-    id("com.google.gms.google-services")
-    // ✅ كراشليتكس في النهاية ليتمكن من قراءة ملف google-services.json
-    id("com.google.firebase.crashlytics")
+    
+    // ✅ تحديث إصدار خدمات جوجل لحل مشكلة Crashlytics 3
+    id("com.google.gms.google-services") version "4.4.1" apply true
+    
+    // ✅ تحديث إصدار الكراشليتكس ليتوافق مع خدمات جوجل
+    id("com.google.firebase.crashlytics") version "3.0.2" apply true
 }
 
 android {
