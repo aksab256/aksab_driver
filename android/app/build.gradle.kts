@@ -11,30 +11,23 @@ if (keystorePropertiesFile.exists()) {
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // تم نقل الـ Flutter Plugin ليكون قبل خدمات جوجل لضمان التوافق
     id("dev.flutter.flutter-gradle-plugin")
-    
-    // ✅ تحديث إصدار خدمات جوجل لحل مشكلة Crashlytics 3
-    id("com.google.gms.google-services") version "4.4.1" apply true
-    
-    // ✅ تحديث إصدار الكراشليتكس ليتوافق مع خدمات جوجل
-    id("com.google.firebase.crashlytics") version "3.0.2" apply true
+    // ✅ نكتفي بالتعريف فقط لأن الإصدار محدد في الملف الخارجي
+    id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 android {
-    // تم التأكيد على أن الـ Namespace يطابق Firebase و Google Play
     namespace = "com.aksab.driver" 
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
-    // 2. إعدادات التوقيع الاحترافية (Release Signing)
     signingConfigs {
         create("release") {
             keyAlias = "upload"
             keyPassword = "1151983aA"
             storePassword = "1151983aA"
             
-            // يقرأ ملف التوقيع من البيئة أو يستخدم الملف المحلي
             val keystorePath = System.getenv("KEY_FILE_NAME") ?: "upload-keystore.jks"
             storeFile = file(keystorePath)
         }
@@ -51,7 +44,6 @@ android {
     }
 
     defaultConfig {
-        // الـ Application ID النهائي لتطبيق المندوب
         applicationId = "com.aksab.driver"
         minSdk = 21
         targetSdk = flutter.targetSdkVersion
@@ -62,8 +54,6 @@ android {
     buildTypes {
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
-
-            // تحسينات لتقليل حجم الـ AAB وحماية الكود
             isMinifyEnabled = true 
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -80,6 +70,5 @@ flutter {
 }
 
 dependencies {
-    // لدعم الميزات الحديثة على إصدارات أندرويد القديمة
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
