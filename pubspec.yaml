@@ -1,7 +1,7 @@
 name: aksab_driver
 description: "A new Flutter project for Aksab Drivers - Stable Background Tracking Version."
 publish_to: 'none'
-version: 1.0.0+2  # 🚀 رفعنا الإصدار استعداداً للرفع الجديد
+version: 1.0.0+3  # 🚀 رفعنا الإصدار استعداداً للرفع الجديد
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
