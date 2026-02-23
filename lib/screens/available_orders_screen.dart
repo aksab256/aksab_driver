@@ -1,7 +1,5 @@
 // lib/screens/available_orders_screen.dart
 import 'dart:async';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -27,6 +25,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   void initState() {
     super.initState();
     _initSequence();
+    // مؤقت لتحديث الواجهة (للعد التنازلي للطلبات)
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -110,7 +109,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   Future<void> _acceptOrder(String orderId, double commission, String customerId) async {
     try {
-      showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
+      showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
 
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
@@ -131,7 +130,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
       if (mounted) {
         Navigator.pop(context); // إغلاق الـ Loading
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)));
+        
+        // ✅ تعديل الأمان: الانتقال لصفحة الطلب النشط وتنظيف الـ Stack
+        Navigator.pushAndRemoveUntil(
+          context, 
+          MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)),
+          (route) => false // يمنع العودة للرادار طالما هناك طلب نشط
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -149,11 +154,18 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Widget build(BuildContext context) {
     if (_isGettingLocation) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
     
-    // --- تعديل: معالجة حالة عدم توفر الموقع (رفض الإذن) ---
     if (_myCurrentLocation == null) {
       return Scaffold(
         backgroundColor: Colors.white,
-        appBar: AppBar(title: const Text("الرادار متوقف", style: TextStyle(fontFamily: 'Cairo')), centerTitle: true, elevation: 0),
+        appBar: AppBar(
+          title: const Text("الرادار متوقف", style: TextStyle(fontFamily: 'Cairo')), 
+          centerTitle: true, 
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
         body: Center(
           child: Padding(
             padding: EdgeInsets.all(20.sp),
@@ -188,17 +200,20 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         ),
       );
     }
-    // ---------------------------------------------------
 
     String cleanType = widget.vehicleType.replaceAll('Config', '');
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Text("رادار الطلبات ($cleanType)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo')),
+        title: Text("رادار الطلبات ($cleanType)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo', color: Colors.black)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black),
+          onPressed: () => Navigator.pop(context), // سيعود للرئيسية بفضل الـ NavigatorKey
+        ),
       ),
       body: SafeArea(
         child: StreamBuilder<DocumentSnapshot>(
@@ -220,7 +235,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) return const Center(child: Text("خطأ في الاتصال"));
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: Colors.orange));
 
                 final nearbyOrders = snapshot.data!.docs.where((doc) {
                   var data = doc.data() as Map<String, dynamic>;
@@ -281,11 +296,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("صافي ربحك: $driverNet ج.م", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12.sp, fontFamily: 'Cairo')),
+                Text("صافي ربحك: $driverNet ج.م", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.sp, fontFamily: 'Cairo')),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(8)),
-                  child: Text("⏳ $timeLeft", style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                  child: Text("⏳ $timeLeft", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -304,7 +319,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                       SizedBox(width: 2.w),
                       Text(
                         "إجمالي المشوار: ${totalTripKm.toStringAsFixed(1)} كم تقريباً",
-                        style: TextStyle(color: Colors.blue[900], fontWeight: FontWeight.w900, fontSize: 12.sp, fontFamily: 'Cairo'),
+                        style: TextStyle(color: Colors.blue[900], fontWeight: FontWeight.w900, fontSize: 11.sp, fontFamily: 'Cairo'),
                       ),
                     ],
                   ),
@@ -336,7 +351,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   onPressed: canAccept ? () => _acceptOrder(doc.id, commission, data['userId'] ?? "") : null,
                   child: Text(
                     canAccept ? "قبول الطلب والتحرك الآن" : "الرصيد غير كافٍ.. اشحن محفظتك",
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo')
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12.sp, fontFamily: 'Cairo')
                   ),
                 )
               ],
@@ -351,16 +366,16 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: color, size: 22),
+        Icon(icon, color: color, size: 20),
         SizedBox(width: 3.w),
         Expanded(child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(label, style: TextStyle(fontSize: 9.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
-            SizedBox(height: 0.5.h),
+            SizedBox(height: 0.3.h),
             Text(
               addr, 
-              style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Cairo'), 
+              style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Cairo'), 
               maxLines: 2, 
               overflow: TextOverflow.ellipsis
             ),
