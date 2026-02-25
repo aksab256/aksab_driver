@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sizer/sizer.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // تأكد من وجودها للأيقونات
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'active_order_screen.dart';
 
 class AvailableOrdersScreen extends StatefulWidget {
@@ -37,6 +37,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     super.dispose();
   }
 
+  // دالة حساب المسافة
   double _calculateFullTripDistance(GeoPoint pickup, GeoPoint dropoff) {
     if (_myCurrentLocation == null) return 0.0;
     double toPickup = Geolocator.distanceBetween(
@@ -50,10 +51,67 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return (toPickup + toCustomer) / 1000;
   }
 
-  // ... (نفس دوال _showLocationDisclosure و _initSequence بدون تغيير)
+  // 1. الإفصاح عن الموقع (المطلوب برمجياً)
+  Future<bool> _showLocationDisclosure() async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+          title: Row(
+            children: [
+              const Icon(Icons.radar, color: Colors.orange, size: 30),
+              SizedBox(width: 3.w),
+              const Text("رادار الطلبات القريبة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Text(
+            "لكي نتمكن من عرض الطلبات القريبة منك وتنبيهك بها، يحتاج 'أكسب' للوصول إلى موقعك الجغرافي.\n\n"
+            "سيتم استخدام الموقع أيضاً لتحديث مكانك للعميل أثناء التوصيل حتى لو كان التطبيق مغلقاً أو في الخلفية.",
+            style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp, height: 1.6),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("ليس الآن", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("موافق ومتابعة", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    ) ?? false;
+  }
 
+  // 2. تتابع تهيئة الموقع
+  Future<void> _initSequence() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) setState(() => _isGettingLocation = false);
+      return;
+    }
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      bool userAccepted = await _showLocationDisclosure();
+      if (!userAccepted) {
+        if (mounted) setState(() => _isGettingLocation = false);
+        return;
+      }
+      permission = await Geolocator.requestPermission();
+    }
+    
+    try {
+      Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      if (mounted) setState(() { _myCurrentLocation = pos; _isGettingLocation = false; });
+    } catch (e) {
+      if (mounted) setState(() => _isGettingLocation = false);
+    }
+  }
+
+  // 3. قبول الطلب بالمنطق اللوجستي
   Future<void> _acceptOrder(String orderId, double commission, String customerId) async {
-    // (نفس منطق قبول الطلب والترانزاكشن)
     try {
       showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
       await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -84,7 +142,23 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isGettingLocation) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
-    if (_myCurrentLocation == null) { /* ... نفس واجهة الموقع المعطل ... */ return const SizedBox(); }
+    
+    // واجهة الموقع المعطل
+    if (_myCurrentLocation == null) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.location_off, size: 50, color: Colors.orange),
+              const SizedBox(height: 20),
+              const Text("الموقع غير مفعل", style: TextStyle(fontFamily: 'Cairo')),
+              ElevatedButton(onPressed: _initSequence, child: const Text("تفعيل"))
+            ],
+          ),
+        ),
+      );
+    }
 
     String cleanType = widget.vehicleType.replaceAll('Config', '');
 
@@ -140,22 +214,17 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Widget _buildOrderCard(DocumentSnapshot doc, double cashBalance, double creditLimit) {
     var data = doc.data() as Map<String, dynamic>;
     
-    // البيانات المالية
-    double orderValue = double.tryParse(data['orderValue']?.toString() ?? '0') ?? 0.0; // قيمة البضاعة/الطلب
-    double deliveryFee = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0; // ما سيتم تحصيله (بضاعة + توصيل)
-    double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0; // ربح المندوب
-    double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0; // عمولة المنصة
-    
-    bool isMerchant = data['isMerchant'] == true; // علامة التاجر
+    double orderValue = double.tryParse(data['orderValue']?.toString() ?? '0') ?? 0.0;
+    double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
+    double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
+    double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0;
+    bool isMerchant = data['isMerchant'] == true;
 
-    // 🎯 منطق قبول العهدة الجديد:
-    // 1. العمولة لازم تتغطى من (كاش + كريديت)
-    // 2. قيمة الطلب (orderValue) لازم تتغطى من (الكاش) فقط
+    // المنطق اللوجستي للقبول
     bool canCoverCommission = (cashBalance + creditLimit) >= commission;
     bool canCoverOrderValue = cashBalance >= orderValue;
     bool canAccept = canCoverCommission && canCoverOrderValue;
 
-    // توقيت الطلب
     Timestamp? createdAt = data['createdAt'] as Timestamp?;
     String timeLeft = "15:00";
     if (createdAt != null) {
@@ -171,11 +240,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       margin: EdgeInsets.only(bottom: 2.5.h),
       child: Column(
         children: [
-          // شريط الحالة العلوي
           Container(
             padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.5.h),
             decoration: BoxDecoration(
-              // ذهبي للتجار، أخضر للطلبات العادية، أحمر لو الرصيد غير كافٍ
               color: !canAccept 
                   ? Colors.red[600] 
                   : (isMerchant ? const Color(0xFFFFD700) : const Color(0xFF2D9E68)),
@@ -195,7 +262,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                       style: TextStyle(
                         color: isMerchant ? const Color(0xFF8B4513) : Colors.white,
                         fontWeight: FontWeight.bold,
-                        fontSize: 12.sp, // تكبير الخط
+                        fontSize: 12.sp,
                         fontFamily: 'Cairo'
                       ),
                     ),
@@ -209,20 +276,17 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               ],
             ),
           ),
-          
           Padding(
             padding: EdgeInsets.all(4.w),
             child: Column(
               children: [
-                // تفاصيل العهدة والطلب
                 Row(
                   children: [
                     _buildFinanceInfo("قيمة العهدة", "$orderValue ج.م", Icons.inventory_2_outlined),
-                    const VerticalDivider(),
                     _buildFinanceInfo("تأمين العمولة", "$commission ج.م", Icons.account_balance_wallet_outlined),
                   ],
                 ),
-                const Divider(height: 3.h),
+                Divider(height: 3.h), // 🎯 تم حذف كلمة const من هنا لحل الخطأ
                 
                 _buildRouteRow(Icons.store_mall_directory_rounded, "نقطة استلام العهدة:", data['pickupAddress'] ?? "المتجر", isMerchant ? Colors.orange[800]! : Colors.orange),
                 _buildRouteRow(Icons.location_on_rounded, "تسليم الأمانات إلى:", data['dropoffAddress'] ?? "العميل", Colors.red),
@@ -231,7 +295,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                   Text("إجمالي التحصيل من العميل:", style: TextStyle(fontSize: 11.sp, color: Colors.grey.shade700, fontFamily: 'Cairo')),
-                  Text("$deliveryFee ج.م", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14.sp, color: Colors.black)),
+                  Text("$totalPrice ج.م", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14.sp, color: Colors.black)),
                 ]),
                 
                 SizedBox(height: 2.h),
