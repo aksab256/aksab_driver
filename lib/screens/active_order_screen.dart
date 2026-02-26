@@ -317,7 +317,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   Future<void> _launchGoogleMaps(GeoPoint point) async {
     final url = 'google.navigation:q=${point.latitude},${point.longitude}';
-    if (await canLaunchUrl(Uri.parse(url))) await launchUrl(Uri.parse(url), mode: LocationMode.externalApplication);
+    if (await canLaunchUrl(Uri.parse(url))) await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
   Future<void> _updateRoute(LatLng dest) async {
