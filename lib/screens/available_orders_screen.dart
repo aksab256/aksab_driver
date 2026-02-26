@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sizer/sizer.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'active_order_screen.dart'; // تأكد من أن المسار صحيح
+import 'active_order_screen.dart'; 
 
 class AvailableOrdersScreen extends StatefulWidget {
   final String vehicleType; 
@@ -57,9 +57,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Future<void> _acceptOrder(String orderId) async {
     try {
       showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
+      
+      // هنا التطبيق يغير الحالة فقط، والسيرفر سيتولى عملية حجز (totalPrice - driverNet) تلقائياً
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
+        
         if (orderSnap.exists && orderSnap.get('status') == 'pending') {
           transaction.update(orderRef, {
             'status': 'accepted',
@@ -70,6 +73,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           throw Exception("عذراً، الطلب تم قبوله من كابتن آخر");
         }
       });
+
       if (mounted) {
         Navigator.pop(context);
         Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)), (route) => false);
@@ -141,28 +145,23 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   Widget _buildOrderCard(DocumentSnapshot doc, double cashBalance, double creditLimit) {
     var data = doc.data() as Map<String, dynamic>;
-    
-    // 🔍 تحديد مصدر الطلب (تاجر أم مستهلك)
     bool isMerchant = data['requestSource'] == 'retailer';
     
-    // 🎯 الربط مع الحقول الفعلية من الداتابيز التي أرسلتها
-    double orderValue = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0; 
-    double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
-    double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
-    double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0;
+    // الأرقام من الداتابيز
+    double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0; // الـ 250
+    double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;    // الـ 20
+    double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0; // الـ 3
 
-    // فحص القدرة المالية للمندوب
-    bool canCoverCommission = (cashBalance + creditLimit) >= commission;
-    bool canCoverOrderValue = cashBalance >= orderValue;
-    bool canAccept = canCoverCommission && canCoverOrderValue;
+    // الحسبة اللوجستية المطلوبة: المبلغ الذي سيتم حظره من المندوب لضمان العهدة
+    // المندوب يحصل 250 كاش، والسيرفر يحجز (250 - 20) = 230
+    double insuranceRequired = totalPrice - driverNet; 
 
-    // 🎨 درجة الذهبي الصريح (Gold)
+    // فحص القدرة المالية: هل رصيد الكاش يغطي مبلغ التأمين (الـ 230)؟
+    bool canAccept = cashBalance >= insuranceRequired;
+
+    // الألوان الذهبية
     Color goldPrimary = const Color(0xFFFFD700); 
-    Color themeColor = isMerchant 
-        ? goldPrimary 
-        : (canAccept ? const Color(0xFF2D9E68) : const Color(0xFFD32F2F));
-    
-    // لون الخط (بني غامق فوق الذهبي ليعطي فخامة)
+    Color themeColor = isMerchant ? goldPrimary : (canAccept ? const Color(0xFF2D9E68) : const Color(0xFFD32F2F));
     Color contentColor = isMerchant ? const Color(0xFF5D4037) : Colors.white;
 
     return Card(
@@ -185,7 +184,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     Icon(isMerchant ? FontAwesomeIcons.crown : Icons.delivery_dining, color: contentColor, size: 20),
                     SizedBox(width: 2.w),
                     Text(
-                      "صافي الربح: $driverNet ج.م",
+                      "ربحك الصافي: $driverNet ج.م",
                       style: TextStyle(color: contentColor, fontWeight: FontWeight.w900, fontSize: 14.sp, fontFamily: 'Cairo'),
                     ),
                   ],
@@ -200,18 +199,20 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 Row(
                   children: [
-                    _buildFinanceInfo("قيمة العهدة", "$orderValue ج.م", Icons.inventory_2_outlined),
-                    _buildFinanceInfo("تأمين النقاط", "$commission ن", Icons.shield_outlined),
+                    // عرض "تأمين العهدة" وهو المبلغ الذي سيُحجز فعلياً
+                    _buildFinanceInfo("تأمين العهدة", "$insuranceRequired ن", Icons.lock_outline),
+                    // عرض عمولة المنصة (للعلم فقط)
+                    _buildFinanceInfo("رسوم الخدمة", "$commission ن", Icons.receipt_long_outlined),
                   ],
                 ),
                 Divider(height: 4.h, thickness: 1),
-                _buildRouteRow(Icons.store_mall_directory_rounded, "استلام العهدة:", data['pickupAddress'] ?? "الموقع", isMerchant ? Colors.orange[900]! : Colors.orange),
-                _buildRouteRow(Icons.location_on_rounded, "تسليم الأمانات:", data['dropoffAddress'] ?? "العميل", Colors.red),
+                _buildRouteRow(Icons.store_mall_directory_rounded, "استلام من:", data['pickupAddress'] ?? "الموقع", isMerchant ? Colors.orange[900]! : Colors.orange),
+                _buildRouteRow(Icons.location_on_rounded, "تسليم إلى:", data['dropoffAddress'] ?? "العميل", Colors.red),
                 const Divider(height: 30),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("إجمالي تحصيل العميل:", style: TextStyle(fontSize: 12.sp, color: Colors.grey[800], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                    Text("إجمالي فاتورة العميل:", style: TextStyle(fontSize: 12.sp, color: Colors.grey[800], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
                     Text("$totalPrice ج.م", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16.sp, color: Colors.black)),
                   ],
                 ),
@@ -225,7 +226,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   ),
                   onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
                   child: Text(
-                    canAccept ? (isMerchant ? "قبول العهدة والتحرك" : "قبول الطلب والتحرك") : "رصيد الكاش لا يغطي العهدة",
+                    canAccept 
+                      ? (isMerchant ? "قبول وتأمين عهدة" : "قبول الطلب") 
+                      : "رصيدك لا يغطي التأمين ($insuranceRequired ن)",
                     style: TextStyle(color: isMerchant ? contentColor : Colors.white, fontWeight: FontWeight.w900, fontSize: 13.sp, fontFamily: 'Cairo'),
                   ),
                 ),
