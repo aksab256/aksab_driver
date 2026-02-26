@@ -142,7 +142,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Widget _buildOrderCard(DocumentSnapshot doc, double cashBalance, double creditLimit) {
     var data = doc.data() as Map<String, dynamic>;
     
-    // منطق التمييز: هل المصدر تاجر؟
     bool isMerchant = data['requestSource'] == 'retailer';
     
     double orderValue = double.tryParse(data['orderValue']?.toString() ?? '0') ?? 0.0;
@@ -154,8 +153,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     bool canCoverOrderValue = cashBalance >= orderValue;
     bool canAccept = canCoverCommission && canCoverOrderValue;
 
-    // الألوان بناءً على الحالة والنوع
-    Color themeColor = isMerchant ? const Color(0xFFFFD700) : (canAccept ? const Color(0xFF2D9E68) : Colors.red[600]);
+    // 🎯 إصلاح الخطأ: استخدام ألوان صريحة لتجنب مشكلة Nullable Color
+    Color themeColor = isMerchant 
+        ? const Color(0xFFFFD700) 
+        : (canAccept ? const Color(0xFF2D9E68) : const Color(0xFFD32F2F)); // تم استخدام كود اللون الأحمر مباشرة
+    
     Color contentColor = isMerchant ? const Color(0xFF8B4513) : Colors.white;
 
     return Card(
@@ -198,7 +200,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   ],
                 ),
                 Divider(height: 4.h, thickness: 1),
-                _buildRouteRow(Icons.store_mall_directory_rounded, "استلام العهدة:", data['pickupAddress'] ?? "الموقع", isMerchant ? Colors.orange[900]! : Colors.orange),
+                _buildRouteRow(Icons.store_mall_directory_rounded, "استلام العهدة:", data['pickupAddress'] ?? "الموقع", isMerchant ? const Color(0xFFE65100) : Colors.orange),
                 _buildRouteRow(Icons.location_on_rounded, "تسليم الأمانات:", data['dropoffAddress'] ?? "العميل", Colors.red),
                 const Divider(height: 30),
                 Row(
@@ -236,7 +238,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         children: [
           Icon(icon, size: 18, color: Colors.blueGrey),
           Text(title, style: TextStyle(fontFamily: 'Cairo', fontSize: 10.sp, color: Colors.grey[600])),
-          Text(value, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, fontWeight: FontWeight.bold, color: Colors.blue[900])),
+          Text(value, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, fontWeight: FontWeight.bold, color: const Color(0xFF0D47A1))),
         ],
       ),
     );
