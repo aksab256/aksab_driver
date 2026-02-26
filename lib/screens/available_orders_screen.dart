@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sizer/sizer.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'active_order_screen.dart';
+import 'active_order_screen.dart'; // تأكد من أن المسار صحيح
 
 class AvailableOrdersScreen extends StatefulWidget {
   final String vehicleType; 
@@ -54,7 +54,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  Future<void> _acceptOrder(String orderId, double commission) async {
+  Future<void> _acceptOrder(String orderId) async {
     try {
       showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
       await FirebaseFirestore.instance.runTransaction((transaction) async {
@@ -77,7 +77,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString(), style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: Colors.red));
       }
     }
   }
@@ -142,23 +142,28 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Widget _buildOrderCard(DocumentSnapshot doc, double cashBalance, double creditLimit) {
     var data = doc.data() as Map<String, dynamic>;
     
+    // 🔍 تحديد مصدر الطلب (تاجر أم مستهلك)
     bool isMerchant = data['requestSource'] == 'retailer';
     
-    double orderValue = double.tryParse(data['orderValue']?.toString() ?? '0') ?? 0.0;
+    // 🎯 الربط مع الحقول الفعلية من الداتابيز التي أرسلتها
+    double orderValue = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0; 
     double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
     double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
     double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0;
 
+    // فحص القدرة المالية للمندوب
     bool canCoverCommission = (cashBalance + creditLimit) >= commission;
     bool canCoverOrderValue = cashBalance >= orderValue;
     bool canAccept = canCoverCommission && canCoverOrderValue;
 
-    // 🎯 إصلاح الخطأ: استخدام ألوان صريحة لتجنب مشكلة Nullable Color
+    // 🎨 درجة الذهبي الصريح (Gold)
+    Color goldPrimary = const Color(0xFFFFD700); 
     Color themeColor = isMerchant 
-        ? const Color(0xFFFFD700) 
-        : (canAccept ? const Color(0xFF2D9E68) : const Color(0xFFD32F2F)); // تم استخدام كود اللون الأحمر مباشرة
+        ? goldPrimary 
+        : (canAccept ? const Color(0xFF2D9E68) : const Color(0xFFD32F2F));
     
-    Color contentColor = isMerchant ? const Color(0xFF8B4513) : Colors.white;
+    // لون الخط (بني غامق فوق الذهبي ليعطي فخامة)
+    Color contentColor = isMerchant ? const Color(0xFF5D4037) : Colors.white;
 
     return Card(
       elevation: 6,
@@ -196,11 +201,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 Row(
                   children: [
                     _buildFinanceInfo("قيمة العهدة", "$orderValue ج.م", Icons.inventory_2_outlined),
-                    _buildFinanceInfo("تأمين العمولة", "$commission ج.م", Icons.account_balance_wallet_outlined),
+                    _buildFinanceInfo("تأمين النقاط", "$commission ن", Icons.shield_outlined),
                   ],
                 ),
                 Divider(height: 4.h, thickness: 1),
-                _buildRouteRow(Icons.store_mall_directory_rounded, "استلام العهدة:", data['pickupAddress'] ?? "الموقع", isMerchant ? const Color(0xFFE65100) : Colors.orange),
+                _buildRouteRow(Icons.store_mall_directory_rounded, "استلام العهدة:", data['pickupAddress'] ?? "الموقع", isMerchant ? Colors.orange[900]! : Colors.orange),
                 _buildRouteRow(Icons.location_on_rounded, "تسليم الأمانات:", data['dropoffAddress'] ?? "العميل", Colors.red),
                 const Divider(height: 30),
                 Row(
@@ -218,10 +223,10 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                     elevation: 3,
                   ),
-                  onPressed: canAccept ? () => _acceptOrder(doc.id, commission) : null,
+                  onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
                   child: Text(
-                    canAccept ? (isMerchant ? "تأكيد العهدة والتحرك" : "قبول الطلب والتحرك") : "رصيد الكاش لا يغطي العهدة",
-                    style: TextStyle(color: canAccept && isMerchant ? const Color(0xFF8B4513) : Colors.white, fontWeight: FontWeight.w900, fontSize: 13.sp, fontFamily: 'Cairo'),
+                    canAccept ? (isMerchant ? "قبول العهدة والتحرك" : "قبول الطلب والتحرك") : "رصيد الكاش لا يغطي العهدة",
+                    style: TextStyle(color: isMerchant ? contentColor : Colors.white, fontWeight: FontWeight.w900, fontSize: 13.sp, fontFamily: 'Cairo'),
                   ),
                 ),
               ],
