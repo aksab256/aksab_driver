@@ -43,7 +43,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     super.dispose();
   }
 
-  // --- 🛡️ منطق الحماية والرجوع ---
   void _handleBackAction() async {
     final bool shouldExit = await showDialog(
       context: context,
@@ -67,7 +66,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     if (shouldExit && mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 
-  // --- 🛰️ تتبع الموقع ---
   Future<void> _startBackgroundTracking() async {
     if (_uid != null) {
       final prefs = await SharedPreferences.getInstance();
@@ -102,9 +100,31 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       if (!orderSnap.exists || !mounted) return;
       var data = orderSnap.data() as Map<String, dynamic>;
       String status = data['status'];
-      GeoPoint targetGeo = (status == 'accepted' || status == 'returning_to_merchant') ? data['pickupLocation'] : data['dropoffLocation'];
+      
+      // إذا عاد الطلب لـ Pending فجأة، فهذا يعني أن السيرفر رفض العملية المالية
+      if (status == 'pending') {
+         _showSecurityError();
+         return;
+      }
+
+      GeoPoint targetGeo = (status == 'accepted' || status == 'returning_to_merchant' || status == 'returning_to_seller') 
+          ? data['pickupLocation'] 
+          : data['dropoffLocation'];
       _startSmartLiveTracking(LatLng(targetGeo.latitude, targetGeo.longitude));
     });
+  }
+
+  void _showSecurityError() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text("فشل تأمين العهدة"),
+        content: const Text("عذراً، لم نتمكن من حجز نقاط التأمين من حسابك. تأكد من شحن محفظتك الكاش وحاول مرة أخرى."),
+        actions: [TextButton(onPressed: () => Navigator.pushReplacementNamed(context, '/'), child: const Text("إغلاق"))],
+      )
+    );
   }
 
   void _startSmartLiveTracking(LatLng target) {
@@ -131,7 +151,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // --- 📱 شريط التحكم السفلي ---
   Widget _buildBottomPanel() {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
@@ -140,11 +159,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         var data = snapshot.data!.data() as Map<String, dynamic>;
         
         String status = data['status'];
-        // التحقق من المصدر (تاجر أو مستهلك) بناءً على requestSource
         bool isMerchant = data['requestSource'] == 'retailer'; 
-        bool isAtPickup = status == 'accepted' || status == 'returning_to_merchant';
+        bool isAtPickup = status == 'accepted' || status == 'returning_to_merchant' || status == 'returning_to_seller';
+        bool moneyLocked = data['moneyLocked'] ?? false;
 
-        // 📞 جلب الهواتف من الحقول الصحيحة
         String senderPhone = data['userPhone'] ?? ''; 
         String receiverPhone = data['customerPhone'] ?? ''; 
         
@@ -159,6 +177,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (!moneyLocked && status == 'accepted')
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: LinearProgressIndicator(color: Colors.orange, backgroundColor: Colors.orange[50]),
+                  ),
                 Row(
                   children: [
                     _buildCircleAction(icon: Icons.navigation_rounded, label: "توجيه", color: Colors.blue[800]!, onTap: () => _launchGoogleMaps(targetLoc)),
@@ -167,7 +190,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(status == 'returning_to_merchant' ? "إرجاع للتاجر" : (isAtPickup ? "نقطة الاستلام" : "نقطة التسليم"), style: TextStyle(color: Colors.grey[600], fontSize: 9.sp, fontFamily: 'Cairo')),
+                          Text(status.contains('returning') ? "إرجاع للتاجر" : (isAtPickup ? "نقطة الاستلام" : "نقطة التسليم"), style: TextStyle(color: Colors.grey[600], fontSize: 9.sp, fontFamily: 'Cairo')),
                           Text(isAtPickup ? (data['pickupAddress'] ?? "الموقع") : (data['dropoffAddress'] ?? "العميل"), style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w900, fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
                           Text("${dist.toStringAsFixed(1)} كم متبقي", style: TextStyle(color: Colors.blue[900], fontSize: 9.sp, fontWeight: FontWeight.bold)),
                         ],
@@ -189,7 +212,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                 SizedBox(height: 2.h),
                 
                 if (status == 'accepted') 
-                  _mainButton("تأكيد استلام العهدة 📦", Colors.orange[900]!, () => _showProfessionalOTP(data['verificationCode'], isMerchant))
+                  moneyLocked 
+                    ? _mainButton("تأكيد استلام العهدة 📦", Colors.orange[900]!, () => _showProfessionalOTP(data['verificationCode'], isMerchant))
+                    : Text("جاري معالجة تأمين العهدة...", style: TextStyle(fontFamily: 'Cairo', color: Colors.orange[900], fontWeight: FontWeight.bold))
                 
                 else if (status == 'picked_up')
                   isMerchant 
@@ -200,8 +225,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                       ])
                     : _mainButton("تم التسليم للعميل ✅", Colors.green[800]!, () => _completeOrder())
                 
-                else if (status == 'returning_to_merchant')
-                  _mainButton("تأكيد إرجاع العهدة للتاجر 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(data['verificationCode'], true)),
+                else if (status == 'returning_to_seller' || status == 'returning_to_merchant')
+                  _mainButton("تأكيد إرجاع العهدة للتاجر 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(data['returnVerificationCode'] ?? data['verificationCode'], true)),
               ],
             ),
           ),
@@ -216,7 +241,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       child: Column(
         children: [
           CircleAvatar(backgroundColor: color.withOpacity(0.1), child: Icon(Icons.phone, color: color, size: 18.sp)),
-          SizedBox(height: 5),
+          const SizedBox(height: 5),
           Text(label, style: TextStyle(fontFamily: 'Cairo', fontSize: 8.sp, color: color, fontWeight: FontWeight.bold)),
           Text(phone, style: TextStyle(fontSize: 9.sp, color: Colors.grey[700])),
         ],
@@ -237,7 +262,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (isMerchantAsset) const Text("بإدخال كود التاجر، أنت تؤكد استلام الشحنة في عهدتك وسيتم تخصيص نقاط أمان من حسابك.", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 10)),
+              if (isMerchantAsset) const Text("تأكيد العهدة: بإدخال كود التاجر، أنت تؤكد استلام الشحنة في عهدتك. سيتم تخصيص (نقاط أمان) من حسابك تعادل قيمة الشحنة لضمان النقل الآمن. لا يمكن التراجع بعد تأكيد العهدة.", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 10, fontWeight: FontWeight.w600)),
               SizedBox(height: 2.h),
               Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: List.generate(4, (i) => SizedBox(width: 12.w, child: TextField(
                 controller: ctrls[i], focusNode: nodes[i], textAlign: TextAlign.center, keyboardType: TextInputType.number, maxLength: 1,
@@ -264,7 +289,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   void _handleReturnFlow() async {
     bool? confirm = await showDialog(context: context, builder: (c) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(title: const Text("بدء عملية المرتجع"), content: const Text("هل تريد تحويل الطلب لمرتجع والعودة للتاجر؟"), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد"))])));
-    if (confirm == true) _updateStatus('returning_to_merchant');
+    if (confirm == true) _updateStatus('returning_to_seller');
   }
 
   void _completeOrder() async {
@@ -303,7 +328,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   double _getSmartDistance(Map<String, dynamic> data, String status) {
     if (_currentLocation == null) return 0.0;
-    GeoPoint target = (status == 'accepted' || status == 'returning_to_merchant') ? data['pickupLocation'] : data['dropoffLocation'];
+    GeoPoint target = (status == 'accepted' || status.contains('returning')) ? data['pickupLocation'] : data['dropoffLocation'];
     return Geolocator.distanceBetween(_currentLocation!.latitude, _currentLocation!.longitude, target.latitude, target.longitude) / 1000;
   }
 
