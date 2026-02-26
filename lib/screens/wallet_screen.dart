@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
 
-  // --- 💸 1. سداد رسوم تشغيل (تأمين نقاط العمل) ---
+  // --- 💸 1. تعبئة نقاط الأمان (تأمين عهدة العمل) ---
   Future<void> _processCharge(BuildContext context, double amount) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _showLoading(context);
@@ -20,14 +20,14 @@ class WalletScreen extends StatelessWidget {
         'createdAt': FieldValue.serverTimestamp(),
       });
       if (context.mounted) Navigator.pop(context);
-      _showInfoSheet(context, "تم استلام طلبك", "جاري تجهيز رابط السداد الآمن لتعبئة نقاط العمل، سيظهر في السجل أسفل الشاشة.");
+      _showInfoSheet(context, "تم استلام طلبك", "جاري تجهيز رابط سداد آمن لتعبئة (نقاط الأمان)، ستظهر في سجل العمليات فور جاهزيتها.");
     } catch (e) {
       if (context.mounted) Navigator.pop(context);
-      _showInfoSheet(context, "خطأ", "فشل الاتصال بالخادم.");
+      _showInfoSheet(context, "خطأ", "فشل الاتصال بالخادم، يرجى المحاولة لاحقاً.");
     }
   }
 
-  // --- 💰 2. تسوية مستحقات الكابتن (تحويل الرصيد المتاح لكاش) ---
+  // --- 💰 2. تسوية مستحقات الأمانات (تحويل نقاط العهدة لكاش) ---
   Future<void> _executeWithdrawal(BuildContext context, double amount) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _showLoading(context);
@@ -41,7 +41,7 @@ class WalletScreen extends StatelessWidget {
       });
       if (context.mounted) {
         Navigator.pop(context);
-        _showInfoSheet(context, "تم إرسال طلب التسوية", "سيتم مراجعة العهدة وتحويل مستحقاتك خلال 24 ساعة عمل.");
+        _showInfoSheet(context, "طلب التسوية قيد المراجعة", "سيتم مراجعة سجل العهدة وتحويل المبالغ المتاحة لحسابك خلال 24 ساعة.");
       }
     } catch (e) {
       if (context.mounted) {
@@ -57,7 +57,7 @@ class WalletScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFFBFBFB),
       appBar: AppBar(
-        title: const Text("إدارة العهدة والعمليات", 
+        title: const Text("إدارة العهدة ونقاط الأمان", 
           style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 16)),
         centerTitle: true,
         backgroundColor: Colors.white,
@@ -71,9 +71,9 @@ class WalletScreen extends StatelessWidget {
           
           var userData = driverSnap.data!.data() as Map<String, dynamic>?;
           double walletBalance = (userData?['walletBalance'] ?? 0.0).toDouble();
-          double creditLimit = (userData?['creditLimit'] ?? 50.0).toDouble();
+          double creditLimit = (userData?['creditLimit'] ?? 0.0).toDouble();
 
-          // --- 🛡️ إضافة Stream لمراقبة التأمين المحجوز للشفافية ---
+          // --- 🛡️ مراقبة العهدة المحجوزة في الوقت الفعلي (من السيرفر) ---
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance.collection('specialRequests')
                 .where('driverId', isEqualTo: uid)
@@ -84,6 +84,7 @@ class WalletScreen extends StatelessWidget {
               double lockedInsurance = 0.0;
               if (lockSnap.hasData) {
                 for (var doc in lockSnap.data!.docs) {
+                  // استخدام الحقل التقني المتفق عليه مع السيرفر
                   lockedInsurance += (doc['insurance_points'] ?? 0.0);
                 }
               }
@@ -91,28 +92,26 @@ class WalletScreen extends StatelessWidget {
               return SingleChildScrollView(
                 child: Column(
                   children: [
-                    // كارت العهدة المتطور (يظهر المتاح والمحجوز)
                     _buildMainAssetCard(walletBalance, creditLimit, lockedInsurance),
                     
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text("إجمالي القيمة بالذمة: ${(walletBalance + lockedInsurance).toStringAsFixed(2)} ج.م",
-                        style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w900, fontFamily: 'Cairo', color: Colors.blueGrey[800])),
+                      child: Text("إجمالي الأمانات بالذمة: ${(walletBalance + lockedInsurance).toStringAsFixed(2)} ج.م",
+                        style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.blueGrey[600])),
                     ),
 
-                    // أزرار الأكشن (سداد رسوم / طلب تسوية)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                       child: Row(
                         children: [
-                          Expanded(child: _actionBtn(Icons.account_balance_wallet_outlined, "سداد رسوم", Colors.green[700]!, () => _showChargePicker(context))),
+                          Expanded(child: _actionBtn(Icons.add_moderator_outlined, "تعبئة نقاط", Colors.green[700]!, () => _showChargePicker(context))),
                           const SizedBox(width: 15),
-                          Expanded(child: _actionBtn(Icons.assignment_turned_in_outlined, "طلب تسوية", Colors.blueGrey[800]!, () => _showWithdrawDialog(context, walletBalance))),
+                          Expanded(child: _actionBtn(Icons.account_balance_outlined, "طلب تسوية", Colors.blueGrey[800]!, () => _showWithdrawDialog(context, walletBalance))),
                         ],
                       ),
                     ),
 
-                    _sectionHeader("سجل العمليات والعهدة"),
+                    _sectionHeader("سجل تأمين العهدة"),
 
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -130,32 +129,31 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // --- 🛠️ بناء كارت العهدة المركزي ---
+  // --- 🛠️ بناء كارت إدارة الأصول ---
   Widget _buildMainAssetCard(double available, double limit, double locked) => Container(
     margin: const EdgeInsets.all(20), padding: const EdgeInsets.all(22),
     decoration: BoxDecoration(
-      gradient: const LinearGradient(colors: [Color(0xFF1a1a1a), Color(0xFF3a3a3a)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+      gradient: const LinearGradient(colors: [Color(0xFF232526), Color(0xFF414345)], begin: Alignment.topLeft, end: Alignment.bottomRight),
       borderRadius: BorderRadius.circular(25),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 5))],
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 5))],
     ),
     child: Column(children: [
-      const Text("الرصيد المتاح للعمل", style: TextStyle(color: Colors.white70, fontFamily: 'Cairo', fontSize: 13)),
+      const Text("نقاط الأمان المتاحة", style: TextStyle(color: Colors.white70, fontFamily: 'Cairo', fontSize: 13)),
       const SizedBox(height: 5),
-      Text("${available.toStringAsFixed(2)} ج.م", style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900)),
+      Text("${available.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900)),
       const Divider(color: Colors.white24, height: 30),
       Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-        _miniInfo("تأمين محجوز", "${locked.toStringAsFixed(1)}", Colors.orangeAccent),
-        _miniInfo("حد المديونية", "${limit.toStringAsFixed(1)}", Colors.white),
+        _miniInfo("تأمين عهدة", "${locked.toStringAsFixed(1)}", Colors.orangeAccent),
+        _miniInfo("سقف المديونية", "${limit.toStringAsFixed(1)}", Colors.cyanAccent),
       ])
     ]),
   );
 
   Widget _miniInfo(String label, String value, Color valColor) => Column(children: [
     Text(label, style: const TextStyle(color: Colors.white60, fontSize: 10, fontFamily: 'Cairo')),
-    Text(value, style: TextStyle(color: valColor, fontWeight: FontWeight.w900, fontSize: 15)),
+    Text(value, style: TextStyle(color: valColor, fontWeight: FontWeight.w900, fontSize: 16)),
   ]);
 
-  // --- 🛠️ بناء السجل الموحد ---
   Widget _buildCombinedHistory(String? uid) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('pendingInvoices')
@@ -167,7 +165,7 @@ class WalletScreen extends StatelessWidget {
           stream: FirebaseFirestore.instance.collection('walletLogs')
               .where('driverId', isEqualTo: uid)
               .orderBy('timestamp', descending: true)
-              .limit(10)
+              .limit(15)
               .snapshots(),
           builder: (context, logSnap) {
             List<Map<String, dynamic>> allItems = [];
@@ -187,7 +185,7 @@ class WalletScreen extends StatelessWidget {
             }
 
             if (allItems.isEmpty) {
-              return Container(height: 150, alignment: Alignment.center, child: Text("لا توجد عمليات سابقة", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[400])));
+              return Container(height: 150, alignment: Alignment.center, child: Text("سجل العهدة فارغ", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[400])));
             }
 
             return ListView.builder(
@@ -205,17 +203,17 @@ class WalletScreen extends StatelessWidget {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: isInvoice ? Colors.orange : Colors.grey[100]!)),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: isInvoice ? Colors.orange[50] : Colors.grey[50],
-                      child: Icon(isInvoice ? Icons.payment : Icons.history, color: isInvoice ? Colors.orange : Colors.blueGrey, size: 20),
+                      backgroundColor: isInvoice ? Colors.orange[50] : Colors.blueGrey[50],
+                      child: Icon(isInvoice ? Icons.qr_code_scanner : Icons.swap_vert, color: isInvoice ? Colors.orange : Colors.blueGrey, size: 20),
                     ),
-                    title: Text(isInvoice ? "رابط سداد جاهز" : _getLogTitle(item['type'], amount),
+                    title: Text(isInvoice ? "رابط تفعيل نقاط الأمان" : _getLogTitle(item['type'], amount),
                         style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13)),
-                    subtitle: Text(isInvoice ? "اضغط للسداد الآن" : "عملية مكتملة", style: const TextStyle(fontFamily: 'Cairo', fontSize: 11)),
+                    subtitle: Text(isInvoice ? "اضغط لإتمام العملية" : "تحديث تلقائي للنظام", style: const TextStyle(fontFamily: 'Cairo', fontSize: 10)),
                     trailing: isInvoice 
                       ? ElevatedButton(
                           onPressed: () => _launchPaymentUrl(item['paymentUrl']),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                          child: const Text("سداد", style: TextStyle(color: Colors.white, fontFamily: 'Cairo', fontSize: 12)),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                          child: const Text("دفع", style: TextStyle(color: Colors.white, fontFamily: 'Cairo', fontSize: 11)),
                         )
                       : Text("${amount > 0 ? '+' : ''}${amount.toStringAsFixed(1)}", 
                           style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, color: amount > 0 ? Colors.green : Colors.red)),
@@ -230,14 +228,12 @@ class WalletScreen extends StatelessWidget {
   }
 
   String _getLogTitle(String? type, double amount) {
-    if (type == 'operational_fee') return "تعبئة رصيد العمل";
-    if (type == 'insurance_lock') return "حجز تأمين عهدة"; // الحقل الجديد من السيرفر
-    return amount > 0 ? "إيداع مستحقات" : "خصم رسوم";
+    if (type == 'ORDER_REVENUE') return "تسوية أرباح شحنة";
+    if (type == 'insurance_lock') return "تأمين عهدة (محجوز)";
+    if (type == 'operational_fee') return "شحن نقاط أمان";
+    return amount > 0 ? "إيداع نقاط" : "تخصيص عهدة";
   }
 
-  // الدوال المساعدة (Charge Picker, Withdraw Dialog, Disclaimer) تظل كما هي مع تحسين نصوصها.
-  // ... (نفس الدوال المساعدة مع الحفاظ على التصميم)
-  
   Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
@@ -248,18 +244,18 @@ class WalletScreen extends StatelessWidget {
         child: Column(children: [
             Icon(icon, color: color, size: 24.sp),
             const SizedBox(height: 8),
-            Text(label, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 12)),
+            Text(label, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 11)),
         ]),
       ),
     );
   }
 
   Widget _sectionHeader(String title) => Padding(padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-    child: Align(alignment: Alignment.centerRight, child: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 15, color: Colors.black87))));
+    child: Align(alignment: Alignment.centerRight, child: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 14, color: Colors.black87))));
 
   Widget _buildLegalDisclaimer() => Padding(padding: const EdgeInsets.fromLTRB(30, 20, 30, 30),
-    child: Text("يتم حجز نقاط التأمين مؤقتاً لضمان النقل الآمن للعهدة، ويتم فك الحجز فور تأكيد التسليم.",
-      textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 9.sp, color: Colors.grey[500], height: 1.5)));
+    child: Text("إدارة العهدة: يتم تخصيص نقاط أمان تعادل قيمة الشحنة لضمان النقل، وتُعاد لرصيدك المتاح فور تأكيد الاستلام من قبل التاجر أو العميل.",
+      textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 8.5.sp, color: Colors.grey[500], height: 1.6)));
 
   void _showLoading(BuildContext context) => showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
 
@@ -267,9 +263,9 @@ class WalletScreen extends StatelessWidget {
     builder: (c) => SafeArea(child: Padding(padding: const EdgeInsets.all(25), child: Column(mainAxisSize: MainAxisSize.min, children: [
       Text(t, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, fontFamily: 'Cairo')),
       const SizedBox(height: 10),
-      Text(m, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+      Text(m, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 13)),
       const SizedBox(height: 25),
-      SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("تم", style: TextStyle(fontFamily: 'Cairo'))))
+      SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("حسناً", style: TextStyle(fontFamily: 'Cairo'))))
     ]))));
 
   void _launchPaymentUrl(String? url) async {
@@ -282,34 +278,36 @@ class WalletScreen extends StatelessWidget {
     showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
       builder: (c) => SafeArea(child: Container(padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 15),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text("سداد رسوم تشغيل الحساب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 16)),
+          const Text("تعبئة نقاط الأمان", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 16)),
           const SizedBox(height: 10),
-          const Text("اختر مبلغ تأمين نقاط العمل لتفعيل استقبال الطلبات", style: TextStyle(fontFamily: 'Cairo', fontSize: 11, color: Colors.grey)),
+          const Text("اختر القيمة لتفعيل حسابك واستلام الشحنات", style: TextStyle(fontFamily: 'Cairo', fontSize: 11, color: Colors.grey)),
           const SizedBox(height: 20),
-          Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [50, 100, 200, 500].map((a) => ActionChip(
-            label: Text("$a ج.م", style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+          Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.center, children: [100, 200, 500, 1000].map((a) => ActionChip(
+            label: Text("$a نقطة", style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
             onPressed: () { Navigator.pop(context); _processCharge(context, a.toDouble()); }
           )).toList()),
-          const SizedBox(height: 15),
+          const SizedBox(height: 20),
         ]))));
   }
 
   void _showWithdrawDialog(BuildContext context, double current) {
     final ctrl = TextEditingController();
     showDialog(context: context, builder: (c) => AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text("تسوية مستحقات الكابتن", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+      title: const Text("تسوية رصيد الأمانات", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16), textAlign: TextAlign.center),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text("الرصيد القابل للتسوية: $current ج.م", style: const TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'Cairo')),
-        const SizedBox(height: 10),
-        TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: "أدخل المبلغ المراد تسويته")),
+        Text("الرصيد المتاح حالياً: ${current.toStringAsFixed(2)} ج.م", style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontFamily: 'Cairo')),
+        const SizedBox(height: 15),
+        TextField(controller: ctrl, keyboardType: TextInputType.number, 
+          decoration: InputDecoration(hintText: "أدخل المبلغ المطلوب تسويته", hintStyle: const TextStyle(fontSize: 12, fontFamily: 'Cairo'),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)))),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo'))),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey))),
         ElevatedButton(onPressed: () {
             double? amount = double.tryParse(ctrl.text);
             if (amount != null && amount > 0 && amount <= current) { Navigator.pop(context); _executeWithdrawal(context, amount); }
-            else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("المبلغ غير صحيح"))); }
-          }, child: const Text("طلب تسوية", style: TextStyle(fontFamily: 'Cairo')))
+            else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("القيمة المدخلة غير صحيحة أو تتجاوز الرصيد"))); }
+          }, child: const Text("تأكيد التسوية", style: TextStyle(fontFamily: 'Cairo')))
       ]));
   }
 }
