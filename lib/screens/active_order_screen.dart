@@ -10,8 +10,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'location_service_handler.dart'; 
 
 class ActiveOrderScreen extends StatefulWidget {
@@ -26,7 +26,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   LatLng? _currentLocation;
   List<LatLng> _routePoints = [];
   StreamSubscription<Position>? _positionStream;
-  
   final MapController _mapController = MapController();
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   final String _mapboxToken = 'pk.eyJ1IjoiYW1yc2hpcGwiLCJhIjoiY21lajRweGdjMDB0eDJsczdiemdzdXV6biJ9.E--si9vOB93NGcAq7uVgGw';
@@ -65,11 +64,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         ),
       )
     ) ?? false;
-
     if (shouldExit && mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 
-  // --- 🛰️ تتبع الموقع والخلفية ---
+  // --- 🛰️ تتبع الموقع ---
   Future<void> _startBackgroundTracking() async {
     if (_uid != null) {
       final prefs = await SharedPreferences.getInstance();
@@ -114,12 +112,13 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     _positionStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
     ).listen((Position pos) {
-      if (!mounted) return;
-      setState(() {
-        _currentLocation = LatLng(pos.latitude, pos.longitude);
-        _updateDriverLocationInFirestore(pos);
-        _updateRoute(target);
-      });
+      if (!mounted) {
+        setState(() {
+          _currentLocation = LatLng(pos.latitude, pos.longitude);
+          _updateDriverLocationInFirestore(pos);
+          _updateRoute(target);
+        });
+      }
     });
   }
 
@@ -132,22 +131,146 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // --- 🗺️ واجهة الخريطة ---
-  @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleBackAction(); },
-      child: Scaffold(
-        body: Stack(
-          children: [
-            _buildMap(),
-            Positioned(top: 0, left: 0, right: 0, child: _buildCustomAppBar()),
-            Positioned(bottom: 0, left: 0, right: 0, child: _buildBottomPanel()),
+  // --- 📱 شريط التحكم السفلي (التناغم بين التاجر والمستهلك) ---
+  Widget _buildBottomPanel() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox();
+        var data = snapshot.data!.data() as Map<String, dynamic>;
+        
+        String status = data['status'];
+        bool isMerchant = data['sellerId'] != null; // التفريق بناءً على وجود معرف التاجر
+        bool isAtPickup = status == 'accepted' || status == 'returning_to_merchant';
+
+        // 📞 إدارة الهواتف
+        String senderPhone = data['userPhone'] ?? ''; // هاتف الراسل (تاجر أو مستهلك)
+        String receiverPhone = data['dropoffPhone'] ?? ''; // هاتف المستلم (في حالة التاجر)
+        
+        GeoPoint targetLoc = isAtPickup ? data['pickupLocation'] : data['dropoffLocation'];
+        double dist = _getSmartDistance(data, status);
+
+        return SafeArea(
+          child: Container(
+            margin: EdgeInsets.fromLTRB(12.sp, 0, 12.sp, 10.sp),
+            padding: EdgeInsets.all(16.sp),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 20)]),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // الصف العلوي: التوجيه والمسافة
+                Row(
+                  children: [
+                    _buildCircleAction(icon: Icons.navigation_rounded, label: "توجيه", color: Colors.blue[800]!, onTap: () => _launchGoogleMaps(targetLoc)),
+                    SizedBox(width: 4.w),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(status == 'returning_to_merchant' ? "إرجاع للتاجر" : (isAtPickup ? "نقطة الاستلام" : "نقطة التسليم"), style: TextStyle(color: Colors.grey[600], fontSize: 9.sp, fontFamily: 'Cairo')),
+                          Text(isAtPickup ? (data['pickupAddress'] ?? "الموقع") : (data['dropoffAddress'] ?? "العميل"), style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w900, fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          Text("${dist.toStringAsFixed(1)} كم متبقي", style: TextStyle(color: Colors.blue[900], fontSize: 9.sp, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 25),
+                
+                // 📱 قسم التواصل (تناغم الهواتف)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildPhoneItem(label: isMerchant ? "اتصال بالتاجر" : "اتصال بالراسل", phone: senderPhone, color: Colors.orange[800]!),
+                    if (isMerchant && receiverPhone.isNotEmpty) 
+                      _buildPhoneItem(label: "اتصال بالمستلم", phone: receiverPhone, color: Colors.green[700]!),
+                  ],
+                ),
+                
+                SizedBox(height: 2.h),
+                
+                // 🔘 قسم الأزرار الإجرائية
+                if (status == 'accepted') 
+                  _mainButton("تأكيد استلام العهدة 📦", Colors.orange[900]!, () => _showProfessionalOTP(data['verificationCode'], isMerchant))
+                
+                else if (status == 'picked_up')
+                  isMerchant 
+                    ? Row(children: [
+                        Expanded(child: _mainButton("رفض المستلم ❌", Colors.red[800]!, () => _handleReturnFlow())),
+                        const SizedBox(width: 10),
+                        Expanded(child: _mainButton("تم التسليم ✅", Colors.green[800]!, () => _completeOrder())),
+                      ])
+                    : _mainButton("تم التسليم للعميل ✅", Colors.green[800]!, () => _completeOrder())
+                
+                else if (status == 'returning_to_merchant')
+                  _mainButton("تأكيد إرجاع العهدة للتاجر 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(data['returnVerificationCode'] ?? data['verificationCode'], true)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // --- 📞 ودجت الاتصال ---
+  Widget _buildPhoneItem({required String label, required String phone, required Color color}) {
+    return InkWell(
+      onTap: () => launchUrl(Uri.parse("tel:$phone")),
+      child: Column(
+        children: [
+          CircleAvatar(backgroundColor: color.withOpacity(0.1), child: Icon(Icons.phone, color: color, size: 18.sp)),
+          SizedBox(height: 5),
+          Text(label, style: TextStyle(fontFamily: 'Cairo', fontSize: 8.sp, color: color, fontWeight: FontWeight.bold)),
+          Text(phone, style: TextStyle(fontSize: 9.sp, color: Colors.grey[700])),
+        ],
+      ),
+    );
+  }
+
+  // --- 🛠️ باقي الدوال التقنية (أكواد، خريطة، إلخ) ---
+  void _showProfessionalOTP(String? correctCode, bool showAssetAlert) {
+    List<TextEditingController> ctrls = List.generate(4, (i) => TextEditingController());
+    List<FocusNode> nodes = List.generate(4, (i) => FocusNode());
+    showDialog(
+      context: context, barrierDismissible: false,
+      builder: (context) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(showAssetAlert ? "تأكيد عهدة الأمانات" : "كود الاستلام", textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+          content: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: List.generate(4, (i) => SizedBox(width: 12.w, child: TextField(
+            controller: ctrls[i], focusNode: nodes[i], textAlign: TextAlign.center, keyboardType: TextInputType.number, maxLength: 1,
+            decoration: InputDecoration(counterText: "", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+            onChanged: (v) { if (v.isNotEmpty && i < 3) nodes[i + 1].requestFocus(); if (v.isEmpty && i > 0) nodes[i - 1].requestFocus(); },
+          )))),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء")),
+            ElevatedButton(onPressed: () {
+              if (ctrls.map((e) => e.text).join() == correctCode?.trim()) {
+                Navigator.pop(context);
+                _updateStatus('picked_up');
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("الكود خطأ"), backgroundColor: Colors.red));
+              }
+            }, child: const Text("تأكيد")),
           ],
         ),
       ),
     );
+  }
+
+  void _handleReturnFlow() async {
+    bool? confirm = await showDialog(context: context, builder: (c) => AlertDialog(title: const Text("بدء عملية المرتجع"), content: const Text("سيتم تحويل الوجهة الآن للعودة لمقر التاجر وتسليم الأمانات."), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد"))]));
+    if (confirm == true) _updateStatus('returning_to_merchant');
+  }
+
+  void _completeOrder() async {
+    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.green)));
+    await _stopBackgroundTracking();
+    try {
+      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
+      if (mounted) { Navigator.pop(context); Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false); }
+    } catch (e) { Navigator.pop(context); }
   }
 
   Widget _buildMap() {
@@ -158,7 +281,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         var data = snapshot.data!.data() as Map<String, dynamic>;
         GeoPoint pickup = data['pickupLocation'];
         GeoPoint dropoff = data['dropoffLocation'];
-
         return FlutterMap(
           mapController: _mapController,
           options: MapOptions(initialCenter: _currentLocation ?? LatLng(pickup.latitude, pickup.longitude), initialZoom: 15),
@@ -176,166 +298,17 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  // --- 📱 شريط التحكم السفلي (الذكاء اللوجيستي) ---
-  Widget _buildBottomPanel() {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox();
-        var data = snapshot.data!.data() as Map<String, dynamic>;
-        String status = data['status'];
-        bool isMerchant = data['type'] == 'MERCHANT';
-        bool isAtPickup = status == 'accepted' || status == 'returning_to_merchant';
-
-        // ذكاء اختيار الهاتف والوجهة
-        String phoneToShow = isAtPickup ? (data['userPhone'] ?? '') : (data['dropoffPhone'] ?? '');
-        GeoPoint targetLoc = isAtPickup ? data['pickupLocation'] : data['dropoffLocation'];
-        double dist = _getSmartDistance(data, status);
-
-        return SafeArea(
-          child: Container(
-            margin: EdgeInsets.fromLTRB(12.sp, 0, 12.sp, 10.sp),
-            padding: EdgeInsets.all(16.sp),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 20)]),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    _buildCircleAction(icon: Icons.navigation_rounded, label: "توجيه", color: Colors.blue[800]!, onTap: () => _launchGoogleMaps(targetLoc)),
-                    SizedBox(width: 4.w),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(status == 'returning_to_merchant' ? "إرجاع للتاجر" : (isAtPickup ? "نقطة الاستلام" : "نقطة التسليم"), style: TextStyle(color: Colors.grey[600], fontSize: 9.sp, fontFamily: 'Cairo')),
-                          Text(isAtPickup ? (data['pickupAddress'] ?? "المحل") : (data['dropoffAddress'] ?? "العميل"), style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w900, fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          Text("${dist.toStringAsFixed(1)} كم متبقي", style: TextStyle(color: Colors.blue[900], fontSize: 9.sp, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                    ),
-                    SizedBox(width: 4.w),
-                    _buildCircleAction(icon: Icons.phone_in_talk_rounded, label: "اتصال", color: Colors.green[700]!, onTap: () => launchUrl(Uri.parse("tel:$phoneToShow"))),
-                  ],
-                ),
-                SizedBox(height: 2.h),
-                
-                // التحكم في الأزرار بناءً على الحالة والنوع
-                if (status == 'accepted') 
-                  _mainButton("تأكيد استلام العهدة 📦", Colors.orange[900]!, () => _showProfessionalOTP(data['verificationCode'], isMerchant))
-                else if (status == 'picked_up')
-                  Row(children: [
-                    if (isMerchant) ...[
-                      Expanded(child: _mainButton("رفض الاستلام ❌", Colors.red[800]!, () => _handleReturnFlow())),
-                      const SizedBox(width: 10),
-                    ],
-                    Expanded(child: _mainButton("تم التسليم ✅", Colors.green[800]!, () => _completeOrder())),
-                  ])
-                else if (status == 'returning_to_merchant')
-                  _mainButton("تأكيد إرجاع العهدة 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(data['returnVerificationCode'], true)),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  double _getSmartDistance(Map<String, dynamic> data, String status) {
+    if (_currentLocation == null) return 0.0;
+    GeoPoint target = (status == 'accepted' || status == 'returning_to_merchant') ? data['pickupLocation'] : data['dropoffLocation'];
+    return Geolocator.distanceBetween(_currentLocation!.latitude, _currentLocation!.longitude, target.latitude, target.longitude) / 1000;
   }
 
-  // --- 🔐 نظام الأكواد والتحقق (العهدة) ---
-  void _showProfessionalOTP(String? correctCode, bool showAssetAlert) {
-    List<TextEditingController> ctrls = List.generate(4, (i) => TextEditingController());
-    List<FocusNode> nodes = List.generate(4, (i) => FocusNode());
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(showAssetAlert ? "كود تأمين العهدة" : "كود الاستلام", textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-          content: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: List.generate(4, (i) => SizedBox(width: 12.w, child: TextField(
-            controller: ctrls[i], focusNode: nodes[i], textAlign: TextAlign.center, keyboardType: TextInputType.number, maxLength: 1,
-            decoration: InputDecoration(counterText: "", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
-            onChanged: (v) { if (v.isNotEmpty && i < 3) nodes[i + 1].requestFocus(); if (v.isEmpty && i > 0) nodes[i - 1].requestFocus(); },
-          )))),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء")),
-            ElevatedButton(onPressed: () {
-              if (ctrls.map((e) => e.text).join() == correctCode?.trim()) {
-                Navigator.pop(context);
-                if (showAssetAlert) {
-                   _confirmAssetManagement(() => _updateStatus('picked_up'));
-                } else {
-                   _updateStatus('picked_up');
-                }
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("الكود غير صحيح"), backgroundColor: Colors.red));
-              }
-            }, child: const Text("تأكيد")),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _confirmAssetManagement(VoidCallback onConfirm) {
-    showDialog(
-      context: context,
-      builder: (c) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: const Text("تأكيد العهدة"),
-          content: const Text("بإدخال كود التاجر، أنت تؤكد استلام الشحنة في عهدتك. سيتم تخصيص (نقاط أمان) من حسابك تعادل قيمة الشحنة لضمان النقل الآمن. لا يمكن التراجع بعد تأكيد العهدة."),
-          actions: [ElevatedButton(onPressed: () { Navigator.pop(c); onConfirm(); }, child: const Text("موافق"))],
-        ),
-      ),
-    );
-  }
-
-  // --- 🔄 منطق المرتجع ---
-  void _handleReturnFlow() async {
-    bool? confirm = await showDialog(context: context, builder: (c) => AlertDialog(title: const Text("تحويل لمرتجع"), content: const Text("هل رفض المستلم الاستلام؟ سيتم إلزامك بالعودة للتاجر لفك حجز العهدة."), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد"))]));
-    if (confirm == true) _updateStatus('returning_to_merchant');
-  }
-
-  // --- 🏁 إتمام الطلب (رؤية السيرفر) ---
-  void _completeOrder() async {
-    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.green)));
-    await _stopBackgroundTracking();
-    try {
-      // نكتفي بتغيير الحالة؛ الرادار في السيرفر سيقوم بالتسويات المالية فوراً
-      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
-        'status': 'delivered',
-        'completedAt': FieldValue.serverTimestamp(),
-      });
-      if (mounted) {
-        Navigator.pop(context);
-        _showFinalSuccess();
-      }
-    } catch (e) {
-      if (mounted) { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("خطأ: $e"))); }
-    }
-  }
-
-  void _showFinalSuccess() {
-    showDialog(context: context, builder: (c) => AlertDialog(title: const Text("تمت المهمة ✅"), content: const Text("تم تسليم العهدة وتحديث حسابك بنجاح."), actions: [ElevatedButton(onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false), child: const Text("الرئيسية"))]));
-  }
-
-  // --- 🛠️ دوال مساعدة ---
   Widget _mainButton(String label, Color color, VoidCallback onTap) => SizedBox(width: double.infinity, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: color, padding: EdgeInsets.symmetric(vertical: 1.5.h), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))), onPressed: onTap, child: Text(label, style: TextStyle(color: Colors.white, fontSize: 13.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))));
 
   Widget _buildCircleAction({required IconData icon, required String label, required Color color, required VoidCallback onTap}) => InkWell(onTap: onTap, child: Column(children: [Container(padding: EdgeInsets.all(10.sp), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: color, size: 20.sp)), Text(label, style: TextStyle(color: color, fontSize: 8.sp, fontFamily: 'Cairo'))]));
 
   Widget _buildCustomAppBar() => SafeArea(child: Container(margin: EdgeInsets.all(10.sp), padding: EdgeInsets.symmetric(horizontal: 10.sp, vertical: 5.sp), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)]), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(onPressed: _handleBackAction, icon: const Icon(Icons.arrow_back_ios_new)), Text("الرحلة النشطة", style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')), StreamBuilder<DocumentSnapshot>(stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(), builder: (context, snap) { if (snap.hasData && snap.data!.exists && snap.data!['status'] == 'accepted') return IconButton(onPressed: _driverCancelOrder, icon: const Icon(Icons.cancel_outlined, color: Colors.red)); return SizedBox(width: 40.sp); })])));
-
-  double _getSmartDistance(Map<String, dynamic> data, String status) {
-    if (_currentLocation == null) return 0.0;
-    GeoPoint pickup = data['pickupLocation'];
-    GeoPoint dropoff = data['dropoffLocation'];
-    GeoPoint target = (status == 'accepted' || status == 'returning_to_merchant') ? pickup : dropoff;
-    return Geolocator.distanceBetween(_currentLocation!.latitude, _currentLocation!.longitude, target.latitude, target.longitude) / 1000;
-  }
 
   void _updateStatus(String nextStatus) async => await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': nextStatus});
 
@@ -364,5 +337,22 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'driver_cancelled_reseeking', 'lastDriverId': _uid, 'driverId': FieldValue.delete()});
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleBackAction(); },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            _buildMap(),
+            Positioned(top: 0, left: 0, right: 0, child: _buildCustomAppBar()),
+            Positioned(bottom: 0, left: 0, right: 0, child: _buildBottomPanel()),
+          ],
+        ),
+      ),
+    );
   }
 }
