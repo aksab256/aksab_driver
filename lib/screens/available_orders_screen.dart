@@ -25,7 +25,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   @override
   void initState() {
     super.initState();
-    _showLocationDisclosure(); // البدء برسالة الإفصاح القانونية
+    _showLocationDisclosure();
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -37,11 +37,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     super.dispose();
   }
 
-  // --- ⚖️ رسالة الإفصاح القانونية (متطلبات جوجل) ---
   Future<void> _showLocationDisclosure() async {
-    // نتحقق أولاً هل الإذن ممنوح فعلاً؟
     LocationPermission permission = await Geolocator.checkPermission();
-    
     if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
       if (!mounted) return;
       await showDialog(
@@ -59,25 +56,18 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               ],
             ),
             content: const Text(
-              "يقوم تطبيق (أكسب مندوب) بجمع بيانات الموقع لتمكين تتبع الرحلات وتحديث حالة الطلبات للعملاء في الوقت الفعلي، "
-              "وتوزيع الطلبات القريبة منك حتى عندما يكون التطبيق مغلقاً أو غير مستخدم.\n\n"
+              "يقوم تطبيق (أكسب مندوب) بجمع بيانات الموقع لتمكين تتبع الرحلات وتحديث حالة الطلبات حتى عندما يكون التطبيق مغلقاً.\n\n"
               "يساعد هذا في ضمان وصول الشحنة بدقة وحماية حقوقك المالية (نقاط التأمين).",
               style: TextStyle(fontFamily: 'Cairo', fontSize: 14),
             ),
             actions: [
               TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  setState(() => _isGettingLocation = false);
-                },
+                onPressed: () { Navigator.pop(context); setState(() => _isGettingLocation = false); },
                 child: const Text("رفض", style: TextStyle(color: Colors.grey, fontFamily: 'Cairo')),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                onPressed: () {
-                  Navigator.pop(context);
-                  _initSequence(); // الانتقال لطلب الإذن الفعلي
-                },
+                onPressed: () { Navigator.pop(context); _initSequence(); },
                 child: const Text("موافق ومتابعة", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
               ),
             ],
@@ -95,7 +85,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       if (mounted) setState(() => _isGettingLocation = false);
       return;
     }
-    LocationPermission permission = await Geolocator.requestPermission();
+    await Geolocator.requestPermission();
     try {
       Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       if (mounted) setState(() { _myCurrentLocation = pos; _isGettingLocation = false; });
@@ -112,14 +102,14 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         
-        if (orderSnap.exists && orderSnap.get('status') == 'pending') {
+        if (orderSnap.exists && (orderSnap.get('status') == 'pending' || orderSnap.get('status') == 'no_drivers_available')) {
           transaction.update(orderRef, {
             'status': 'accepted',
             'driverId': _uid,
             'acceptedAt': FieldValue.serverTimestamp(),
           });
         } else {
-          throw Exception("عذراً، الطلب تم قبوله من كابتن آخر");
+          throw Exception("عذراً، الطلب لم يعد متاحاً");
         }
       });
 
@@ -160,7 +150,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('specialRequests')
-                .where('status', isEqualTo: 'pending')
+                .where('status', whereIn: ['pending', 'no_drivers_available'])
                 .where('vehicleType', isEqualTo: cleanType)
                 .snapshots(),
             builder: (context, snapshot) {
@@ -193,16 +183,19 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Widget _buildOrderCard(DocumentSnapshot doc, double cashBalance) {
     var data = doc.data() as Map<String, dynamic>;
     
-    // ✅ الحقول الدقيقة حسب الداتابيز الحقيقية المرسلة
-    double total = double.tryParse(data['total']?.toString() ?? '0') ?? 0.0;
-    double commission = double.tryParse(data['unrealizedCommissionAmount']?.toString() ?? '0') ?? 0.0;
-    double driverNet = double.tryParse(data['netTotal']?.toString() ?? '0') ?? 0.0; // سنعتبر netTotal هو الربح للآن
-    
-    // تأمين العهدة (المبلغ المطلوب توفره في محفظة المندوب)
-    double insuranceRequired = total; 
+    // ✅ القراءة من الحقول الصحيحة حسب بيانات Firebase المرسلة
+    double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
+    double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
+    double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0;
+    double orderFinalAmount = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0;
+
+    // ⚖️ حسبة تأمين العهدة (المبلغ المراد خصمه من المحفظة مؤقتاً)
+    // العهدة = المبلغ الذي سيحصله المندوب - ربحه الصافي من التوصيلة
+    double insuranceRequired = (orderFinalAmount > 0) ? (orderFinalAmount - driverNet) : totalPrice;
+    if (insuranceRequired < 0) insuranceRequired = 0;
 
     bool canAccept = cashBalance >= insuranceRequired;
-    bool isMerchant = data['sellerId'] != null;
+    bool isMerchant = data['requestSource'] == 'retailer';
 
     Color goldPrimary = const Color(0xFFFFD700); 
     Color themeColor = isMerchant ? goldPrimary : (canAccept ? const Color(0xFF2D9E68) : const Color(0xFFD32F2F));
@@ -224,7 +217,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   children: [
                     Icon(isMerchant ? FontAwesomeIcons.crown : Icons.delivery_dining, color: contentColor, size: 20),
                     SizedBox(width: 2.w),
-                    Text("ربحك الصافي: $driverNet ج.م", style: TextStyle(color: contentColor, fontWeight: FontWeight.w900, fontSize: 13.sp, fontFamily: 'Cairo')),
+                    Text("صافي ربحك: $driverNet ج.م", style: TextStyle(color: contentColor, fontWeight: FontWeight.w900, fontSize: 13.sp, fontFamily: 'Cairo')),
                   ],
                 ),
                 if (!canAccept) const Icon(Icons.warning_amber_rounded, color: Colors.white),
@@ -237,31 +230,31 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 Row(
                   children: [
-                    _buildFinanceInfo("تأمين عهدة", "$insuranceRequired ن", Icons.lock_outline),
-                    _buildFinanceInfo("رسوم الخدمة", "$commission ن", Icons.receipt_long_outlined),
+                    _buildFinanceInfo("تأمين عهدة", "${insuranceRequired.toStringAsFixed(2)} ن", Icons.lock_outline),
+                    _buildFinanceInfo("قيمة التحصيل", "${orderFinalAmount.toStringAsFixed(2)} ج.م", Icons.payments_outlined),
                   ],
                 ),
                 Divider(height: 4.h, thickness: 1),
-                _buildRouteRow(Icons.store_mall_directory_rounded, "استلام من:", data['pickupAddress'] ?? "المحل", Colors.orange),
-                _buildRouteRow(Icons.location_on_rounded, "تسليم إلى:", data['dropoffAddress'] ?? "العميل", Colors.red),
+                _buildRouteRow(Icons.store_mall_directory_rounded, "استلام من: ${data['userName'] ?? 'الموقع'}", data['pickupAddress'] ?? "", Colors.orange),
+                _buildRouteRow(Icons.location_on_rounded, "تسليم إلى: ${data['customerName'] ?? 'العميل'}", data['dropoffAddress'] ?? "", Colors.red),
                 const Divider(height: 30),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("إجمالي قيمة الطلب:", style: TextStyle(fontSize: 11.sp, color: Colors.grey[800], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-                    Text("$total ج.م", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15.sp, color: Colors.black)),
+                    Text("إجمالي تكلفة الشحن:", style: TextStyle(fontSize: 11.sp, color: Colors.grey[800], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                    Text("$totalPrice ج.م", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15.sp, color: Colors.black)),
                   ],
                 ),
                 SizedBox(height: 2.h),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: canAccept ? themeColor : Colors.grey[400],
+                    backgroundColor: canAccept ? (isMerchant ? goldPrimary : Colors.green[800]) : Colors.grey[400],
                     minimumSize: Size(100.w, 7.5.h),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                   ),
                   onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
                   child: Text(
-                    canAccept ? "قبول وتأمين عهدة" : "رصيدك لا يغطي التأمين ($insuranceRequired ن)",
+                    canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيدك لا يغطي التأمين ($insuranceRequired ن)",
                     style: TextStyle(color: isMerchant ? contentColor : Colors.white, fontWeight: FontWeight.w900, fontSize: 12.sp, fontFamily: 'Cairo'),
                   ),
                 ),
@@ -297,8 +290,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: TextStyle(fontSize: 9.sp, color: Colors.grey[700], fontFamily: 'Cairo')),
-                Text(addr, style: TextStyle(fontSize: 10.5.sp, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Cairo'), maxLines: 2, overflow: TextOverflow.ellipsis),
+                Text(label, style: TextStyle(fontSize: 9.sp, color: Colors.grey[700], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                Text(addr, style: TextStyle(fontSize: 10.5.sp, color: Colors.black87, fontFamily: 'Cairo'), maxLines: 2, overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
