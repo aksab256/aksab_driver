@@ -141,11 +141,17 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
         builder: (context, driverSnap) {
-          double cashBalance = 0;
+          // جلب بيانات محفظة المندوب (كاش وكريدت)
+          double walletBalance = 0.0;
+          double creditLimit = 0.0;
+          
           if (driverSnap.hasData && driverSnap.data!.exists) {
             var dData = driverSnap.data!.data() as Map<String, dynamic>;
-            cashBalance = double.tryParse(dData['walletBalance']?.toString() ?? '0') ?? 0.0;
+            walletBalance = double.tryParse(dData['walletBalance']?.toString() ?? '0') ?? 0.0;
+            creditLimit = double.tryParse(dData['creditLimit']?.toString() ?? '0') ?? 0.0;
           }
+
+          double totalFinancialPower = walletBalance + creditLimit;
 
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
@@ -171,7 +177,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               return ListView.builder(
                 padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
                 itemCount: nearbyOrders.length,
-                itemBuilder: (context, index) => _buildOrderCard(nearbyOrders[index], cashBalance),
+                itemBuilder: (context, index) => _buildOrderCard(nearbyOrders[index], walletBalance, totalFinancialPower),
               );
             },
           );
@@ -180,21 +186,24 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
-  Widget _buildOrderCard(DocumentSnapshot doc, double cashBalance) {
+  Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance, double totalPower) {
     var data = doc.data() as Map<String, dynamic>;
     
-    // ✅ القراءة من الحقول الصحيحة حسب بيانات Firebase المرسلة
+    // ✅ استخراج القيم المالية من الحقول الفعلية
     double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
     double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
     double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0;
     double orderFinalAmount = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0;
 
-    // ⚖️ حسبة تأمين العهدة (المبلغ المراد خصمه من المحفظة مؤقتاً)
-    // العهدة = المبلغ الذي سيحصله المندوب - ربحه الصافي من التوصيلة
-    double insuranceRequired = (orderFinalAmount > 0) ? (orderFinalAmount - driverNet) : totalPrice;
+    // ⚖️ منطق العهدة: المندوب يؤمن (قيمة التحصيل - ربحه الصافي)
+    double insuranceRequired = (orderFinalAmount > 0) ? (orderFinalAmount - driverNet) : 0.0;
     if (insuranceRequired < 0) insuranceRequired = 0;
 
-    bool canAccept = cashBalance >= insuranceRequired;
+    // 🚩 شروط التحقق المزدوج لفتح الزرار
+    bool hasCashForInsurance = walletBalance >= insuranceRequired;
+    bool hasTotalForCommission = totalPower >= commission;
+    bool canAccept = hasCashForInsurance && hasTotalForCommission;
+
     bool isMerchant = data['requestSource'] == 'retailer';
 
     Color goldPrimary = const Color(0xFFFFD700); 
@@ -220,7 +229,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     Text("صافي ربحك: $driverNet ج.م", style: TextStyle(color: contentColor, fontWeight: FontWeight.w900, fontSize: 13.sp, fontFamily: 'Cairo')),
                   ],
                 ),
-                if (!canAccept) const Icon(Icons.warning_amber_rounded, color: Colors.white),
+                if (!canAccept) const Icon(Icons.lock_clock, color: Colors.white, size: 20),
               ],
             ),
           ),
@@ -230,32 +239,45 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 Row(
                   children: [
-                    _buildFinanceInfo("تأمين عهدة", "${insuranceRequired.toStringAsFixed(2)} ن", Icons.lock_outline),
-                    _buildFinanceInfo("قيمة التحصيل", "${orderFinalAmount.toStringAsFixed(2)} ج.م", Icons.payments_outlined),
+                    _buildFinanceInfo("تأمين عهدة", "${insuranceRequired.toStringAsFixed(2)} ن", Icons.security),
+                    _buildFinanceInfo("قيمة التحصيل", "${orderFinalAmount.toStringAsFixed(2)} ج.م", Icons.shopping_bag_outlined),
                   ],
                 ),
                 Divider(height: 4.h, thickness: 1),
-                _buildRouteRow(Icons.store_mall_directory_rounded, "استلام من: ${data['userName'] ?? 'الموقع'}", data['pickupAddress'] ?? "", Colors.orange),
-                _buildRouteRow(Icons.location_on_rounded, "تسليم إلى: ${data['customerName'] ?? 'العميل'}", data['dropoffAddress'] ?? "", Colors.red),
+                _buildRouteRow(Icons.radio_button_checked, "استلام من: ${data['userName'] ?? 'الموقع'}", data['pickupAddress'] ?? "", Colors.orange),
+                _buildRouteRow(Icons.location_on, "تسليم إلى: ${data['customerName'] ?? 'العميل'}", data['dropoffAddress'] ?? "", Colors.red),
                 const Divider(height: 30),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("إجمالي تكلفة الشحن:", style: TextStyle(fontSize: 11.sp, color: Colors.grey[800], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                    Text("إجمالي قيمة الطلب:", style: TextStyle(fontSize: 11.sp, color: Colors.grey[800], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
                     Text("$totalPrice ج.م", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15.sp, color: Colors.black)),
                   ],
                 ),
                 SizedBox(height: 2.h),
+                
+                // زر القبول يعمل كصمام أمان (Validation Only)
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: canAccept ? (isMerchant ? goldPrimary : Colors.green[800]) : Colors.grey[400],
                     minimumSize: Size(100.w, 7.5.h),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    elevation: canAccept ? 4 : 0,
                   ),
                   onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
                   child: Text(
-                    canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيدك لا يغطي التأمين ($insuranceRequired ن)",
-                    style: TextStyle(color: isMerchant ? contentColor : Colors.white, fontWeight: FontWeight.w900, fontSize: 12.sp, fontFamily: 'Cairo'),
+                    canAccept 
+                      ? "تأكيد العهدة وقبول الطلب" 
+                      : !hasCashForInsurance 
+                          ? "رصيد الكاش لا يغطي العهدة ($insuranceRequired ن)"
+                          : "الرصيد لا يغطي عمولة المنصة ($commission ن)",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: canAccept ? (isMerchant ? contentColor : Colors.white) : Colors.grey[700], 
+                      fontWeight: FontWeight.w900, 
+                      fontSize: 11.sp, 
+                      fontFamily: 'Cairo'
+                    ),
                   ),
                 ),
               ],
