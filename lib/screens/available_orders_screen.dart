@@ -94,19 +94,33 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
+  /// ✅ الدالة المحسنة لضمان الربط مع السيرفر والتاجر
   Future<void> _acceptOrder(String orderId) async {
     try {
-      showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
+      showDialog(
+        context: context, 
+        barrierDismissible: false, 
+        builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange))
+      );
       
+      // 1. جلب اسم المندوب الحالي من ملفه الشخصي
+      DocumentSnapshot driverProfile = await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).get();
+      String driverName = driverProfile.exists ? (driverProfile.get('fullname') ?? "مندوب") : "مندوب";
+
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         
         if (orderSnap.exists && (orderSnap.get('status') == 'pending' || orderSnap.get('status') == 'no_drivers_available')) {
+          
+          // 2. تحديث الحقول التي يراقبها السيرفر (EC2) والتاجر
           transaction.update(orderRef, {
-            'status': 'accepted',
-            'driverId': _uid,
+            'status': 'accepted',              // الحالة المطلوبة للسيرفر
+            'driverId': _uid,                 // لربط المحفظة
+            'driverName': driverName,         // ليظهر عند التاجر فوراً
             'acceptedAt': FieldValue.serverTimestamp(),
+            'moneyLocked': false,             // إشارة للسيرفر لبدء خصم النقاط
+            'serverNote': "تأكيد العهدة: جاري معالجة الطلب ماليًا...",
           });
         } else {
           throw Exception("عذراً، الطلب لم يعد متاحاً");
@@ -114,13 +128,21 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       });
 
       if (mounted) {
-        Navigator.pop(context);
-        Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)), (route) => false);
+        Navigator.pop(context); // إغلاق التحميل
+        // 3. الانتقال لصفحة تتبع الطلب النشط
+        Navigator.pushAndRemoveUntil(
+          context, 
+          MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)), 
+          (route) => false
+        );
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString(), style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.toString().replaceAll("Exception: ", ""), style: const TextStyle(fontFamily: 'Cairo')), 
+          backgroundColor: Colors.red
+        ));
       }
     }
   }
@@ -141,7 +163,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
         builder: (context, driverSnap) {
-          // جلب بيانات محفظة المندوب (كاش وكريدت)
           double walletBalance = 0.0;
           double creditLimit = 0.0;
           
@@ -171,7 +192,14 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               }).toList();
 
               if (nearbyOrders.isEmpty) {
-                return Center(child: Text("لا توجد طلبات متاحة حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp)));
+                return Center(child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.radar, size: 50, color: Colors.grey[400]),
+                    const SizedBox(height: 10),
+                    Text("لا توجد طلبات متاحة حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, color: Colors.grey)),
+                  ],
+                ));
               }
 
               return ListView.builder(
@@ -189,17 +217,14 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance, double totalPower) {
     var data = doc.data() as Map<String, dynamic>;
     
-    // ✅ استخراج القيم المالية من الحقول الفعلية
     double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
     double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
     double commission = double.tryParse(data['commissionAmount']?.toString() ?? '0') ?? 0.0;
     double orderFinalAmount = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0;
 
-    // ⚖️ منطق العهدة: المندوب يؤمن (قيمة التحصيل - ربحه الصافي)
     double insuranceRequired = (orderFinalAmount > 0) ? (orderFinalAmount - driverNet) : 0.0;
     if (insuranceRequired < 0) insuranceRequired = 0;
 
-    // 🚩 شروط التحقق المزدوج لفتح الزرار
     bool hasCashForInsurance = walletBalance >= insuranceRequired;
     bool hasTotalForCommission = totalPower >= commission;
     bool canAccept = hasCashForInsurance && hasTotalForCommission;
@@ -256,7 +281,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 ),
                 SizedBox(height: 2.h),
                 
-                // زر القبول يعمل كصمام أمان (Validation Only)
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: canAccept ? (isMerchant ? goldPrimary : Colors.green[800]) : Colors.grey[400],
