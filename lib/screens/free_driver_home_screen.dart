@@ -174,11 +174,12 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     if (doc.exists && mounted) setState(() => isOnline = doc.data()?['isOnline'] ?? false);
   }
 
+  // ✅ تعديل: إضافة حالات المرتجع لضمان عدم فقدان الرحلة النشطة عند الخروج والعودة
   void _listenToActiveOrders() {
     FirebaseFirestore.instance
         .collection('specialRequests')
         .where('driverId', isEqualTo: uid)
-        .where('status', whereIn: ['accepted', 'picked_up'])
+        .where('status', whereIn: ['accepted', 'picked_up', 'returning_to_seller', 'returning_to_merchant'])
         .snapshots()
         .listen((snap) {
       if (mounted) setState(() => _activeOrderId = snap.docs.isNotEmpty ? snap.docs.first.id : null);
@@ -376,17 +377,56 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
+  // ✅ تعديل: تحديث نص البانر ولونه بناءً على حالة المرتجع
   Widget _buildActiveOrderBanner() {
-    return GestureDetector(
-      onTap: () => setState(() => _selectedIndex = 1),
-      child: Container(margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10), padding: const EdgeInsets.all(18), decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.orange[800]!, Colors.orange[600]!]), borderRadius: BorderRadius.circular(25)), child: const Row(children: [Icon(Icons.directions_run_rounded, color: Colors.white), SizedBox(width: 15), Expanded(child: Text("لديك رحلة نشطة الآن..", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontFamily: 'Cairo'))), Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18)])),
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('specialRequests').doc(_activeOrderId).snapshots(),
+      builder: (context, snap) {
+        bool isReturning = false;
+        if (snap.hasData && snap.data!.exists) {
+          String status = snap.data!['status'] ?? '';
+          isReturning = status.contains('returning');
+        }
+
+        return GestureDetector(
+          onTap: () => setState(() => _selectedIndex = 1),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isReturning 
+                  ? [Colors.red[800]!, Colors.red[600]!] 
+                  : [Colors.orange[800]!, Colors.orange[600]!]
+              ),
+              borderRadius: BorderRadius.circular(25)
+            ),
+            child: Row(
+              children: [
+                Icon(isReturning ? Icons.assignment_return : Icons.directions_run_rounded, color: Colors.white),
+                const SizedBox(width: 15),
+                Expanded(
+                  child: Text(
+                    isReturning ? "لديك مرتجع يجب تسليمه للتاجر.. 🔄" : "لديك رحلة نشطة الآن..",
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontFamily: 'Cairo')
+                  )
+                ),
+                const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 18)
+              ]
+            )
+          ),
+        );
+      }
     );
   }
 
   Widget _buildOtherPages() {
     return [
       const SizedBox(), // يتم استبدالها بـ Dashboard في الـ body الأساسي
-      _activeOrderId != null ? ActiveOrderScreen(orderId: _activeOrderId!) : AvailableOrdersScreen(vehicleType: _vehicleConfig), 
+      // ✅ تعديل منطق الانتقال: إذا وجد أي طلب نشط (بما في ذلك المرتجع) يفتح شاشة التتبع فوراً
+      _activeOrderId != null 
+          ? ActiveOrderScreen(orderId: _activeOrderId!) 
+          : AvailableOrdersScreen(vehicleType: _vehicleConfig), 
       const OrdersHistoryScreen(), 
       const WalletScreen()
     ][_selectedIndex];
