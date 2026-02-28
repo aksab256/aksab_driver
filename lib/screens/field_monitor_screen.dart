@@ -4,8 +4,6 @@ import 'package:sizer/sizer.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// اسم الملف المقترح: field_monitor_screen.dart
-
 class FieldMonitorScreen extends StatefulWidget {
   const FieldMonitorScreen({super.key});
 
@@ -51,31 +49,44 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
   }
 
   Widget _buildOrdersList({required bool isOnlyReturns}) {
-    // تحديد الحالات المطلوبة
     List<String> statuses = isOnlyReturns 
         ? ['returning_to_seller'] 
         : ['pending', 'accepted', 'picked_up', 'returning_to_seller'];
 
     return StreamBuilder<QuerySnapshot>(
+      // تم إزالة orderBy من هنا لمنع اختفاء البيانات بسبب نقص الفهرس
       stream: FirebaseFirestore.instance
           .collection('specialRequests')
           .where('status', whereIn: statuses)
-          .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text("حدث خطأ في جلب البيانات", style: TextStyle(fontFamily: 'Cairo')));
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return Center(child: Text(isOnlyReturns ? "لا توجد مرتجعات حالياً" : "لا توجد رحلات نشطة", 
             style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)));
         }
 
+        // --- ترتيب البيانات يدوياً (الأحدث أولاً) لضمان الاستقرار ---
+        List<QueryDocumentSnapshot> sortedDocs = snapshot.data!.docs;
+        sortedDocs.sort((a, b) {
+          var aData = a.data() as Map<String, dynamic>;
+          var bData = b.data() as Map<String, dynamic>;
+          Timestamp? aTime = aData['createdAt'];
+          Timestamp? bTime = bData['createdAt'];
+          if (aTime == null || bTime == null) return 0;
+          return bTime.compareTo(aTime);
+        });
+
         return ListView.builder(
           padding: EdgeInsets.all(10.sp),
-          itemCount: snapshot.data!.docs.length,
+          itemCount: sortedDocs.length,
           itemBuilder: (context, index) {
-            var order = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+            var order = sortedDocs[index].data() as Map<String, dynamic>;
             return _buildOrderCard(order);
           },
         );
@@ -94,7 +105,6 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
       elevation: 3,
       child: Column(
         children: [
-          // شريط الحالة العلوي
           Container(
             padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 6.sp),
             decoration: BoxDecoration(
@@ -119,7 +129,7 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
                 Row(
                   children: [
                     CircleAvatar(backgroundColor: Colors.blueGrey[50], child: Icon(Icons.person, color: Colors.blueGrey[800])),
-                    SizedBox(width: 10),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -131,7 +141,6 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
                         ],
                       ),
                     ),
-                    // زر اتصال سريع بالمندوب (إذا كان موجوداً) أو صاحب الطلب
                     IconButton(
                       icon: const Icon(Icons.phone_forwarded, color: Colors.green),
                       onPressed: () => launchUrl(Uri.parse("tel:${data['userPhone']}")),
@@ -140,7 +149,7 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
                 ),
                 const Divider(),
                 _locationLine(Icons.store, "موقع الاستلام: ${data['pickupAddress']}"),
-                SizedBox(height: 5),
+                const SizedBox(height: 5),
                 _locationLine(Icons.location_on, "موقع التسليم: ${data['dropoffAddress']}"),
                 const Divider(),
                 Row(
@@ -150,7 +159,7 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
                       children: [
                         Icon(isMoneyLocked ? Icons.shield : Icons.error_outline, 
                           color: isMoneyLocked ? Colors.green : Colors.red, size: 14.sp),
-                        SizedBox(width: 5),
+                        const SizedBox(width: 5),
                         Text(isMoneyLocked ? "عهدة مؤمنة ✅" : "عهدة غير مؤمنة ❌", 
                           style: TextStyle(fontFamily: 'Cairo', fontSize: 10.sp, fontWeight: FontWeight.bold)),
                       ],
@@ -189,5 +198,3 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
     }
   }
 }
-
-
