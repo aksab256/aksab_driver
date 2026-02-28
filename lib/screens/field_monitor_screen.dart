@@ -17,7 +17,6 @@ class FieldMonitorScreen extends StatefulWidget {
 
 class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  
   String? userRole;
   List<String> myAreas = [];
   Map<String, dynamic>? geoJsonData;
@@ -109,13 +108,14 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
       appBar: AppBar(
         elevation: 0,
         title: Text(userRole == 'delivery_manager' ? "رقابة العهد (عام)" : "متابعة النطاق الجغرافي", 
-          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14.sp, color: Colors.white)),
+          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp, color: Colors.white)),
         centerTitle: true,
         backgroundColor: Colors.blueGrey[900],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.orangeAccent,
-          indicatorWeight: 3,
+          indicatorWeight: 4,
+          labelStyle: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11.sp),
           tabs: const [ Tab(text: "الرحلات النشطة"), Tab(text: "المرتجع 🚨") ],
         ),
       ),
@@ -138,7 +138,6 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
           return _shouldShowOrder(doc.data() as Map<String, dynamic>);
         }).toList();
 
-        // حساب إحصائيات العدادات بناءً على الطلبات الجارية في منطقة المشرف فقط
         int pendingCount = filteredDocs.where((d) => d['status'] == 'pending').length;
         double totalInsurance = filteredDocs.fold(0.0, (sum, item) {
           var data = item.data() as Map<String, dynamic>;
@@ -153,14 +152,12 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
 
         return Column(
           children: [
-            // العدادات الاحترافية (Dashboard Header)
             _buildStatsDashboard(pendingCount, totalInsurance, filteredDocs.length),
-            
             Expanded(
               child: filteredDocs.isEmpty 
-              ? Center(child: Text("لا توجد بيانات متاحة لنطاقك حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp)))
+              ? Center(child: Text("لا توجد بيانات حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)))
               : ListView.builder(
-                  padding: EdgeInsets.all(10.sp),
+                  padding: EdgeInsets.fromLTRB(10.sp, 5.sp, 10.sp, 15.sp),
                   itemCount: filteredDocs.length,
                   itemBuilder: (context, index) => _buildOrderCard(filteredDocs[index].data() as Map<String, dynamic>),
                 ),
@@ -173,10 +170,10 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
 
   Widget _buildStatsDashboard(int pending, double insurance, int total) {
     return Container(
-      padding: EdgeInsets.fromLTRB(10.sp, 0, 10.sp, 15.sp),
+      padding: EdgeInsets.fromLTRB(10.sp, 5.sp, 10.sp, 15.sp),
       decoration: BoxDecoration(
         color: Colors.blueGrey[900],
-        borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(25), bottomRight: Radius.circular(25)),
+        borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(30), bottomRight: Radius.circular(30)),
       ),
       child: Row(
         children: [
@@ -193,18 +190,18 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
   Widget _statCard(String label, String value, IconData icon, Color color) {
     return Expanded(
       child: Container(
-        padding: EdgeInsets.symmetric(vertical: 10.sp),
+        padding: EdgeInsets.symmetric(vertical: 12.sp),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: Colors.white.withOpacity(0.1)),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.15)),
         ),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 16.sp),
-            SizedBox(height: 4.sp),
-            Text(value, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12.sp, height: 1.1)),
-            Text(label, style: TextStyle(color: Colors.white70, fontSize: 7.sp, fontFamily: 'Cairo')),
+            Icon(icon, color: color, size: 20.sp),
+            SizedBox(height: 5.sp),
+            Text(value, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16.sp, height: 1.1)),
+            Text(label, style: TextStyle(color: Colors.white70, fontSize: 9.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -217,32 +214,25 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
     bool isMoneyLocked = data['moneyLocked'] ?? false;
 
     return Card(
-      margin: EdgeInsets.only(bottom: 12.sp),
-      elevation: 3,
-      shadowColor: Colors.black26,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      margin: EdgeInsets.only(top: 10.sp),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Column(
         children: [
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp),
+            padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 10.sp),
             decoration: BoxDecoration(
-              color: status == 'returning_to_seller' ? Colors.red[900] : (isRetailer ? Colors.blue[900] : Colors.orange[800]),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+              color: status == 'returning_to_seller' ? Colors.red[900] : (isRetailer ? Colors.blue[900] : Colors.orange[900]),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(isRetailer ? Icons.storefront : Icons.person_outline, color: Colors.white, size: 12.sp),
-                    SizedBox(width: 5),
-                    Text(data['userName'] ?? '', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 9.sp, fontFamily: 'Cairo')),
-                  ],
-                ),
+                Text(data['userName'] ?? '', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5.sp, fontFamily: 'Cairo')),
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(10)),
-                  child: Text(_translateStatus(status), style: TextStyle(color: Colors.white, fontSize: 8.sp, fontWeight: FontWeight.w500)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(12)),
+                  child: Text(_translateStatus(status), style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -253,48 +243,44 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      backgroundColor: Colors.blueGrey[50],
-                      child: Icon(Icons.delivery_dining, color: Colors.blueGrey[900]),
-                    ),
-                    SizedBox(width: 10),
+                    CircleAvatar(radius: 22.sp, backgroundColor: Colors.blueGrey[50], child: Icon(Icons.person, size: 22.sp, color: Colors.blueGrey[800])),
+                    SizedBox(width: 12.sp),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(data['driverName'] ?? "في انتظار قبول المندوب...", 
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10.sp, color: Colors.black87)),
+                          Text(data['driverName'] ?? "في انتظار مندوب...", 
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.black87, fontFamily: 'Cairo')),
                           Text("تأمين العهدة: ${data['insurance_points'] ?? 0} نقطة", 
-                            style: TextStyle(color: Colors.blue[900], fontSize: 9.sp, fontWeight: FontWeight.bold)),
+                            style: TextStyle(color: Colors.blue[900], fontSize: 11.5.sp, fontWeight: FontWeight.w900)),
                         ],
                       ),
                     ),
-                    if (data['userPhone'] != null)
-                      IconButton(
-                        icon: CircleAvatar(backgroundColor: Colors.green[50], child: Icon(Icons.phone, color: Colors.green, size: 15.sp)), 
-                        onPressed: () => launchUrl(Uri.parse("tel:${data['userPhone']}"))
-                      ),
+                    IconButton(
+                      icon: CircleAvatar(radius: 20.sp, backgroundColor: Colors.green[600], child: const Icon(Icons.phone, color: Colors.white)), 
+                      onPressed: () => launchUrl(Uri.parse("tel:${data['userPhone']}"))
+                    ),
                   ],
                 ),
-                const Divider(height: 20),
-                _locationLine(Icons.location_on_outlined, "الاستلام: ${data['pickupAddress']}"),
-                SizedBox(height: 5),
-                _locationLine(Icons.flag_outlined, "التسليم: ${data['dropoffAddress']}"),
-                const Divider(height: 20),
+                const Divider(height: 25, thickness: 1),
+                _locationLine(Icons.location_on, "من: ${data['pickupAddress']}"),
+                SizedBox(height: 8.sp),
+                _locationLine(Icons.flag_circle, "إلى: ${data['dropoffAddress']}"),
+                const Divider(height: 25, thickness: 1),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
                       children: [
-                        Icon(isMoneyLocked ? Icons.verified_user : Icons.gpp_maybe, 
-                          color: isMoneyLocked ? Colors.green : Colors.orange, size: 14.sp),
-                        SizedBox(width: 5),
-                        Text(isMoneyLocked ? "تأمين عهدة مكتمل" : "قيد تأمين النقاط", 
-                          style: TextStyle(color: isMoneyLocked ? Colors.green : Colors.orange, fontWeight: FontWeight.bold, fontSize: 9.sp)),
+                        Icon(isMoneyLocked ? Icons.verified_user : Icons.security_update_warning, 
+                          color: isMoneyLocked ? Colors.green[700] : Colors.orange[800], size: 16.sp),
+                        SizedBox(width: 6.sp),
+                        Text(isMoneyLocked ? "عهدة مؤمنة ✅" : "قيد التأمين ⚠️", 
+                          style: TextStyle(color: isMoneyLocked ? Colors.green[700] : Colors.orange[800], fontWeight: FontWeight.bold, fontSize: 11.sp)),
                       ],
                     ),
                     Text(data['createdAt'] != null ? DateFormat('hh:mm a').format(data['createdAt'].toDate()) : "",
-                      style: TextStyle(color: Colors.grey, fontSize: 8.sp)),
+                      style: TextStyle(color: Colors.grey[700], fontSize: 10.sp, fontWeight: FontWeight.bold)),
                   ],
                 )
               ],
@@ -308,9 +294,9 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
   Widget _locationLine(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 13.sp, color: Colors.blueGrey[300]),
-        SizedBox(width: 8),
-        Expanded(child: Text(text, style: TextStyle(fontSize: 9.sp, color: Colors.black54, fontFamily: 'Cairo'), overflow: TextOverflow.ellipsis)),
+        Icon(icon, size: 16.sp, color: Colors.blueGrey[400]),
+        SizedBox(width: 10.sp),
+        Expanded(child: Text(text, style: TextStyle(fontSize: 11.sp, color: Colors.black87, fontWeight: FontWeight.w500, fontFamily: 'Cairo'), overflow: TextOverflow.ellipsis)),
       ],
     );
   }
