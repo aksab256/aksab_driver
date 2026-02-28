@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math'; // مكتبة توليد الأرقام العشوائية
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -51,14 +51,14 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text("تنبيه الرحلة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
-          content: Text("هل تود العودة للقائمة الرئيسية؟ تتبع الرحلة سيستمر في الخلفية لضمان استرداد عهدتك المالية عند الوصول.", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)),
+          title: Text("تنبيه الرحلة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18.sp)),
+          content: Text("هل تود العودة للقائمة الرئيسية؟ تتبع الرحلة سيستمر في الخلفية لضمان استرداد عهدتك المالية عند الوصول.", style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp)),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: Text("بقاء في الرحلة", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 12.sp))),
+            TextButton(onPressed: () => Navigator.pop(context, false), child: Text("بقاء في الرحلة", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 13.sp))),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
               onPressed: () => Navigator.pop(context, true), 
-              child: Text("الرئيسية", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 12.sp))
+              child: Text("الرئيسية", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 13.sp))
             )
           ],
         ),
@@ -153,7 +153,22 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // --- لوحة التحكم السفلية ---
+  // --- زر الاتصال الموحد ---
+  Widget _phoneButton({required String? phone, required String label, required Color color}) {
+    if (phone == null || phone.isEmpty) return const SizedBox();
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        padding: EdgeInsets.symmetric(horizontal: 10.sp, vertical: 5.sp),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      onPressed: () => launchUrl(Uri.parse("tel:$phone")),
+      icon: Icon(Icons.phone_in_talk, color: Colors.white, size: 14.sp),
+      label: Text(label, style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 11.sp, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  // --- لوحة التحكم السفلية المحدثة ---
   Widget _buildBottomPanel() {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
@@ -172,53 +187,68 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         return SafeArea(
           bottom: true,
           child: Container(
-            margin: EdgeInsets.fromLTRB(12.sp, 0, 12.sp, 12.sp),
-            padding: EdgeInsets.all(20.sp),
+            margin: EdgeInsets.fromLTRB(10.sp, 0, 10.sp, 10.sp),
+            padding: EdgeInsets.all(18.sp),
             decoration: BoxDecoration(
               color: Colors.white, 
-              borderRadius: BorderRadius.circular(30), 
-              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 25)]
+              borderRadius: BorderRadius.circular(25), 
+              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 20)]
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildCircleAction(icon: Icons.navigation_rounded, label: "توجيه", color: Colors.blue[800]!, onTap: () => _launchGoogleMaps(targetLoc)),
-                    SizedBox(width: 6.w),
+                    SizedBox(width: 4.w),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(status.contains('returning') ? "🚨 رحلة مرتجع للتاجر" : (isAtPickup ? "نقطة الاستلام" : "نقطة التسليم"), 
-                               style: TextStyle(color: status.contains('returning') ? Colors.red : Colors.grey[600], fontSize: 11.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-                          Text(isAtPickup ? (data['pickupAddress'] ?? "الموقع") : (data['dropoffAddress'] ?? "العميل"), style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w900, fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          Text("${dist.toStringAsFixed(1)} كم متبقي للوجهة", style: TextStyle(color: Colors.blue[900], fontSize: 11.sp, fontWeight: FontWeight.bold)),
+                          Text(status.contains('returning') ? "🚨 عودة لتسليم المرتجع" : (isAtPickup ? "جهة الاستلام" : "جهة التسليم"), 
+                               style: TextStyle(color: status.contains('returning') ? Colors.red : Colors.grey[700], fontSize: 12.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                          Text(isAtPickup ? (data['pickupAddress'] ?? "الموقع") : (data['dropoffAddress'] ?? "العميل"), 
+                               style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.w900, fontFamily: 'Cairo', height: 1.2), maxLines: 2, overflow: TextOverflow.ellipsis),
+                          SizedBox(height: 5),
+                          Text("${dist.toStringAsFixed(1)} كم متبقي للوجهة", style: TextStyle(color: Colors.blue[900], fontSize: 13.sp, fontWeight: FontWeight.w900)),
                         ],
                       ),
                     ),
                   ],
                 ),
-                const Divider(height: 35),
+                SizedBox(height: 15),
+                // صف أزرار الاتصال الكبيرة
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Expanded(child: _phoneButton(phone: data['userPhone'], label: "اتصال بالراسل", color: Colors.orange[900]!)),
+                    if (!isAtPickup || isMerchant) ...[
+                      SizedBox(width: 10),
+                      Expanded(child: _phoneButton(phone: data['customerPhone'], label: "اتصال بالمستلم", color: Colors.green[800]!)),
+                    ]
+                  ],
+                ),
+                const Divider(height: 30, thickness: 1),
                 
                 if (status == 'accepted') 
                   moneyLocked 
-                    ? _mainButton("تأكيد استلام العهدة من التاجر 📦", Colors.orange[900]!, () => _showProfessionalOTP(data['verificationCode'], isMerchant, status))
-                    : Text("جاري معالجة تأمين العهدة...", style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, color: Colors.orange[900], fontWeight: FontWeight.bold))
+                    ? _mainButton("تأكيد استلام العهدة من التاجر 📦", Colors.orange[900]!, () => _showProfessionalOTP(data['verificationCode'], status))
+                    : Text("جاري معالجة تأمين العهدة...", style: TextStyle(fontFamily: 'Cairo', fontSize: 15.sp, color: Colors.orange[900], fontWeight: FontWeight.bold))
                 
                 else if (status == 'picked_up')
                   Row(children: [
-                    Expanded(child: _mainButton("رفض المستلم (مرتجع) ❌", Colors.red[800]!, () => _handleReturnFlow())),
+                    Expanded(child: _mainButton("رفض (مرتجع) ❌", Colors.red[800]!, () => _handleReturnFlow())),
                     const SizedBox(width: 12),
-                    Expanded(child: _mainButton("تم التسليم للعميل ✅", Colors.green[800]!, () => _completeOrder())),
+                    Expanded(child: _mainButton("تم التسليم ✅", Colors.green[800]!, () => _completeOrder())),
                   ])
                 
                 else if (status.contains('returning'))
                   Column(
                     children: [
-                      Text("يجب العودة للتاجر وتسليم الأمانات لإسترداد عهدتك", style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, color: Colors.red[900], fontWeight: FontWeight.bold)),
-                      SizedBox(height: 1.5.h),
-                      _mainButton("تأكيد تسليم المرتجع للتاجر 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(data['returnVerificationCode'] ?? data['verificationCode'], true, status)),
+                      Text("يجب العودة للتاجر لإسترداد عهدتك المالية", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.red[900], fontWeight: FontWeight.w900)),
+                      SizedBox(height: 10),
+                      _mainButton("تأكيد تسليم المرتجع للتاجر 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(data['returnVerificationCode'] ?? data['verificationCode'], status)),
                     ],
                   ),
               ],
@@ -229,10 +259,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  // --- واجهة الكود الاحترافية ---
-  void _showProfessionalOTP(String? correctCode, bool isMerchantAsset, String currentStatus) {
-    List<TextEditingController> ctrls = List.generate(4, (i) => TextEditingController());
-    List<FocusNode> nodes = List.generate(4, (i) => FocusNode());
+  // --- واجهة الكود الاحترافية (حقل واحد سهل) ---
+  void _showProfessionalOTP(String? correctCode, String currentStatus) {
+    final TextEditingController codeController = TextEditingController();
     bool isReturning = currentStatus.contains('returning');
 
     showDialog(
@@ -241,45 +270,53 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(isReturning ? "استلام التاجر للمرتجع" : "تأكيد استلام العهدة", style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+          title: Text(isReturning ? "تأكيد استلام المرتجع" : "استلام العهدة في أمانتك", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(isReturning 
-                ? "أدخل الكود من التاجر لتأكيد استلامه للبضاعة وفك حجز نقاطك."
-                : "أدخل الكود لتأكيد استلامك للشحنة في عهدتك الشخصية.", style: const TextStyle(fontFamily: 'Cairo')),
-              SizedBox(height: 2.5.h),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: List.generate(4, (i) => SizedBox(width: 13.w, child: TextField(
-                controller: ctrls[i], focusNode: nodes[i], textAlign: TextAlign.center, 
-                style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
-                keyboardType: TextInputType.number, maxLength: 1,
-                decoration: InputDecoration(counterText: "", border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
-                onChanged: (v) { if (v.isNotEmpty && i < 3) nodes[i + 1].requestFocus(); if (v.isEmpty && i > 0) nodes[i - 1].requestFocus(); },
-              )))),
+                ? "أدخل كود المرتجع من التاجر لفك حجز نقاطك فوراً."
+                : "أدخل الكود لتأكيد استلامك للشحنة في عهدتك الشخصية.", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)),
+              SizedBox(height: 20),
+              TextField(
+                controller: codeController,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                style: TextStyle(fontSize: 25.sp, fontWeight: FontWeight.bold, letterSpacing: 20),
+                decoration: InputDecoration(
+                  hintText: "----",
+                  counterText: "",
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                ),
+              ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo'))),
+            TextButton(onPressed: () => Navigator.pop(context), child: Text("إلغاء", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp))),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900]),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900], padding: EdgeInsets.symmetric(horizontal: 25, vertical: 10)),
               onPressed: () async {
-              if (ctrls.map((e) => e.text).join() == correctCode?.trim()) {
-                Navigator.pop(context);
-                if (isReturning) {
-                  // ✅ تحويل لـ returned_successfully لإخطار السيرفر برد المال فوراً
-                  await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
-                    'status': 'returned_successfully', 
-                    'updatedAt': FieldValue.serverTimestamp(),
-                  });
-                  await _stopBackgroundTracking();
-                  if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                if (codeController.text.trim() == correctCode?.trim()) {
+                  Navigator.pop(context);
+                  if (isReturning) {
+                    await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
+                      'status': 'returned_successfully', 
+                      'updatedAt': FieldValue.serverTimestamp(),
+                    });
+                    await _stopBackgroundTracking();
+                    if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                  } else {
+                    _updateStatus('picked_up');
+                  }
                 } else {
-                  _updateStatus('picked_up');
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("الكود غير صحيح، تأكد منه وحاول ثانية", textAlign: TextAlign.center)));
                 }
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("الكود غير صحيح", textAlign: TextAlign.center)));
-              }
-            }, child: const Text("تأكيد", style: TextStyle(fontFamily: 'Cairo', color: Colors.white))),
+              }, 
+              child: Text("تأكيد العملية", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 13.sp))
+            ),
           ],
         ),
       ),
@@ -294,29 +331,24 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         textDirection: TextDirection.rtl, 
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text("بدء المرتجع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), 
-          content: const Text("هل أكد العميل رفض الاستلام؟ سيتم توجيهك الآن للتاجر لاستعادة عهدتك. سيتم إصدار كود تأكيد جديد يظهر عند التاجر.", style: TextStyle(fontFamily: 'Cairo')), 
+          title: const Text("بدء إجراءات المرتجع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), 
+          content: const Text("سيتم توجيهك الآن لموقع التاجر لاستعادة عهدتك. سيظهر كود تأكيد جديد لدى التاجر لاستلامه الأمانات.", style: TextStyle(fontFamily: 'Cairo')), 
           actions: [
             TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), 
-            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("نعم، بدء المرتجع", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))
+            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("نعم، مرتجع", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))
           ]
         )
       )
     );
 
     if (confirm == true) {
-      // ✅ توليد كود مرتجع عشوائي مكون من 4 أرقام
       String generatedReturnCode = (1000 + Random().nextInt(8999)).toString();
-
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
         'status': 'returning_to_seller',
-        'returnVerificationCode': generatedReturnCode, // حفظ الكود الجديد للتاجر
+        'returnVerificationCode': generatedReturnCode,
         'updatedAt': FieldValue.serverTimestamp()
       });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("تم بدء المرتجع.. الوجهة الآن هي موقع التاجر", textAlign: TextAlign.center), backgroundColor: Colors.redAccent)
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم تحويل الوجهة لموقع التاجر", textAlign: TextAlign.center), backgroundColor: Colors.redAccent));
     }
   }
 
@@ -351,11 +383,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
           options: MapOptions(initialCenter: _currentLocation ?? LatLng(pickup.latitude, pickup.longitude), initialZoom: 15),
           children: [
             TileLayer(urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token=$_mapboxToken'),
-            if (_routePoints.isNotEmpty) PolylineLayer(polylines: [Polyline(points: _routePoints, color: Colors.blueAccent, strokeWidth: 5)]),
+            if (_routePoints.isNotEmpty) PolylineLayer(polylines: [Polyline(points: _routePoints, color: Colors.blueAccent, strokeWidth: 6)]),
             MarkerLayer(markers: [
-              if (_currentLocation != null) Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 40.sp)),
-              Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.location_on, color: status.contains('returning') ? Colors.red : Colors.orange[900], size: 32.sp)),
-              Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.black45, size: 32.sp)),
+              if (_currentLocation != null) Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 45.sp)),
+              Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.location_on, color: status.contains('returning') ? Colors.red : Colors.orange[900], size: 35.sp)),
+              Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.black, size: 35.sp)),
             ]),
           ],
         );
@@ -363,11 +395,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  Widget _mainButton(String label, Color color, VoidCallback onTap) => SizedBox(width: double.infinity, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: color, padding: EdgeInsets.symmetric(vertical: 2.h), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))), onPressed: onTap, child: Text(label, style: TextStyle(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))));
+  Widget _mainButton(String label, Color color, VoidCallback onTap) => SizedBox(width: double.infinity, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: color, padding: EdgeInsets.symmetric(vertical: 2.2.h), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))), onPressed: onTap, child: Text(label, style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))));
 
-  Widget _buildCircleAction({required IconData icon, required String label, required Color color, required VoidCallback onTap}) => InkWell(onTap: onTap, child: Column(children: [Container(padding: EdgeInsets.all(13.sp), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: color, size: 24.sp)), Text(label, style: TextStyle(color: color, fontSize: 10.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold))]));
+  Widget _buildCircleAction({required IconData icon, required String label, required Color color, required VoidCallback onTap}) => InkWell(onTap: onTap, child: Column(children: [Container(padding: EdgeInsets.all(12.sp), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: color, size: 26.sp)), Text(label, style: TextStyle(color: color, fontSize: 12.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold))]));
 
-  Widget _buildCustomAppBar() => SafeArea(child: Container(margin: EdgeInsets.all(12.sp), padding: EdgeInsets.symmetric(horizontal: 14.sp, vertical: 10.sp), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)]), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(onPressed: _handleBackAction, icon: const Icon(Icons.arrow_back_ios_new)), Text("تتبع الرحلة والعهدة", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')), StreamBuilder<DocumentSnapshot>(stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(), builder: (context, snap) { if (snap.hasData && snap.data!.exists && snap.data!['status'] == 'accepted') return IconButton(onPressed: _driverCancelOrder, icon: const Icon(Icons.cancel_outlined, color: Colors.red)); return SizedBox(width: 45.sp); })])));
+  Widget _buildCustomAppBar() => SafeArea(child: Container(margin: EdgeInsets.all(10.sp), padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)]), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(onPressed: _handleBackAction, icon: const Icon(Icons.arrow_back_ios_new)), Text("تتبع الرحلة والعهدة", style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')), StreamBuilder<DocumentSnapshot>(stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(), builder: (context, snap) { if (snap.hasData && snap.data!.exists && snap.data!['status'] == 'accepted') return IconButton(onPressed: _driverCancelOrder, icon: const Icon(Icons.cancel_outlined, color: Colors.red)); return SizedBox(width: 40.sp); })])));
 
   void _updateStatus(String nextStatus) async => await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': nextStatus, 'updatedAt': FieldValue.serverTimestamp()});
 
