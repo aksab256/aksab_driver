@@ -26,7 +26,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   void initState() {
     super.initState();
     _showLocationDisclosure();
-    // مؤقت لتحديث الواجهة كل ثانية (لحساب الوقت أو تحديثات الحالة البسيطة)
+    // المؤقت المسؤول عن تحديث العداد التنازلي كل ثانية في الواجهة
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -36,6 +36,19 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   void dispose() {
     _uiTimer?.cancel();
     super.dispose();
+  }
+
+  // دالة حساب الوقت المتبقي (15 دقيقة من تاريخ الإنشاء)
+  String _getTimerText(Timestamp? createdAt) {
+    if (createdAt == null) return "00:00";
+    DateTime expiryTime = createdAt.toDate().add(const Duration(minutes: 15));
+    Duration remaining = expiryTime.difference(DateTime.now());
+    
+    if (remaining.isNegative) return "منتهي";
+    
+    String minutes = remaining.inMinutes.toString().padLeft(2, '0');
+    String seconds = (remaining.inSeconds % 60).toString().padLeft(2, '0');
+    return "$minutes:$seconds";
   }
 
   Future<void> _showLocationDisclosure() async {
@@ -58,7 +71,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             ),
             content: Text(
               "يقوم تطبيق (أكسب مندوب) بجمع بيانات الموقع لتمكين تتبع الرحلات وتحديث حالة الطلبات حتى عندما يكون التطبيق مغلقاً.\n\n"
-              "يساعد هذا في ضمان وصول الشحنة بدقة وحماية حقوقك المالية (نقاط التأمين).",
+              "يساعد هذا في ضمان وصول الشحنة بدقة وحماية حقوقك المالية.",
               style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp),
             ),
             actions: [
@@ -110,7 +123,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         
-        if (orderSnap.exists && (orderSnap.get('status') == 'pending' || orderSnap.get('status') == 'no_drivers_available')) {
+        // التعديل: القبول فقط في حالة 'pending'
+        if (orderSnap.exists && orderSnap.get('status') == 'pending') {
           transaction.update(orderRef, {
             'status': 'accepted',
             'driverId': _uid,
@@ -120,7 +134,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             'serverNote': "تأكيد العهدة: جاري معالجة الطلب ماليًا...",
           });
         } else {
-          throw Exception("عذراً، الطلب لم يعد متاحاً");
+          throw Exception("عذراً، الطلب لم يعد متاحاً (تم إلغاؤه أو قبوله)");
         }
       });
 
@@ -173,7 +187,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('specialRequests')
-                .where('status', whereIn: ['pending', 'no_drivers_available'])
+                .where('status', isEqualTo: 'pending') // ✅ تم حذف حالة 'no_drivers_available'
                 .where('vehicleType', isEqualTo: cleanType)
                 .snapshots(),
             builder: (context, snapshot) {
@@ -226,11 +240,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     bool canAccept = hasCashForInsurance && hasTotalForCommission;
 
     bool isMerchant = data['requestSource'] == 'retailer';
+    String timeLeft = _getTimerText(data['createdAt'] as Timestamp?);
 
-    // الألوان الجديدة والتدرج
     const Color goldStart = Color(0xFFFFD700);
     const Color goldEnd = Color(0xFFFFA000);
-    const Color merchantContent = Color(0xFF5D4037); // بني غامق يتناسب مع الذهبي
+    const Color merchantContent = Color(0xFF5D4037); 
 
     return Card(
       elevation: 8,
@@ -238,7 +252,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
       child: Column(
         children: [
-          // هيدر الكارت المطور
           Container(
             padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
             decoration: BoxDecoration(
@@ -261,18 +274,33 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                          fontWeight: FontWeight.w900, fontSize: 15.sp, fontFamily: 'Cairo')),
                   ],
                 ),
-                if (isMerchant)
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), borderRadius: BorderRadius.circular(10)),
-                    child: Text("طلب مميز", style: TextStyle(color: merchantContent, fontSize: 9.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                // ✅ العداد التنازلي الموحد لجميع أنواع الكروت
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                if (!canAccept) const Icon(Icons.lock_clock, color: Colors.white, size: 22),
+                  child: Row(
+                    children: [
+                      Icon(Icons.timer_outlined, size: 14.sp, color: isMerchant ? merchantContent : Colors.white),
+                      SizedBox(width: 5),
+                      Text(
+                        timeLeft,
+                        style: TextStyle(
+                          color: isMerchant ? merchantContent : Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13.sp,
+                          fontFamily: 'Cairo',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
           
-          // جسم الكارت
           Padding(
             padding: EdgeInsets.all(5.w),
             child: Column(
@@ -285,9 +313,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 ),
                 Divider(height: 4.h, thickness: 1.5, color: Colors.grey[200]),
                 
-                _buildRouteRow(Icons.radio_button_checked, "استلام من: ${data['userName'] ?? 'الموقع'}", data['pickupAddress'] ?? "لم يتم تحديد العنوان بدقة", Colors.orange[800]!),
+                _buildRouteRow(Icons.radio_button_checked, "استلام من: ${data['userName'] ?? 'الموقع'}", data['pickupAddress'] ?? "لم يتم تحديد العنوان", Colors.orange[800]!),
                 SizedBox(height: 1.5.h),
-                _buildRouteRow(Icons.location_on, "تسليم إلى: ${data['customerName'] ?? 'العميل'}", data['dropoffAddress'] ?? "لم يتم تحديد العنوان بدقة", Colors.red[900]!),
+                _buildRouteRow(Icons.location_on, "تسليم إلى: ${data['customerName'] ?? 'العميل'}", data['dropoffAddress'] ?? "لم يتم تحديد العنوان", Colors.red[900]!),
                 
                 Divider(height: 4.h, thickness: 1.5, color: Colors.grey[200]),
                 
@@ -300,7 +328,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 ),
                 SizedBox(height: 3.h),
                 
-                // زر القبول المطور
                 InkWell(
                   onTap: canAccept ? () => _acceptOrder(doc.id) : null,
                   child: Container(
@@ -320,9 +347,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     child: Text(
                       canAccept 
                         ? "تأكيد العهدة وقبول الطلب" 
-                        : !hasCashForInsurance 
-                            ? "رصيد الكاش لا يغطي العهدة ($insuranceRequired ن)"
-                            : "الرصيد لا يغطي عمولة المنصة ($commission ن)",
+                        : "الرصيد لا يغطي الطلب",
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: canAccept ? (isMerchant ? merchantContent : Colors.white) : Colors.grey[700], 
