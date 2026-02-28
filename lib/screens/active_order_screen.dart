@@ -43,7 +43,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     super.dispose();
   }
 
-  // --- منع الخروج العشوائي لضمان حقوق المندوب المالية ---
   void _handleBackAction() async {
     final bool shouldExit = await showDialog(
       context: context,
@@ -153,7 +152,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // --- زر الاتصال الموحد ---
   Widget _phoneButton({required String? phone, required String label, required Color color}) {
     if (phone == null || phone.isEmpty) return const SizedBox();
     return ElevatedButton.icon(
@@ -168,7 +166,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  // --- لوحة التحكم السفلية المحدثة ---
   Widget _buildBottomPanel() {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
@@ -218,7 +215,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                   ],
                 ),
                 SizedBox(height: 15),
-                // صف أزرار الاتصال الكبيرة
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -233,22 +229,24 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                 
                 if (status == 'accepted') 
                   moneyLocked 
-                    ? _mainButton("تأكيد استلام العهدة من التاجر 📦", Colors.orange[900]!, () => _showProfessionalOTP(data['verificationCode'], status))
+                    ? _mainButton(isMerchant ? "تأكيد استلام العهدة من التاجر 📦" : "تأكيد استلام الأمانة من العميل 📦", Colors.orange[900]!, () => _showProfessionalOTP(data['verificationCode'], status, isMerchant))
                     : Text("جاري معالجة تأمين العهدة...", style: TextStyle(fontFamily: 'Cairo', fontSize: 15.sp, color: Colors.orange[900], fontWeight: FontWeight.bold))
                 
                 else if (status == 'picked_up')
-                  Row(children: [
-                    Expanded(child: _mainButton("رفض (مرتجع) ❌", Colors.red[800]!, () => _handleReturnFlow())),
-                    const SizedBox(width: 12),
-                    Expanded(child: _mainButton("تم التسليم ✅", Colors.green[800]!, () => _completeOrder())),
-                  ])
+                  isMerchant 
+                    ? Row(children: [
+                        Expanded(child: _mainButton("رفض (مرتجع) ❌", Colors.red[800]!, () => _handleReturnFlow())),
+                        const SizedBox(width: 12),
+                        Expanded(child: _mainButton("تم التسليم ✅", Colors.green[800]!, () => _completeOrder())),
+                      ])
+                    : _mainButton("تم التسليم ✅", Colors.green[800]!, () => _completeOrder())
                 
                 else if (status.contains('returning'))
                   Column(
                     children: [
                       Text("يجب العودة للتاجر لإسترداد عهدتك المالية", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.red[900], fontWeight: FontWeight.w900)),
                       SizedBox(height: 10),
-                      _mainButton("تأكيد تسليم المرتجع للتاجر 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(data['returnVerificationCode'] ?? data['verificationCode'], status)),
+                      _mainButton("تأكيد تسليم المرتجع للتاجر 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(data['returnVerificationCode'] ?? data['verificationCode'], status, isMerchant)),
                     ],
                   ),
               ],
@@ -259,8 +257,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  // --- واجهة الكود الاحترافية (حقل واحد سهل) ---
-  void _showProfessionalOTP(String? correctCode, String currentStatus) {
+  void _showProfessionalOTP(String? correctCode, String currentStatus, bool isMerchant) {
     final TextEditingController codeController = TextEditingController();
     bool isReturning = currentStatus.contains('returning');
 
@@ -270,13 +267,15 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(isReturning ? "تأكيد استلام المرتجع" : "استلام العهدة في أمانتك", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
+          title: Text(isReturning ? "تأكيد استلام المرتجع" : "تأكيد استلام العهدة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(isReturning 
                 ? "أدخل كود المرتجع من التاجر لفك حجز نقاطك فوراً."
-                : "أدخل الكود لتأكيد استلامك للشحنة في عهدتك الشخصية.", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)),
+                : isMerchant 
+                    ? "أدخل الكود المستلم من التاجر لتأكيد العهدة في أمانتك."
+                    : "أدخل الكود المستلم من العميل لتأكيد بدء رحلة النقل.", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)),
               SizedBox(height: 20),
               TextField(
                 controller: codeController,
@@ -323,7 +322,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     );
   }
 
-  // --- بدء مسار المرتجع وتوليد الكود ---
   void _handleReturnFlow() async {
     bool? confirm = await showDialog(
       context: context, 
@@ -352,7 +350,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     }
   }
 
-  // --- إنهاء الرحلة بنجاح ---
   void _completeOrder() async {
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
     await _stopBackgroundTracking();
