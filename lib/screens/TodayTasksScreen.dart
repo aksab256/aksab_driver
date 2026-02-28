@@ -6,11 +6,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:flutter/services.dart'; // ضروري لتحميل الخطوط
+import 'package:flutter/services.dart';
 
 class TodayTasksScreen extends StatefulWidget {
   final String repCode;
-
   const TodayTasksScreen({super.key, required this.repCode});
 
   @override
@@ -42,57 +41,56 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     }
   }
 
-  // --- طباعة الفاتورة (تم حل مشكلة الرموز العربية) ---
+  // --- طباعة الفاتورة (دعم العربية والخطوط) ---
   Future<void> _printInvoice(Map<String, dynamic> order) async {
-    final pdf = pw.Document();
-    
-    // 1. تحميل الخط العربي (تأكد من وجود الملف في الـ assets)
-    final fontData = await rootBundle.load("assets/fonts/Cairo-Regular.ttf");
-    final ttf = pw.Font.ttf(fontData);
+    try {
+      final pdf = pw.Document();
+      // تحميل الخط العربي لضمان عدم ظهور رموز
+      final fontData = await rootBundle.load("assets/fonts/Cairo-Regular.ttf");
+      final ttf = pw.Font.ttf(fontData);
 
-    final buyer = order['buyer'] ?? {};
-    final items = order['items'] as List? ?? [];
+      final buyer = order['buyer'] ?? {};
+      final items = order['items'] as List? ?? [];
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        theme: pw.ThemeData.withFont(base: ttf), // تعيين الخط الأساسي
-        build: (pw.Context context) {
-          return pw.Directionality(
-            textDirection: pw.TextDirection.rtl,
-            child: pw.Padding(
-              padding: const pw.EdgeInsets.all(20),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Center(child: pw.Text("فاتورة طلب: ${order['orderId'] ?? '---'}", style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold))),
-                  pw.Divider(),
-                  pw.Text("المشتري: ${buyer['name'] ?? '-'}"),
-                  pw.Text("العنوان: ${buyer['address'] ?? '-'}"),
-                  pw.SizedBox(height: 20),
-                  pw.TableHelper.fromTextArray(
-                    headers: ['المنتج', 'الكمية', 'السعر'],
-                    headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                    data: items.map((i) => [
-                      i['name'] ?? '-', 
-                      i['quantity'] ?? '0', 
-                      "${i['price'] ?? 0} ج.م"
-                    ]).toList(),
-                  ),
-                  pw.SizedBox(height: 20),
-                  pw.Divider(),
-                  pw.Align(alignment: pw.Alignment.centerLeft, child: pw.Text("الإجمالي: ${order['total']} ج.م", style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold))),
-                ],
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          theme: pw.ThemeData.withFont(base: ttf),
+          build: (pw.Context context) {
+            return pw.Directionality(
+              textDirection: pw.TextDirection.rtl,
+              child: pw.Padding(
+                padding: const pw.EdgeInsets.all(20),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Center(child: pw.Text("فاتورة طلب: ${order['orderId'] ?? '---'}", style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold))),
+                    pw.Divider(),
+                    pw.Text("المشتري: ${buyer['name'] ?? '-'}"),
+                    pw.Text("العنوان: ${buyer['address'] ?? '-'}"),
+                    pw.SizedBox(height: 20),
+                    pw.TableHelper.fromTextArray(
+                      headers: ['المنتج', 'الكمية', 'السعر'],
+                      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                      data: items.map((i) => [i['name'] ?? '-', i['quantity'] ?? '0', "${i['price'] ?? 0} ج.م"]).toList(),
+                    ),
+                    pw.SizedBox(height: 20),
+                    pw.Divider(),
+                    pw.Align(alignment: pw.Alignment.centerLeft, child: pw.Text("الإجمالي: ${order['total']} ج.م", style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold))),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
-      ),
-    );
-    await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+            );
+          },
+        ),
+      );
+      await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+    } catch (e) {
+      _showSnackBar("خطأ في الطباعة: تأكد من ملف الخطوط");
+    }
   }
 
-  // --- تحديث الحالة (النظام الجديد) ---
+  // --- تحديث الحالة ---
   Future<void> _updateStatus(String docId, String status) async {
     setState(() => _isProcessing = true);
     try {
@@ -104,7 +102,6 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
         'completedAt': FieldValue.serverTimestamp(),
         'isSettled': false,
       });
-
       _showSnackBar(status == 'delivered' ? "تم التسليم بنجاح ✅" : "تم تسجيل فشل الطلب ❌");
     } catch (e) {
       _showSnackBar("خطأ في التحديث: $e");
@@ -240,7 +237,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     );
   }
 
-  // --- تم تعديل هذه الدالة لحل مشكلة تداخل الأزرار مع زراير التليفون ---
+  // --- شاشة تفاصيل الطلب مع حل مشكلة الزرار ---
   void _showOrderDetails(Map<String, dynamic> order) {
     final items = order['items'] as List? ?? [];
     showModalBottomSheet(
@@ -249,42 +246,46 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-        padding: EdgeInsets.fromLTRB(15.sp, 15.sp, 15.sp, 0), // تحكم في المسافات
-        height: 75.h,
+        padding: EdgeInsets.symmetric(horizontal: 15.sp),
+        height: 60.h,
         child: Column(
           children: [
+            SizedBox(height: 12.sp),
             Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
-            SizedBox(height: 10.sp),
+            SizedBox(height: 15.sp),
             Text("تفاصيل الطلب", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
             const Divider(),
             Expanded(
               child: ListView.builder(
+                padding: EdgeInsets.only(top: 10.sp),
                 itemCount: items.length,
                 itemBuilder: (context, i) => ListTile(
-                  title: Text(items[i]['name'] ?? "-"),
-                  trailing: Text("x${items[i]['quantity']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(items[i]['name'] ?? "-", style: TextStyle(fontSize: 12.sp)),
+                  trailing: Text("x${items[i]['quantity']}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.sp)),
                 ),
               ),
             ),
-            // استخدام SafeArea لرفع الزرار عن حافة الهاتف السفلية
-            SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(bottom: 20.sp, top: 10.sp), 
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 45.sp,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _printInvoice(order), 
-                    icon: const Icon(Icons.print), 
-                    label: Text("طباعة الفاتورة", style: TextStyle(fontSize: 13.sp)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
-                    ),
+            // مساحة آمنة للزرار
+            Padding(
+              padding: EdgeInsets.only(bottom: 25.sp, top: 10.sp),
+              child: SizedBox(
+                width: 80.w,
+                height: 40.sp,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context); // إغلاق الـ BottomSheet أولاً
+                    _printInvoice(order);   // ثم فتح واجهة الطباعة
+                  }, 
+                  icon: Icon(Icons.print, size: 16.sp), 
+                  label: Text("طباعة الفاتورة", style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                   ),
                 ),
               ),
-            )
+            ),
           ],
         ),
       ),
