@@ -41,13 +41,19 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     }
   }
 
-  // --- طباعة الفاتورة (دعم العربية والخطوط) ---
+  // --- طباعة الفاتورة (نسخة مستقرة جداً) ---
   Future<void> _printInvoice(Map<String, dynamic> order) async {
     try {
       final pdf = pw.Document();
-      // تحميل الخط العربي لضمان عدم ظهور رموز
-      final fontData = await rootBundle.load("assets/fonts/Cairo-Regular.ttf");
-      final ttf = pw.Font.ttf(fontData);
+      pw.Font? arabicFont;
+
+      // محاولة تحميل الخط، لو مش موجود هيستخدم الخط الافتراضي
+      try {
+        final fontData = await rootBundle.load("assets/fonts/Cairo-Regular.ttf");
+        arabicFont = pw.Font.ttf(fontData);
+      } catch (_) {
+        debugPrint("تحذير: لم يتم العثور على ملف الخط، سيتم استخدام الخط الافتراضي");
+      }
 
       final buyer = order['buyer'] ?? {};
       final items = order['items'] as List? ?? [];
@@ -55,7 +61,6 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
-          theme: pw.ThemeData.withFont(base: ttf),
           build: (pw.Context context) {
             return pw.Directionality(
               textDirection: pw.TextDirection.rtl,
@@ -64,19 +69,23 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Center(child: pw.Text("فاتورة طلب: ${order['orderId'] ?? '---'}", style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold))),
+                    pw.Center(child: pw.Text("فاتورة طلب: ${order['orderId'] ?? '---'}", 
+                      style: pw.TextStyle(font: arabicFont, fontSize: 20, fontWeight: pw.FontWeight.bold))),
                     pw.Divider(),
-                    pw.Text("المشتري: ${buyer['name'] ?? '-'}"),
-                    pw.Text("العنوان: ${buyer['address'] ?? '-'}"),
+                    pw.Text("المشتري: ${buyer['name'] ?? '-'}", style: pw.TextStyle(font: arabicFont)),
+                    pw.Text("العنوان: ${buyer['address'] ?? '-'}", style: pw.TextStyle(font: arabicFont)),
                     pw.SizedBox(height: 20),
                     pw.TableHelper.fromTextArray(
                       headers: ['المنتج', 'الكمية', 'السعر'],
-                      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                      data: items.map((i) => [i['name'] ?? '-', i['quantity'] ?? '0', "${i['price'] ?? 0} ج.م"]).toList(),
+                      headerStyle: pw.TextStyle(font: arabicFont, fontWeight: pw.FontWeight.bold),
+                      cellStyle: pw.TextStyle(font: arabicFont),
+                      data: items.map((i) => [i['name'] ?? '-', i['quantity'] ?? '0', "${i['price'] ?? 0}"]).toList(),
                     ),
                     pw.SizedBox(height: 20),
                     pw.Divider(),
-                    pw.Align(alignment: pw.Alignment.centerLeft, child: pw.Text("الإجمالي: ${order['total']} ج.م", style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold))),
+                    pw.Align(alignment: pw.Alignment.centerLeft, 
+                      child: pw.Text("الإجمالي: ${order['total']} ج.م", 
+                      style: pw.TextStyle(font: arabicFont, fontSize: 16, fontWeight: pw.FontWeight.bold))),
                   ],
                 ),
               ),
@@ -86,7 +95,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
       );
       await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
     } catch (e) {
-      _showSnackBar("خطأ في الطباعة: تأكد من ملف الخطوط");
+      _showSnackBar("خطأ داخلي في الطباعة: $e");
     }
   }
 
@@ -237,7 +246,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     );
   }
 
-  // --- شاشة تفاصيل الطلب مع حل مشكلة الزرار ---
+  // --- التعديل النهائي للزرار والـ BottomSheet ---
   void _showOrderDetails(Map<String, dynamic> order) {
     final items = order['items'] as List? ?? [];
     showModalBottomSheet(
@@ -246,46 +255,44 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-        padding: EdgeInsets.symmetric(horizontal: 15.sp),
-        height: 60.h,
+        padding: EdgeInsets.all(15.sp),
+        height: 55.h, // تقليل الارتفاع شوية عشان الزرار يظهر
         child: Column(
           children: [
-            SizedBox(height: 12.sp),
             Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
             SizedBox(height: 15.sp),
-            Text("تفاصيل الطلب", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
+            Text("تفاصيل الطلب", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
             const Divider(),
             Expanded(
               child: ListView.builder(
-                padding: EdgeInsets.only(top: 10.sp),
                 itemCount: items.length,
                 itemBuilder: (context, i) => ListTile(
-                  title: Text(items[i]['name'] ?? "-", style: TextStyle(fontSize: 12.sp)),
-                  trailing: Text("x${items[i]['quantity']}", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.sp)),
+                  title: Text(items[i]['name'] ?? "-", style: TextStyle(fontSize: 11.sp)),
+                  trailing: Text("x${items[i]['quantity']}", style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
             ),
-            // مساحة آمنة للزرار
-            Padding(
-              padding: EdgeInsets.only(bottom: 25.sp, top: 10.sp),
-              child: SizedBox(
-                width: 80.w,
-                height: 40.sp,
+            
+            // زرار الطباعة - حجم طبيعي وبعيد عن الحافة
+            SafeArea(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 10.sp),
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    Navigator.pop(context); // إغلاق الـ BottomSheet أولاً
-                    _printInvoice(order);   // ثم فتح واجهة الطباعة
+                    Navigator.pop(context);
+                    _printInvoice(order);
                   }, 
-                  icon: Icon(Icons.print, size: 16.sp), 
-                  label: Text("طباعة الفاتورة", style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.print), 
+                  label: const Text("طباعة الفاتورة"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    padding: EdgeInsets.symmetric(horizontal: 30.sp, vertical: 10.sp),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),
-            ),
+            )
           ],
         ),
       ),
