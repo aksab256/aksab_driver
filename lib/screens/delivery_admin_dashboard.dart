@@ -11,6 +11,7 @@ import 'delivery_management_screen.dart';
 import 'delivery_fleet_screen.dart';
 import 'manager_geo_dist_screen.dart';
 import 'ProfileScreen.dart';
+import 'field_monitor_screen.dart'; // الصفحة الجديدة التي أنشأناها
 
 class DeliveryAdminDashboard extends StatefulWidget {
   const DeliveryAdminDashboard({super.key});
@@ -145,9 +146,11 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
   Future<void> _loadStats(String role, String managerDocId) async {
     Query ordersQuery = FirebaseFirestore.instance.collection('orders');
     Query repsQuery = FirebaseFirestore.instance.collection('deliveryReps');
+
     if (role == 'delivery_supervisor') {
       var myReps = await repsQuery.where('supervisorId', isEqualTo: managerDocId).get();
       _totalReps = myReps.size;
+
       if (myReps.docs.isNotEmpty) {
         List<String> repCodes = myReps.docs.map((d) => d['repCode'] as String).toList();
         ordersQuery = ordersQuery.where('buyer.repCode', whereIn: repCodes);
@@ -158,6 +161,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       var allReps = await repsQuery.get();
       _totalReps = allReps.size;
     }
+
     var ordersSnap = await ordersQuery.get();
     _totalOrders = ordersSnap.size;
     double salesSum = 0;
@@ -171,6 +175,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.blue)));
+
     return Scaffold(
       backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
@@ -249,23 +254,55 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
             accountEmail: Text(_userData?['role'] == 'delivery_manager' ? "مدير نظام" : "مشرف ميداني", style: const TextStyle(fontFamily: 'Cairo')),
             currentAccountPicture: CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.admin_panel_settings, size: 35.sp, color: const Color(0xFF2C3E50))),
           ),
+          
           _drawerItem(Icons.account_circle, "حسابي الشخصي", Colors.blue, () {
             Navigator.pop(context);
             Navigator.push(context, MaterialPageRoute(builder: (context) => ProfileScreen(repData: _userData)));
           }),
+
+          // تم إضافة Badge هنا لمراقبة المرتجعات النشطة فوراً من القائمة
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('specialRequests')
+                .where('status', isEqualTo: 'returning_to_seller')
+                .snapshots(),
+            builder: (context, snapshot) {
+              int returnCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+              return _drawerItem(
+                Icons.radar_rounded, 
+                "تتبع التوصيل الحر", 
+                Colors.redAccent, 
+                () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const FieldMonitorScreen()));
+                },
+                trailing: returnCount > 0 
+                  ? Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                      child: Text("$returnCount", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                    )
+                  : null,
+              );
+            }
+          ),
+
           _drawerItem(Icons.analytics_rounded, "تقارير العمليات", Colors.teal, () {
             Navigator.pop(context);
             Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryManagementScreen()));
           }),
+          
           _drawerItem(Icons.delivery_dining, "إدارة المناديب", Colors.orange, () {
             Navigator.pop(context);
             Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryFleetScreen()));
           }),
+          
           if (_userData?['role'] == 'delivery_manager')
             _drawerItem(Icons.map_rounded, "نطاقات التوزيع", Colors.purple, () {
               Navigator.pop(context);
               Navigator.push(context, MaterialPageRoute(builder: (context) => const ManagerGeoDistScreen()));
             }),
+            
           const Spacer(),
           const Divider(),
           _drawerItem(Icons.logout_rounded, "تسجيل الخروج", Colors.redAccent, () => _showLogoutDialog()),
@@ -275,10 +312,11 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     );
   }
 
-  Widget _drawerItem(IconData icon, String title, Color color, VoidCallback onTap) {
+  Widget _drawerItem(IconData icon, String title, Color color, VoidCallback onTap, {Widget? trailing}) {
     return ListTile(
       leading: Icon(icon, color: color, size: 22.sp),
       title: Text(title, style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+      trailing: trailing,
       onTap: onTap,
     );
   }
