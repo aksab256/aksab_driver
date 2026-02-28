@@ -1,3 +1,4 @@
+// lib/screens/freelance_terms_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
@@ -19,7 +20,6 @@ class _FreelanceTermsScreenState extends State<FreelanceTermsScreen> {
     setState(() => _isUpdating = true);
 
     try {
-      // التحديث في مجموعة deliveryReps لضمان تزامن الأذونات
       await FirebaseFirestore.instance
           .collection('freeDrivers')
           .doc(widget.userId)
@@ -33,11 +33,9 @@ class _FreelanceTermsScreenState extends State<FreelanceTermsScreen> {
         _showSuccess = true;
       });
 
-      // انتظار لرؤية علامة الصح قبل الإغلاق
       await Future.delayed(const Duration(milliseconds: 1200));
 
       if (mounted) {
-        // إرجاع true لإخطار الهوم سكرين بفتح طلب إذن الإشعارات
         Navigator.of(context, rootNavigator: true).pop(true);
       }
     } catch (e) {
@@ -60,7 +58,6 @@ class _FreelanceTermsScreenState extends State<FreelanceTermsScreen> {
       ),
       child: Column(
         children: [
-          // مقبض السحب العلوي
           Container(
             margin: const EdgeInsets.symmetric(vertical: 15),
             width: 50,
@@ -79,46 +76,52 @@ class _FreelanceTermsScreenState extends State<FreelanceTermsScreen> {
                       children: [
                         Icon(Icons.gavel_rounded, color: Color(0xFF2C3E50), size: 40),
                         SizedBox(height: 10),
-                        Text("اتفاقية وقواعد العمل الحر",
+                        Text("اتفاقية وقواعد إدارة العهدة",
                             style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF2C3E50))),
                       ],
                     ),
                   ),
                   const SizedBox(height: 25),
                   
+                  // 1. العلاقة القانونية
                   _buildTermItem(
-                    "1. طبيعة العلاقة (وسيط تقني):", 
-                    "يقر الكابتن بأن منصة 'أكسب' هي وسيط تقني يربط بين مقدم الخدمة وطالبها، ولا تعتبر المنصة طرفاً في عملية البيع أو صاحب عمل، والمندوب يعمل بشكل حر ومستقل."
+                    "1. طبيعة الارتباط التقني:", 
+                    "يقر المستخدم بأن منصة 'أكسب' هي أداة تقنية لتنظيم الدعم اللوجستي وتوجيه طلبات النقل، ولا تعتبر المنصة طرفاً تعاقدياً في ملكية الشحنات، والمندوب مسؤول بشكل مستقل عن تنفيذ المهام المسندة إليه."
                   ),
                   
+                  // 2. المسؤولية الجنائية (قوية جداً قانونياً)
                   _buildTermItem(
-                    "2. معاينة الطرود والمحظورات:", 
-                    "يتحمل المندوب المسؤولية الجنائية والمدنية الكاملة عن معاينة الطرد قبل استلامه. يحظر تماماً نقل الأسلحة، المخدرات، السجائر المهربة، أو أي مواد تخالف القانون المصري."
+                    "2. فحص الأمانات والمحظورات القانونية:", 
+                    "يتحمل المندوب المسؤولية القانونية (الجنائية والمدنية) الكاملة عن فحص الأمانة قبل استلامها في عهدته. يحظر قطعيًا نقل أي مواد تخالف التشريعات المصرية (مثل المواد المخدرة، الأسلحة، أو المهربات). استلامك للطلب هو إقرار رسمي بخلوه من أي محظورات."
                   ),
                   
+                  // 3. الضمان المالي
                   _buildTermItem(
-                    "3. سلامة الشحنة والضمان:", 
-                    "يلتزم المندوب بالحفاظ على الشحنة من لحظة الاستلام وحتى التسليم. في حال حدوث تلف أو فقدان ناتج عن إهمال، يحق للمنصة خصم قيمتها من مستحقات المندوب."
+                    "3. حماية العهدة والضمان:", 
+                    "يلتزم المندوب بضمان وصول الشحنة بحالتها الأصلية. في حال ثبوت الإهمال أو التلف، يلتزم المندوب بتعويض القيمة المقابلة لنقاط الأمان المحجوزة لتغطية العهدة المستلمة."
                   ),
                   
+                  // 4. الخصوصية
                   _buildTermItem(
-                    "4. الموقع الجغرافي والخصوصية:", 
-                    "لضمان تشغيل رادار الطلبات، يوافق المندوب على مشاركة موقعه الجغرافي مع التطبيق (حتى في حال كان التطبيق مغلقاً أو في الخلفية) أثناء فترات الاتصال."
+                    "4. بيانات الموقع والتشغيل اللوجستي:", 
+                    "لضمان دقة الرادار اللوجستي وتتبع مسار العهدة، يوافق المندوب على مشاركة بيانات الموقع الجغرافي بشكل مستمر أثناء تفعيل وضع الاتصال، وذلك لحماية حقوق جميع الأطراف."
                   ),
                   
+                  // 5. إدارة نقاط الأمان (التعديل المهم لجوجل)
                   _buildTermItem(
-                    "5. التحصيل المالي والأمانة:", 
-                    "يلتزم المندوب بتحصيل المبالغ الموضحة في التطبيق فقط، وتوريد عمولة المنصة بشكل فوري عبر وسائل الشحن المتاحة لضمان استمرار عمل الحساب."
+                    "5. تسوية العهدة ونقاط التأمين:", 
+                    "يلتزم المندوب بتسوية العهدة المالية وتأكيد استلام الأمانات فور انتهاء المهمة. يتم تخصيص (نقاط تأمين عهدة) من رصيد الحساب لضمان النقل الآمن، ولا يعتبر ذلك نشاطاً بنكياً بل إجراءً تنظيمياً داخلياً لضمان الأمانات."
                   ),
                   
+                  // 6. السلوك العام
                   _buildTermItem(
-                    "6. سياسة الإلغاء والسلوك:", 
-                    "يجب التعامل مع العملاء بأقصى درجات الاحترام. يحق للإدارة حظر الحساب في حال تكرار إلغاء الطلبات بعد قبولها أو ثبوت سوء سلوك مع العميل."
+                    "6. جودة الخدمة وسياسة الاستخدام:", 
+                    "تلتزم إدارة المنصة بحظر أي حساب يثبت تكرار إخلاله ببروتوكول تسليم العهدة أو سوء التعامل مع أطراف العملية اللوجستية، حفاظاً على معايير الأمان والجودة."
                   ),
                   
                   const SizedBox(height: 20),
                   const Text(
-                    "* بالضغط على الزر أدناه، أنت تقر بقراءة وفهم كافة الشروط وتلتزم بالعمل بموجبها.",
+                    "* بالنقر أدناه، أنت تقر رسمياً بقبولك لكافة البنود السابقة بصيغتها القانونية واللوجستية.",
                     style: TextStyle(fontFamily: 'Cairo', fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic),
                   ),
                 ],
@@ -126,7 +129,7 @@ class _FreelanceTermsScreenState extends State<FreelanceTermsScreen> {
             ),
           ),
 
-          // منطقة الزر التفاعلية
+          // منطقة الزر
           Container(
             padding: EdgeInsets.fromLTRB(25, 15, 25, MediaQuery.of(context).padding.bottom + 20),
             decoration: BoxDecoration(
@@ -134,13 +137,13 @@ class _FreelanceTermsScreenState extends State<FreelanceTermsScreen> {
               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, -5))]
             ),
             child: _showSuccess 
-              ? Column(
+              ? const Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.check_circle_rounded, color: Colors.green, size: 60),
-                    const SizedBox(height: 10),
-                    Text("تم تسجيل موافقتك بنجاح", 
-                      style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14.sp, color: Colors.green)),
+                    Icon(Icons.check_circle_rounded, color: Colors.green, size: 60),
+                    SizedBox(height: 10),
+                    Text("تم حفظ موافقتك القانونية", 
+                      style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
                   ],
                 )
               : _isUpdating 
@@ -152,7 +155,6 @@ class _FreelanceTermsScreenState extends State<FreelanceTermsScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1565C0),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                        elevation: 0,
                       ),
                       onPressed: _handleAcceptance,
                       child: const Text(
@@ -173,7 +175,7 @@ class _FreelanceTermsScreenState extends State<FreelanceTermsScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.verified_user_rounded, color: Color(0xFF1565C0), size: 22),
+          const Icon(Icons.security_outlined, color: Color(0xFF1565C0), size: 22),
           const SizedBox(width: 15),
           Expanded(
             child: Column(
