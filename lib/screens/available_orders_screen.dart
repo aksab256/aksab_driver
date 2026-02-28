@@ -26,6 +26,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   void initState() {
     super.initState();
     _showLocationDisclosure();
+    // مؤقت لتحديث الواجهة كل ثانية (لحساب الوقت أو تحديثات الحالة البسيطة)
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -48,27 +49,27 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           textDirection: TextDirection.rtl,
           child: AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Row(
+            title: Row(
               children: [
-                Icon(Icons.location_on, color: Colors.blue),
+                Icon(Icons.location_on, color: Colors.blue[900], size: 22.sp),
                 SizedBox(width: 10),
-                Text("استخدام بيانات الموقع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                Text("استخدام بيانات الموقع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
               ],
             ),
-            content: const Text(
+            content: Text(
               "يقوم تطبيق (أكسب مندوب) بجمع بيانات الموقع لتمكين تتبع الرحلات وتحديث حالة الطلبات حتى عندما يكون التطبيق مغلقاً.\n\n"
               "يساعد هذا في ضمان وصول الشحنة بدقة وحماية حقوقك المالية (نقاط التأمين).",
-              style: TextStyle(fontFamily: 'Cairo', fontSize: 14),
+              style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp),
             ),
             actions: [
               TextButton(
                 onPressed: () { Navigator.pop(context); setState(() => _isGettingLocation = false); },
-                child: const Text("رفض", style: TextStyle(color: Colors.grey, fontFamily: 'Cairo')),
+                child: Text("رفض", style: TextStyle(color: Colors.grey, fontFamily: 'Cairo', fontSize: 12.sp)),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                 onPressed: () { Navigator.pop(context); _initSequence(); },
-                child: const Text("موافق ومتابعة", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
+                child: Text("موافق ومتابعة", style: TextStyle(color: Colors.white, fontFamily: 'Cairo', fontSize: 12.sp)),
               ),
             ],
           ),
@@ -94,7 +95,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  /// ✅ الدالة المحسنة لضمان الربط مع السيرفر والتاجر
   Future<void> _acceptOrder(String orderId) async {
     try {
       showDialog(
@@ -103,7 +103,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange))
       );
       
-      // 1. جلب اسم المندوب الحالي من ملفه الشخصي
       DocumentSnapshot driverProfile = await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).get();
       String driverName = driverProfile.exists ? (driverProfile.get('fullname') ?? "مندوب") : "مندوب";
 
@@ -112,14 +111,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         
         if (orderSnap.exists && (orderSnap.get('status') == 'pending' || orderSnap.get('status') == 'no_drivers_available')) {
-          
-          // 2. تحديث الحقول التي يراقبها السيرفر (EC2) والتاجر
           transaction.update(orderRef, {
-            'status': 'accepted',              // الحالة المطلوبة للسيرفر
-            'driverId': _uid,                 // لربط المحفظة
-            'driverName': driverName,         // ليظهر عند التاجر فوراً
+            'status': 'accepted',
+            'driverId': _uid,
+            'driverName': driverName,
             'acceptedAt': FieldValue.serverTimestamp(),
-            'moneyLocked': false,             // إشارة للسيرفر لبدء خصم النقاط
+            'moneyLocked': false,
             'serverNote': "تأكيد العهدة: جاري معالجة الطلب ماليًا...",
           });
         } else {
@@ -128,8 +125,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       });
 
       if (mounted) {
-        Navigator.pop(context); // إغلاق التحميل
-        // 3. الانتقال لصفحة تتبع الطلب النشط
+        Navigator.pop(context);
         Navigator.pushAndRemoveUntil(
           context, 
           MaterialPageRoute(builder: (context) => ActiveOrderScreen(orderId: orderId)), 
@@ -155,7 +151,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: Text("رادار الطلبات القريبة", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo', color: Colors.black)),
+        title: Text("رادار الطلبات القريبة", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, fontFamily: 'Cairo', color: Colors.black)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0.5,
@@ -195,9 +191,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 return Center(child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.radar, size: 50, color: Colors.grey[400]),
-                    const SizedBox(height: 10),
-                    Text("لا توجد طلبات متاحة حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, color: Colors.grey)),
+                    Icon(Icons.radar, size: 60.sp, color: Colors.grey[400]),
+                    SizedBox(height: 2.h),
+                    Text("لا توجد طلبات متاحة حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, color: Colors.grey)),
                   ],
                 ));
               }
@@ -231,76 +227,109 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
     bool isMerchant = data['requestSource'] == 'retailer';
 
-    Color goldPrimary = const Color(0xFFFFD700); 
-    Color themeColor = isMerchant ? goldPrimary : (canAccept ? const Color(0xFF2D9E68) : const Color(0xFFD32F2F));
-    Color contentColor = isMerchant ? const Color(0xFF5D4037) : Colors.white;
+    // الألوان الجديدة والتدرج
+    const Color goldStart = Color(0xFFFFD700);
+    const Color goldEnd = Color(0xFFFFA000);
+    const Color merchantContent = Color(0xFF5D4037); // بني غامق يتناسب مع الذهبي
 
     return Card(
-      elevation: 6,
-      margin: EdgeInsets.only(bottom: 2.5.h),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      elevation: 8,
+      margin: EdgeInsets.only(bottom: 3.h),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
       child: Column(
         children: [
+          // هيدر الكارت المطور
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.5.h),
-            decoration: BoxDecoration(color: themeColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
+            padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
+            decoration: BoxDecoration(
+              gradient: isMerchant 
+                ? const LinearGradient(colors: [goldStart, goldEnd], begin: Alignment.topLeft, end: Alignment.bottomRight)
+                : null,
+              color: isMerchant ? null : (canAccept ? const Color(0xFF2D9E68) : const Color(0xFFD32F2F)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Icon(isMerchant ? FontAwesomeIcons.crown : Icons.delivery_dining, color: contentColor, size: 20),
-                    SizedBox(width: 2.w),
-                    Text("صافي ربحك: $driverNet ج.م", style: TextStyle(color: contentColor, fontWeight: FontWeight.w900, fontSize: 13.sp, fontFamily: 'Cairo')),
+                    Icon(isMerchant ? FontAwesomeIcons.crown : Icons.delivery_dining, 
+                         color: isMerchant ? merchantContent : Colors.white, size: 22.sp),
+                    SizedBox(width: 3.w),
+                    Text("صافي ربحك: $driverNet ج.م", 
+                         style: TextStyle(color: isMerchant ? merchantContent : Colors.white, 
+                         fontWeight: FontWeight.w900, fontSize: 15.sp, fontFamily: 'Cairo')),
                   ],
                 ),
-                if (!canAccept) const Icon(Icons.lock_clock, color: Colors.white, size: 20),
+                if (isMerchant)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), borderRadius: BorderRadius.circular(10)),
+                    child: Text("طلب مميز", style: TextStyle(color: merchantContent, fontSize: 9.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                  ),
+                if (!canAccept) const Icon(Icons.lock_clock, color: Colors.white, size: 22),
               ],
             ),
           ),
+          
+          // جسم الكارت
           Padding(
-            padding: EdgeInsets.all(4.w),
+            padding: EdgeInsets.all(5.w),
             child: Column(
               children: [
                 Row(
                   children: [
-                    _buildFinanceInfo("تأمين عهدة", "${insuranceRequired.toStringAsFixed(2)} ن", Icons.security),
-                    _buildFinanceInfo("قيمة التحصيل", "${orderFinalAmount.toStringAsFixed(2)} ج.م", Icons.shopping_bag_outlined),
+                    _buildFinanceInfo("تأمين عهدة", "${insuranceRequired.toStringAsFixed(2)} ن", Icons.security_sharp),
+                    _buildFinanceInfo("قيمة التحصيل", "${orderFinalAmount.toStringAsFixed(2)} ج.م", Icons.payments_outlined),
                   ],
                 ),
-                Divider(height: 4.h, thickness: 1),
-                _buildRouteRow(Icons.radio_button_checked, "استلام من: ${data['userName'] ?? 'الموقع'}", data['pickupAddress'] ?? "", Colors.orange),
-                _buildRouteRow(Icons.location_on, "تسليم إلى: ${data['customerName'] ?? 'العميل'}", data['dropoffAddress'] ?? "", Colors.red),
-                const Divider(height: 30),
+                Divider(height: 4.h, thickness: 1.5, color: Colors.grey[200]),
+                
+                _buildRouteRow(Icons.radio_button_checked, "استلام من: ${data['userName'] ?? 'الموقع'}", data['pickupAddress'] ?? "لم يتم تحديد العنوان بدقة", Colors.orange[800]!),
+                SizedBox(height: 1.5.h),
+                _buildRouteRow(Icons.location_on, "تسليم إلى: ${data['customerName'] ?? 'العميل'}", data['dropoffAddress'] ?? "لم يتم تحديد العنوان بدقة", Colors.red[900]!),
+                
+                Divider(height: 4.h, thickness: 1.5, color: Colors.grey[200]),
+                
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("إجمالي قيمة الطلب:", style: TextStyle(fontSize: 11.sp, color: Colors.grey[800], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-                    Text("$totalPrice ج.م", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15.sp, color: Colors.black)),
+                    Text("إجمالي قيمة الطلب:", style: TextStyle(fontSize: 13.sp, color: Colors.grey[800], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                    Text("$totalPrice ج.م", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18.sp, color: Colors.black)),
                   ],
                 ),
-                SizedBox(height: 2.h),
+                SizedBox(height: 3.h),
                 
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: canAccept ? (isMerchant ? goldPrimary : Colors.green[800]) : Colors.grey[400],
-                    minimumSize: Size(100.w, 7.5.h),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                    elevation: canAccept ? 4 : 0,
-                  ),
-                  onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
-                  child: Text(
-                    canAccept 
-                      ? "تأكيد العهدة وقبول الطلب" 
-                      : !hasCashForInsurance 
-                          ? "رصيد الكاش لا يغطي العهدة ($insuranceRequired ن)"
-                          : "الرصيد لا يغطي عمولة المنصة ($commission ن)",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: canAccept ? (isMerchant ? contentColor : Colors.white) : Colors.grey[700], 
-                      fontWeight: FontWeight.w900, 
-                      fontSize: 11.sp, 
-                      fontFamily: 'Cairo'
+                // زر القبول المطور
+                InkWell(
+                  onTap: canAccept ? () => _acceptOrder(doc.id) : null,
+                  child: Container(
+                    width: double.infinity,
+                    height: 8.h,
+                    decoration: BoxDecoration(
+                      gradient: (canAccept && isMerchant)
+                        ? const LinearGradient(colors: [goldStart, goldEnd])
+                        : null,
+                      color: canAccept 
+                        ? (isMerchant ? null : Colors.green[800]) 
+                        : Colors.grey[400],
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: canAccept ? [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 5))] : [],
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      canAccept 
+                        ? "تأكيد العهدة وقبول الطلب" 
+                        : !hasCashForInsurance 
+                            ? "رصيد الكاش لا يغطي العهدة ($insuranceRequired ن)"
+                            : "الرصيد لا يغطي عمولة المنصة ($commission ن)",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: canAccept ? (isMerchant ? merchantContent : Colors.white) : Colors.grey[700], 
+                        fontWeight: FontWeight.w900, 
+                        fontSize: 13.5.sp, 
+                        fontFamily: 'Cairo'
+                      ),
                     ),
                   ),
                 ),
@@ -316,33 +345,31 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return Expanded(
       child: Column(
         children: [
-          Icon(icon, size: 16, color: Colors.blueGrey),
-          Text(title, style: TextStyle(fontFamily: 'Cairo', fontSize: 9.sp, color: Colors.grey[600])),
-          Text(value, style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp, fontWeight: FontWeight.bold, color: const Color(0xFF0D47A1))),
+          Icon(icon, size: 20.sp, color: Colors.blueGrey[700]),
+          SizedBox(height: 0.5.h),
+          Text(title, style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp, color: Colors.grey[600], fontWeight: FontWeight.bold)),
+          Text(value, style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, fontWeight: FontWeight.w900, color: const Color(0xFF0D47A1))),
         ],
       ),
     );
   }
 
   Widget _buildRouteRow(IconData icon, String label, String addr, Color color) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 1.2.h),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 20),
-          SizedBox(width: 3.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: TextStyle(fontSize: 9.sp, color: Colors.grey[700], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-                Text(addr, style: TextStyle(fontSize: 10.5.sp, color: Colors.black87, fontFamily: 'Cairo'), maxLines: 2, overflow: TextOverflow.ellipsis),
-              ],
-            ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color, size: 22.sp),
+        SizedBox(width: 4.w),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: TextStyle(fontSize: 11.sp, color: Colors.grey[700], fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+              Text(addr, style: TextStyle(fontSize: 13.sp, color: Colors.black, fontFamily: 'Cairo', fontWeight: FontWeight.w500), maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
