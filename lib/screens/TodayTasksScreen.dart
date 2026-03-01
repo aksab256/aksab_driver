@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
 import 'package:url_launcher/url_launcher.dart';
-// تأكد من استيراد صفحة الفاتورة بشكل صحيح حسب مسار مشروعك
-// import 'package:aksab_driver/screens/invoice_screen.dart'; 
+// تفعيل الاستيراد - تأكد من صحة المسار في مشروعك
+import 'invoice_screen.dart'; 
 
 class TodayTasksScreen extends StatefulWidget {
   final String repCode;
@@ -17,32 +17,26 @@ class TodayTasksScreen extends StatefulWidget {
 class _TodayTasksScreenState extends State<TodayTasksScreen> {
   bool _isProcessing = false;
 
-  // --- 🎯 التوجيه للخرائط: معدل لقراءة Lat/Lng من مستوى الـ Buyer مباشرة ---
   Future<void> _navigateToCustomer(Map<String, dynamic>? buyerData) async {
     if (buyerData == null || buyerData['lat'] == null || buyerData['lng'] == null) {
-      _showSnackBar("موقع العميل غير متوفر في بيانات الطلب");
+      _showSnackBar("موقع العميل غير متوفر");
       return;
     }
-
     final double lat = (buyerData['lat'] as num).toDouble();
     final double lng = (buyerData['lng'] as num).toDouble();
-    
-    // استخدام الرابط المباشر لضمان التوافق مع خرائط جوجل
     final String googleUrl = "https://www.google.com/maps/search/?api=1&query=$lat,$lng";
-    final Uri uri = Uri.parse(googleUrl);
     
     try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (await canLaunchUrl(Uri.parse(googleUrl))) {
+        await launchUrl(Uri.parse(googleUrl), mode: LaunchMode.externalApplication);
       } else {
-        _showSnackBar("تعذر فتح تطبيق الخرائط على هذا الجهاز");
+        _showSnackBar("تعذر فتح الخرائط");
       }
     } catch (e) {
-      _showSnackBar("خطأ تقني في تشغيل الخرائط");
+      _showSnackBar("خطأ في فتح الخرائط");
     }
   }
 
-  // --- تحديث حالة المهمة في Firebase ---
   Future<void> _updateStatus(String docId, String status) async {
     setState(() => _isProcessing = true);
     try {
@@ -53,7 +47,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
         'deliveryTaskStatus': status,
         'completedAt': FieldValue.serverTimestamp(),
       });
-      _showSnackBar(status == 'delivered' ? "تم تأكيد العهدة واستلام الأمانات ✅" : "تم تسجيل فشل التوصيل ❌");
+      _showSnackBar(status == 'delivered' ? "تم تأكيد العهدة بنجاح ✅" : "تم تسجيل فشل المهمة ❌");
     } catch (e) {
       _showSnackBar("خطأ في التحديث: $e");
     } finally {
@@ -67,49 +61,49 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
       backgroundColor: const Color(0xFFF4F7FA),
       appBar: AppBar(
         title: Text("مهام التوصيل اليومية", 
-          style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.white)),
+          style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, color: Colors.white)),
         centerTitle: true,
-        backgroundColor: const Color(0xFF1B5E20), // أخضر براند "اكسب"
+        backgroundColor: const Color(0xFF1B5E20),
         elevation: 2,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('waitingdelivery')
-            .where('repCode', isEqualTo: widget.repCode)
-            .where('deliveryTaskStatus', isEqualTo: 'pending')
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20)));
-          if (snapshot.hasError) return Center(child: Text("خطأ في جلب المهام"));
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return _buildEmptyState();
-          
-          return ListView.builder(
-            padding: EdgeInsets.all(12.sp),
-            itemCount: snapshot.data!.docs.length,
-            itemBuilder: (context, index) {
-              var doc = snapshot.data!.docs[index];
-              return _buildTaskCard(doc.id, doc.data() as Map<String, dynamic>);
-            },
-          );
-        },
+      // 🛡️ استخدام SafeArea لحماية المحتوى من زراير النظام ونوتش الشاشة
+      body: SafeArea(
+        child: StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('waitingdelivery')
+              .where('repCode', isEqualTo: widget.repCode)
+              .where('deliveryTaskStatus', isEqualTo: 'pending')
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20)));
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return _buildEmptyState();
+            
+            return ListView.builder(
+              padding: EdgeInsets.fromLTRB(12.sp, 12.sp, 12.sp, 80.sp), // 👈 هيد بيلدنج عشان آخر كارت ميتداراش
+              itemCount: snapshot.data!.docs.length,
+              itemBuilder: (context, index) {
+                var doc = snapshot.data!.docs[index];
+                return _buildTaskCard(doc.id, doc.data() as Map<String, dynamic>);
+              },
+            );
+          },
+        ),
       ),
     );
   }
 
   Widget _buildTaskCard(String docId, Map<String, dynamic> order) {
     final buyer = order['buyer'] as Map<String, dynamic>? ?? {};
-    
-    // 💰 المنطق المالي الاحترافي: المندوب يطالب بالصافي (netTotal) لو موجود، وإلا الإجمالي (total)
     final double amountToCollect = (order['netTotal'] ?? order['total'] ?? 0.0).toDouble();
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      margin: EdgeInsets.only(bottom: 15.sp),
-      elevation: 5,
+      margin: EdgeInsets.only(bottom: 18.sp),
+      elevation: 6,
       child: Column(
         children: [
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp),
+            padding: EdgeInsets.symmetric(horizontal: 14.sp, vertical: 10.sp),
             decoration: const BoxDecoration(
               color: Color(0xFF2E7D32),
               borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
@@ -117,65 +111,48 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("طلب رقم: #${docId.substring(0, 8).toUpperCase()}", 
-                  style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text("طلب: #${docId.substring(0, 8).toUpperCase()}", 
+                  style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: Colors.white)),
                 IconButton(
-                  icon: const Icon(Icons.directions_outlined, color: Colors.white, size: 22),
+                  icon: const Icon(Icons.directions_outlined, color: Colors.white, size: 28),
                   onPressed: () => _navigateToCustomer(buyer),
                 )
               ],
             ),
           ),
           Padding(
-            padding: EdgeInsets.all(15.sp),
+            padding: EdgeInsets.all(16.sp),
             child: Column(
               children: [
                 _rowInfo("المشتري:", buyer['name'] ?? "غير معروف", isBold: true),
-                _rowInfo("العنوان:", buyer['address'] ?? "العنوان غير محدد بدقة"),
-                const Divider(height: 20),
+                _rowInfo("العنوان:", buyer['address'] ?? "غير محدد"),
+                const Divider(height: 25, thickness: 1),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("المبلغ المطلوب تحصيله:", 
-                        style: TextStyle(fontSize: 12.sp, color: Colors.grey[700], fontWeight: FontWeight.w500)),
+                    Text("المطلوب تحصيله:", style: TextStyle(fontSize: 13.sp, color: Colors.grey[800])),
                     Text("${amountToCollect.toStringAsFixed(2)} ج.م", 
-                      style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w900, color: const Color(0xFF1B5E20))),
+                      style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w900, color: const Color(0xFF1B5E20))),
                   ],
                 ),
-                if (order['netTotal'] != null && order['netTotal'] != order['total'])
-                  Padding(
-                    padding: EdgeInsets.only(top: 4.sp),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text("تم تطبيق خصم نقاط أمان ✅", 
-                        style: TextStyle(fontSize: 9.sp, color: Colors.orange[900], fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                SizedBox(height: 15.sp),
+                SizedBox(height: 20.sp),
                 Row(
                   children: [
-                    // زر الاتصال المباشر
-                    _actionBtn("اتصال", Colors.blue[800]!, Icons.phone_forwarded, 
-                      () async {
-                        final phone = buyer['phone']?.toString() ?? "";
-                        if (phone.isNotEmpty) {
-                          await launchUrl(Uri.parse("tel:$phone"));
-                        } else {
-                          _showSnackBar("لا يوجد رقم هاتف مسجل لهذا العميل");
-                        }
-                      }),
-                    SizedBox(width: 8.sp),
-                    
-                    // زر الفاتورة
-                    _actionBtn("الفاتورة", Colors.orange[800]!, Icons.receipt_long, () {
-                      // Navigator.push(
-                      //   context,
-                      //   MaterialPageRoute(builder: (context) => InvoiceScreen(order: order)),
-                      // );
+                    _actionBtn("اتصال", Colors.blue[800]!, Icons.phone_forwarded, () async {
+                      final phone = buyer['phone']?.toString() ?? "";
+                      if (phone.isNotEmpty) await launchUrl(Uri.parse("tel:$phone"));
+                    }),
+                    SizedBox(width: 10.sp),
+                    // 📑 الزرار دلوقتي شغال وهيفتح الفاتورة الذكية اللي عملناها
+                    _actionBtn("الفاتورة", Colors.orange[900]!, Icons.receipt_long, () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => InvoiceScreen(order: order)),
+                      );
                     }),
                   ],
                 ),
-                SizedBox(height: 12.sp),
+                SizedBox(height: 15.sp),
                 _isProcessing 
                 ? const LinearProgressIndicator(color: Colors.green)
                 : Row(
@@ -183,7 +160,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
                     _mainConfirmBtn("تأكيد الاستلام ✅", Colors.green[700]!, 
                       () => _updateStatus(docId, 'delivered')),
                     SizedBox(width: 10.sp),
-                    _mainConfirmBtn("فشل المهمة ❌", Colors.red[800]!, 
+                    _mainConfirmBtn("فشل ❌", Colors.red[800]!, 
                       () => _updateStatus(docId, 'failed')),
                   ],
                 )
@@ -197,15 +174,13 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
 
   Widget _rowInfo(String label, String value, {bool isBold = false}) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4.sp),
+      padding: EdgeInsets.symmetric(vertical: 5.sp),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[600], fontSize: 11.sp)),
+          Text(label, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700], fontSize: 12.sp)),
           SizedBox(width: 8.sp),
-          Expanded(child: Text(value, 
-              style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.normal, 
-              fontSize: 12.sp, color: Colors.black87))),
+          Expanded(child: Text(value, style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.normal, fontSize: 13.sp))),
         ],
       ),
     );
@@ -215,12 +190,12 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     return Expanded(
       child: OutlinedButton.icon(
         onPressed: onTap,
-        icon: Icon(icon, size: 14.sp, color: color),
-        label: Text(label, style: TextStyle(color: color, fontSize: 11.sp, fontWeight: FontWeight.bold)),
+        icon: Icon(icon, size: 16.sp, color: color),
+        label: Text(label, style: TextStyle(color: color, fontSize: 12.sp, fontWeight: FontWeight.bold)),
         style: OutlinedButton.styleFrom(
-          side: BorderSide(color: color, width: 1.5),
+          side: BorderSide(color: color, width: 1.8),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          padding: EdgeInsets.symmetric(vertical: 9.sp)
+          padding: EdgeInsets.symmetric(vertical: 10.sp)
         ),
       ),
     );
@@ -233,32 +208,23 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.white,
-          padding: EdgeInsets.symmetric(vertical: 12.sp),
-          elevation: 2,
+          padding: EdgeInsets.symmetric(vertical: 14.sp),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
-        child: Text(label, style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold)),
+        child: Text(label, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold)),
       ),
     );
   }
 
   void _showSnackBar(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp)),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        backgroundColor: const Color(0xFF2C3E50),
-      )
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: TextStyle(fontSize: 12.sp)), behavior: SnackBarBehavior.floating));
   }
 
   Widget _buildEmptyState() {
     return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(Icons.assignment_turned_in_outlined, size: 70.sp, color: Colors.green[100]),
+      Icon(Icons.assignment_turned_in_outlined, size: 80.sp, color: Colors.green[100]),
       SizedBox(height: 15.sp),
-      Text("كافة المهام مكتملة!", style: TextStyle(color: Colors.green[800], fontSize: 16.sp, fontWeight: FontWeight.bold)),
-      Text("لا توجد طلبات في انتظار التوصيل حالياً", style: TextStyle(color: Colors.grey, fontSize: 12.sp)),
+      Text("لا توجد مهام حالياً", style: TextStyle(color: Colors.grey, fontSize: 16.sp, fontWeight: FontWeight.bold))
     ]));
   }
 }
