@@ -33,6 +33,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   @override
   void initState() {
     super.initState();
+    // تشغيل الخدمة فقط عند دخول هذه الشاشة
     _startBackgroundTracking(); 
     _initInitialLocation();
   }
@@ -70,22 +71,39 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     if (_uid != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('driver_uid', _uid!);
+      
       final service = FlutterBackgroundService();
+      
+      // التعديل الجوهري: إيقاف التشغيل التلقائي autoStart: false
       await service.configure(
         androidConfiguration: AndroidConfiguration(
-          onStart: onStart, autoStart: true, isForegroundMode: true,
+          onStart: onStart, 
+          autoStart: false, // ❌ لن تعمل الخدمة من تلقاء نفسها أبداً
+          isForegroundMode: true,
           notificationChannelId: 'aksab_tracking_channel',
-          initialNotificationTitle: 'أكسب: رحلة قيد التنفيذ',
-          initialNotificationContent: 'جاري مشاركة الموقع لضمان التسوية المالية للعهدة',
+          initialNotificationTitle: 'أكسب: تأمين العهدة نشط 🛡️',
+          initialNotificationContent: 'جاري تتبع الرحلة لضمان استرداد نقاط التأمين فور الوصول',
           foregroundServiceNotificationId: 888,
         ),
-        iosConfiguration: IosConfiguration(autoStart: true, onForeground: onStart),
+        iosConfiguration: IosConfiguration(
+          autoStart: false, // ❌ لن تعمل في iOS تلقائياً أيضاً
+          onForeground: onStart
+        ),
       );
+      
+      // تشغيل الخدمة يدوياً الآن فقط لأن المندوب في شاشة الطلب النشط
       service.startService();
     }
   }
 
-  Future<void> _stopBackgroundTracking() async => FlutterBackgroundService().invoke("stopService");
+  // إيقاف الخدمة فوراً وإخفاء الإشعار
+  Future<void> _stopBackgroundTracking() async {
+    final service = FlutterBackgroundService();
+    var isRunning = await service.isRunning();
+    if (isRunning) {
+      service.invoke("stopService");
+    }
+  }
 
   Future<void> _initInitialLocation() async {
     Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
@@ -305,7 +323,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                       'status': 'returned_successfully', 
                       'updatedAt': FieldValue.serverTimestamp(),
                     });
-                    await _stopBackgroundTracking();
+                    await _stopBackgroundTracking(); // إيقاف الخدمة فوراً عند النجاح
                     if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
                   } else {
                     _updateStatus('picked_up');
@@ -352,7 +370,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
 
   void _completeOrder() async {
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
-    await _stopBackgroundTracking();
+    await _stopBackgroundTracking(); // إيقاف الخدمة فوراً عند انتهاء الرحلة
     try {
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
       if (mounted) { Navigator.pop(context); Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false); }
@@ -421,7 +439,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog(context: context, builder: (c) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), title: const Text("اعتذار عن الرحلة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), content: const Text("هل أنت متأكد؟ لن يتم خصم عهدة إذا لم تستلم البضاعة بعد.", style: TextStyle(fontFamily: 'Cairo')), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد الاعتذار", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))])));
     if (confirm == true) {
-      await _stopBackgroundTracking();
+      await _stopBackgroundTracking(); // إيقاف الخدمة عند الاعتذار
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'driver_cancelled_reseeking', 'lastDriverId': _uid, 'driverId': FieldValue.delete()});
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }
