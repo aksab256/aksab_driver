@@ -5,13 +5,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart'; // تأكد من إضافة هذا المكتبة في pubspec.yaml
 
 // استدعاء الصفحات التابعة
 import 'delivery_management_screen.dart';
 import 'delivery_fleet_screen.dart';
 import 'manager_geo_dist_screen.dart';
 import 'ProfileScreen.dart';
-import 'field_monitor_screen.dart'; // الصفحة الجديدة التي أنشأناها
+import 'field_monitor_screen.dart';
 
 class DeliveryAdminDashboard extends StatefulWidget {
   const DeliveryAdminDashboard({super.key});
@@ -34,7 +35,6 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     super.initState();
     _checkAuthAndLoadData();
 
-    // تشغيل طلب الإذن بعد استقرار الواجهة لضمان التوافق مع Play Store
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 800), () {
         _requestNotificationPermissionWithDisclosure();
@@ -42,7 +42,8 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     });
   }
 
-  // دالة تحديث التوكن في AWS لضمان وصول الإشعارات للمدير
+  // --- الدوال التقنية (AWS & Permissions) ---
+
   Future<void> _syncNotificationWithAWS(String role) async {
     try {
       String? token = await FirebaseMessaging.instance.getToken();
@@ -57,19 +58,16 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
             "role": role
           }),
         );
-        debugPrint("✅ AWS Sync Successful");
       }
     } catch (e) {
       debugPrint("❌ AWS Sync Error: $e");
     }
   }
 
-  // دالة الإفصاح وطلب الإذن (Disclosure) - مطابقة لاشتراطات جوجل
   Future<void> _requestNotificationPermissionWithDisclosure() async {
     FirebaseMessaging messaging = FirebaseMessaging.instance;
     NotificationSettings settings = await messaging.getNotificationSettings();
 
-    // نطلب الإذن إذا لم يكن مفعلاً بالفعل
     if (settings.authorizationStatus != AuthorizationStatus.authorized) {
       if (!mounted) return;
 
@@ -109,12 +107,9 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       );
 
       if (proceed == true) {
-        // طلب الإذن الرسمي من النظام
         NotificationSettings newSettings = await messaging.requestPermission(
           alert: true, badge: true, sound: true,
         );
-
-        // إذا وافق، نقوم بتحديث الـ Endpoint فوراً لضمان الربط التقني
         if (newSettings.authorizationStatus == AuthorizationStatus.authorized) {
           String role = _userData?['role'] ?? 'delivery_manager';
           await _syncNotificationWithAWS(role);
@@ -122,6 +117,8 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
       }
     }
   }
+
+  // --- جلب البيانات ---
 
   Future<void> _checkAuthAndLoadData() async {
     try {
@@ -150,7 +147,6 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     if (role == 'delivery_supervisor') {
       var myReps = await repsQuery.where('supervisorId', isEqualTo: managerDocId).get();
       _totalReps = myReps.size;
-
       if (myReps.docs.isNotEmpty) {
         List<String> repCodes = myReps.docs.map((d) => d['repCode'] as String).toList();
         ordersQuery = ordersQuery.where('buyer.repCode', whereIn: repCodes);
@@ -171,6 +167,8 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     }
     _totalSales = salesSum;
   }
+
+  // --- الواجهة الرسومية الرئيسية ---
 
   @override
   Widget build(BuildContext context) {
@@ -243,71 +241,96 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     );
   }
 
+  // --- الـ Drawer مع التعديلات المطلوبة (نسخة طبق الأصل) ---
+
   Widget _buildDrawer() {
     return Drawer(
       width: 75.w,
-      child: Column(
-        children: [
-          UserAccountsDrawerHeader(
-            decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
-            accountName: Text(_userData?['fullname'] ?? "المدير", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14.sp)),
-            accountEmail: Text(_userData?['role'] == 'delivery_manager' ? "مدير نظام" : "مشرف ميداني", style: const TextStyle(fontFamily: 'Cairo')),
-            currentAccountPicture: CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.admin_panel_settings, size: 35.sp, color: const Color(0xFF2C3E50))),
-          ),
-          
-          _drawerItem(Icons.account_circle, "حسابي الشخصي", Colors.blue, () {
-            Navigator.pop(context);
-            Navigator.push(context, MaterialPageRoute(builder: (context) => ProfileScreen(repData: _userData)));
-          }),
-
-          // تم إضافة Badge هنا لمراقبة المرتجعات النشطة فوراً من القائمة
-          StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('specialRequests')
-                .where('status', isEqualTo: 'returning_to_seller')
-                .snapshots(),
-            builder: (context, snapshot) {
-              int returnCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
-              return _drawerItem(
-                Icons.radar_rounded, 
-                "تتبع التوصيل الحر", 
-                Colors.redAccent, 
-                () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const FieldMonitorScreen()));
-                },
-                trailing: returnCount > 0 
-                  ? Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                      child: Text("$returnCount", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                    )
-                  : null,
-              );
-            }
-          ),
-
-          _drawerItem(Icons.analytics_rounded, "تقارير العمليات", Colors.teal, () {
-            Navigator.pop(context);
-            Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryManagementScreen()));
-          }),
-          
-          _drawerItem(Icons.delivery_dining, "إدارة المناديب", Colors.orange, () {
-            Navigator.pop(context);
-            Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryFleetScreen()));
-          }),
-          
-          if (_userData?['role'] == 'delivery_manager')
-            _drawerItem(Icons.map_rounded, "نطاقات التوزيع", Colors.purple, () {
-              Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(builder: (context) => const ManagerGeoDistScreen()));
-            }),
+      child: SafeArea( // ✅ حماية الشريط الجانبي من الحواف العلوية والسفلية (Safe Area)
+        child: Column(
+          children: [
+            UserAccountsDrawerHeader(
+              decoration: const BoxDecoration(color: Color(0xFF2C3E50)),
+              margin: EdgeInsets.zero, // لضمان التصاق الهيدر بالأعلى داخل الـ SafeArea
+              accountName: Text(_userData?['fullname'] ?? "المدير", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14.sp)),
+              accountEmail: Text(_userData?['role'] == 'delivery_manager' ? "مدير نظام" : "مشرف ميداني", style: const TextStyle(fontFamily: 'Cairo')),
+              currentAccountPicture: CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.admin_panel_settings, size: 35.sp, color: const Color(0xFF2C3E50))),
+            ),
             
-          const Spacer(),
-          const Divider(),
-          _drawerItem(Icons.logout_rounded, "تسجيل الخروج", Colors.redAccent, () => _showLogoutDialog()),
-          SizedBox(height: 3.h),
-        ],
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _drawerItem(Icons.account_circle, "حسابي الشخصي", Colors.blue, () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => ProfileScreen(repData: _userData)));
+                  }),
+
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('specialRequests')
+                        .where('status', isEqualTo: 'returning_to_seller')
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      int returnCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                      return _drawerItem(
+                        Icons.radar_rounded, 
+                        "تتبع التوصيل الحر", 
+                        Colors.redAccent, 
+                        () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => const FieldMonitorScreen()));
+                        },
+                        trailing: returnCount > 0 
+                          ? Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                              child: Text("$returnCount", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                            )
+                          : null,
+                      );
+                    }
+                  ),
+
+                  _drawerItem(Icons.analytics_rounded, "تقارير العمليات", Colors.teal, () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryManagementScreen()));
+                  }),
+                  
+                  _drawerItem(Icons.delivery_dining, "إدارة المناديب", Colors.orange, () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const DeliveryFleetScreen()));
+                  }),
+                  
+                  if (_userData?['role'] == 'delivery_manager')
+                    _drawerItem(Icons.map_rounded, "نطاقات التوزيع", Colors.purple, () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => const ManagerGeoDistScreen()));
+                    }),
+
+                  // ✅ إضافة أيقونة شروط الاستخدام والخصوصية
+                  _drawerItem(Icons.policy_rounded, "شروط الاستخدام والخصوصية", Colors.blueGrey, () async {
+                    final Uri url = Uri.parse('https://aksab.shop');
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                    }
+                  }),
+                ],
+              ),
+            ),
+            
+            const Divider(),
+            
+            // ✅ إضافة زر تسجيل الخروج في أسفل الشريط (مساحة آمنة)
+            _drawerItem(
+              Icons.logout_rounded, 
+              "تسجيل الخروج", 
+              Colors.redAccent, 
+              () => _showLogoutDialog()
+            ),
+            SizedBox(height: 2.h), // مسافة بسيطة لضمان عدم ملامسة الحافة السفلية تماماً
+          ],
+        ),
       ),
     );
   }
@@ -343,4 +366,3 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
     );
   }
 }
-
