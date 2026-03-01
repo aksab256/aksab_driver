@@ -9,6 +9,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui'; 
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_background_service/flutter_background_service.dart'; // إضافة المكتبة
 
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -33,8 +34,8 @@ void main() async {
   // ✅ 2. تعريف قناة الإشعارات
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'aksab_tracking_channel', 
-    'تتبع رحلات أكسب',
-    description: 'تستخدم لتتبع موقع المندوب أثناء الرحلة لضمان جودة الخدمة',
+    'تأمين العهدة - أكسب 🛡️',
+    description: 'تستخدم لتتبع موقع المندوب أثناء الرحلة لضمان استرداد نقاط التأمين',
     importance: Importance.high,
   );
 
@@ -44,12 +45,22 @@ void main() async {
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
+  // ✅ 3. أمر التنظيف الذكي: إيقاف أي خدمة قديمة معلقة عند بداية تشغيل التطبيق
+  // هذا يضمن عدم ظهور الإشعار "ورا بعضه" إلا إذا استدعاه الأوردر النشط
+  try {
+    FlutterBackgroundService().invoke("stopService");
+  } catch (e) {
+    // تجاهل الخطأ إذا لم تكن الخدمة تعمل
+  }
+
   runApp(AksabDriverApp());
 }
 
 class AksabDriverApp extends StatelessWidget {
   // مفتاح عالمي للتحكم في التنقل (Navigator) ومنع الخروج
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+  AksabDriverApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -126,6 +137,8 @@ class AksabDriverApp extends StatelessWidget {
 }
 
 class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
