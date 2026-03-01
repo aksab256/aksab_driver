@@ -22,26 +22,49 @@ class ActiveOrderScreen extends StatefulWidget {
   State<ActiveOrderScreen> createState() => _ActiveOrderScreenState();
 }
 
-class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
+// استخدام WidgetsBindingObserver لمراقبة خروج المندوب من التطبيق للـ Background
+class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindingObserver {
   LatLng? _currentLocation;
   List<LatLng> _routePoints = [];
   StreamSubscription<Position>? _positionStream;
   final MapController _mapController = MapController();
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   final String _mapboxToken = 'pk.eyJ1IjoiYW1yc2hpcGwiLCJhIjoiY21lajRweGdjMDB0eDJsczdiemdzdXV6biJ9.E--si9vOB93NGcAq7uVgGw';
+  
+  // متغير للتحكم في حالة الخدمة برمجياً
+  bool _isOrderStillActive = true;
 
   @override
   void initState() {
     super.initState();
-    // تشغيل الخدمة فقط عند دخول هذه الشاشة
-    _startBackgroundTracking(); 
+    WidgetsBinding.instance.addObserver(this); // تسجيل مراقب حالة التطبيق
+    _configureBackgroundServiceOnly(); // إعداد الخدمة دون تشغيلها
     _initInitialLocation();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // إزالة المراقب
     _positionStream?.cancel();
+    // إذا أغلقت الشاشة والرحلة انتهت، نضمن توقف الخدمة تماماً
+    if (!_isOrderStillActive) {
+       _stopBackgroundTracking();
+    }
     super.dispose();
+  }
+
+  // ملاحقة حالة التطبيق: إذا نزل للخلفية نشغل الإشعار، وإذا رجع نوقفه
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_isOrderStillActive) return;
+
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      // المندوب خرج من التطبيق أو قفل الشاشة -> شغل تتبع الخلفية فوراً
+      _startBackgroundTracking();
+    } else if (state == AppLifecycleState.resumed) {
+      // المندوب عاد للشاشة -> أوقف خدمة الخلفية (لأن التتبع الحي داخل الشاشة سيعمل)
+      _stopBackgroundTracking();
+    }
   }
 
   void _handleBackAction() async {
@@ -57,7 +80,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
             TextButton(onPressed: () => Navigator.pop(context, false), child: Text("بقاء في الرحلة", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 13.sp))),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-              onPressed: () => Navigator.pop(context, true), 
+              onPressed: () {
+                _startBackgroundTracking(); // تفعيل الخدمة قبل الخروج للشاشة الرئيسية
+                Navigator.pop(context, true);
+              }, 
               child: Text("الرئيسية", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 13.sp))
             )
           ],
@@ -67,39 +93,39 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
     if (shouldExit && mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 
-  Future<void> _startBackgroundTracking() async {
+  // إعداد الخدمة وتجهيزها فقط (بدون Start)
+  Future<void> _configureBackgroundServiceOnly() async {
     if (_uid != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('driver_uid', _uid!);
       
       final service = FlutterBackgroundService();
-      
-      // التعديل الجوهري: إيقاف التشغيل التلقائي autoStart: false
       await service.configure(
         androidConfiguration: AndroidConfiguration(
           onStart: onStart, 
-          autoStart: false, // ❌ لن تعمل الخدمة من تلقاء نفسها أبداً
+          autoStart: false, // مهم جداً: لا تعمل تلقائياً
           isForegroundMode: true,
           notificationChannelId: 'aksab_tracking_channel',
           initialNotificationTitle: 'أكسب: تأمين العهدة نشط 🛡️',
-          initialNotificationContent: 'جاري تتبع الرحلة لضمان استرداد نقاط التأمين فور الوصول',
+          initialNotificationContent: 'جاري تحديث مسار الرحلة لضمان استرداد نقاط التأمين',
           foregroundServiceNotificationId: 888,
         ),
-        iosConfiguration: IosConfiguration(
-          autoStart: false, // ❌ لن تعمل في iOS تلقائياً أيضاً
-          onForeground: onStart
-        ),
+        iosConfiguration: IosConfiguration(autoStart: false, onForeground: onStart),
       );
-      
-      // تشغيل الخدمة يدوياً الآن فقط لأن المندوب في شاشة الطلب النشط
+    }
+  }
+
+  Future<void> _startBackgroundTracking() async {
+    final service = FlutterBackgroundService();
+    bool isRunning = await service.isRunning();
+    if (!isRunning && _isOrderStillActive) {
       service.startService();
     }
   }
 
-  // إيقاف الخدمة فوراً وإخفاء الإشعار
   Future<void> _stopBackgroundTracking() async {
     final service = FlutterBackgroundService();
-    var isRunning = await service.isRunning();
+    bool isRunning = await service.isRunning();
     if (isRunning) {
       service.invoke("stopService");
     }
@@ -319,11 +345,12 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
                 if (codeController.text.trim() == correctCode?.trim()) {
                   Navigator.pop(context);
                   if (isReturning) {
+                    setState(() => _isOrderStillActive = false);
                     await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
                       'status': 'returned_successfully', 
                       'updatedAt': FieldValue.serverTimestamp(),
                     });
-                    await _stopBackgroundTracking(); // إيقاف الخدمة فوراً عند النجاح
+                    await _stopBackgroundTracking(); 
                     if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
                   } else {
                     _updateStatus('picked_up');
@@ -369,8 +396,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   }
 
   void _completeOrder() async {
+    setState(() => _isOrderStillActive = false);
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
-    await _stopBackgroundTracking(); // إيقاف الخدمة فوراً عند انتهاء الرحلة
+    await _stopBackgroundTracking(); 
     try {
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
       if (mounted) { Navigator.pop(context); Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false); }
@@ -439,7 +467,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> {
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog(context: context, builder: (c) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), title: const Text("اعتذار عن الرحلة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), content: const Text("هل أنت متأكد؟ لن يتم خصم عهدة إذا لم تستلم البضاعة بعد.", style: TextStyle(fontFamily: 'Cairo')), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد الاعتذار", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))])));
     if (confirm == true) {
-      await _stopBackgroundTracking(); // إيقاف الخدمة عند الاعتذار
+      setState(() => _isOrderStillActive = false);
+      await _stopBackgroundTracking(); 
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'driver_cancelled_reseeking', 'lastDriverId': _uid, 'driverId': FieldValue.delete()});
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }
