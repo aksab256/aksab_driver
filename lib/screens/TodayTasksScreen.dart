@@ -3,10 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:flutter/services.dart';
+// استدعاء الشاشة الجديدة
+import 'package:aksab_driver/screens/invoice_screen.dart'; 
 
 class TodayTasksScreen extends StatefulWidget {
   final String repCode;
@@ -28,65 +26,15 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     final double lat = (location['lat'] as num).toDouble();
     final double lng = (location['lng'] as num).toDouble();
     final Uri googleUri = Uri.parse("google.navigation:q=$lat,$lng");
-    final Uri appleUri = Uri.parse("https://maps.apple.com/?q=$lat,$lng");
-
+    
     try {
-      if (Platform.isAndroid) {
+      if (await canLaunchUrl(googleUri)) {
         await launchUrl(googleUri, mode: LaunchMode.externalNonBrowserApplication);
       } else {
-        await launchUrl(appleUri);
+        _showSnackBar("تعذر فتح تطبيق الخرائط");
       }
     } catch (e) {
-      _showSnackBar("تعذر فتح تطبيق الخرائط");
-    }
-  }
-
-  // --- طباعة الفاتورة (بدون استدعاء ملف خط خارجي) ---
-  Future<void> _printInvoice(Map<String, dynamic> order) async {
-    try {
-      final pdf = pw.Document();
-      // ملحوظة: العربي ممكن يظهر مقطع هنا لعدم وجود ملف الخط، 
-      // بس المهم دلوقتي إن الـ Build ينجح والـ PDF يفتح.
-      
-      final buyer = order['buyer'] ?? {};
-      final items = order['items'] as List? ?? [];
-
-      pdf.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          build: (pw.Context context) {
-            return pw.Directionality(
-              textDirection: pw.TextDirection.rtl,
-              child: pw.Padding(
-                padding: const pw.EdgeInsets.all(20),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Center(child: pw.Text("Order Invoice: ${order['orderId'] ?? '---'}", 
-                      style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold))),
-                    pw.Divider(),
-                    pw.Text("Customer: ${buyer['name'] ?? '-'}"),
-                    pw.Text("Address: ${buyer['address'] ?? '-'}"),
-                    pw.SizedBox(height: 20),
-                    pw.TableHelper.fromTextArray(
-                      headers: ['Product', 'Qty', 'Price'],
-                      data: items.map((i) => [i['name'] ?? '-', i['quantity'] ?? '0', "${i['price'] ?? 0}"]).toList(),
-                    ),
-                    pw.SizedBox(height: 20),
-                    pw.Divider(),
-                    pw.Align(alignment: pw.Alignment.centerLeft, 
-                      child: pw.Text("Total: ${order['total']} EGP", 
-                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold))),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      );
-      await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
-    } catch (e) {
-      _showSnackBar("Error in printing: $e");
+      _showSnackBar("خطأ في فتح الخرائط");
     }
   }
 
@@ -100,7 +48,6 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
           .update({
         'deliveryTaskStatus': status,
         'completedAt': FieldValue.serverTimestamp(),
-        'isSettled': false,
       });
       _showSnackBar(status == 'delivered' ? "تم التسليم بنجاح ✅" : "تم تسجيل فشل الطلب ❌");
     } catch (e) {
@@ -115,32 +62,31 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FA),
       appBar: AppBar(
-        title: const Text("مهام اليوم التوصيل", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: Text("مهام التوصيل اليومية", 
+          style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.white)),
         centerTitle: true,
-        backgroundColor: const Color(0xFF007BFF),
+        backgroundColor: const Color(0xFF1B5E20), // أخضر براند اكسب
         elevation: 0,
       ),
-      body: SafeArea(
-        child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('waitingdelivery')
-              .where('repCode', isEqualTo: widget.repCode)
-              .where('deliveryTaskStatus', isEqualTo: 'pending')
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return _buildEmptyState();
-            
-            return ListView.builder(
-              padding: EdgeInsets.all(10.sp),
-              itemCount: snapshot.data!.docs.length,
-              itemBuilder: (context, index) {
-                var doc = snapshot.data!.docs[index];
-                return _buildTaskCard(doc.id, doc.data() as Map<String, dynamic>);
-              },
-            );
-          },
-        ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('waitingdelivery')
+            .where('repCode', isEqualTo: widget.repCode)
+            .where('deliveryTaskStatus', isEqualTo: 'pending')
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return _buildEmptyState();
+          
+          return ListView.builder(
+            padding: EdgeInsets.all(12.sp),
+            itemCount: snapshot.data!.docs.length,
+            itemBuilder: (context, index) {
+              var doc = snapshot.data!.docs[index];
+              return _buildTaskCard(doc.id, doc.data() as Map<String, dynamic>);
+            },
+          );
+        },
       ),
     );
   }
@@ -150,20 +96,24 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     final total = (order['total'] ?? 0.0).toDouble();
 
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      margin: EdgeInsets.only(bottom: 12.sp),
-      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      margin: EdgeInsets.only(bottom: 15.sp),
+      elevation: 4,
       child: Column(
         children: [
           Container(
-            padding: EdgeInsets.all(12.sp),
-            decoration: BoxDecoration(color: Colors.blue[600], borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
+            padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp),
+            decoration: const BoxDecoration(
+              color: Color(0xFF2E7D32),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("رقم الطلب: #${docId.substring(0, 6)}", style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text("طلب رقم: #${docId.substring(0, 6).toUpperCase()}", 
+                  style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold, color: Colors.white)),
                 IconButton(
-                  icon: const Icon(Icons.directions, color: Colors.white, size: 28),
+                  icon: const Icon(Icons.map_outlined, color: Colors.white),
                   onPressed: () => _navigateToCustomer(buyer['location']),
                 )
               ],
@@ -173,25 +123,44 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
             padding: EdgeInsets.all(15.sp),
             child: Column(
               children: [
-                _rowInfo("اسم العميل:", buyer['name'] ?? "-", fontSize: 13.sp),
-                _rowInfo("العنوان:", buyer['address'] ?? "غير محدد", fontSize: 12.sp),
-                _rowInfo("المبلغ المطلوب:", "${total.toStringAsFixed(2)} ج.م", isTotal: true, fontSize: 16.sp),
-                const Divider(height: 30),
+                _rowInfo("العميل:", buyer['name'] ?? "-", isBold: true),
+                _rowInfo("العنوان:", buyer['address'] ?? "غير محدد"),
+                const Divider(),
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _smallActionBtn("اتصال", Colors.green, Icons.phone, () => launchUrl(Uri.parse("tel:${buyer['phone']}"))),
-                    SizedBox(width: 5.sp),
-                    _smallActionBtn("الفاتورة", Colors.orange, Icons.receipt_long, () => _showOrderDetails(order)),
+                    Text("المبلغ للتحصيل:", style: TextStyle(fontSize: 12.sp, color: Colors.grey[700])),
+                    Text("${total.toStringAsFixed(2)} ج.م", 
+                      style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w900, color: Colors.green[900])),
                   ],
                 ),
                 SizedBox(height: 15.sp),
+                Row(
+                  children: [
+                    // زرار الاتصال
+                    _actionBtn("اتصال", Colors.blue, Icons.phone, 
+                      () => launchUrl(Uri.parse("tel:${buyer['phone']}"))),
+                    SizedBox(width: 8.sp),
+                    
+                    // ✨ زرار الفاتورة الاحترافي - يفتح صفحة المعاينة والطباعة
+                    _actionBtn("الفاتورة", Colors.orange[800]!, Icons.receipt_long, () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => InvoiceScreen(order: order)),
+                      );
+                    }),
+                  ],
+                ),
+                SizedBox(height: 12.sp),
                 _isProcessing 
                 ? const LinearProgressIndicator()
                 : Row(
                   children: [
-                    _mainActionBtn("تـم التـسليم", Colors.green, Icons.check_circle, () => _updateStatus(docId, 'delivered')),
+                    _mainConfirmBtn("تم التسليم ✅", Colors.green[700]!, 
+                      () => _updateStatus(docId, 'delivered')),
                     SizedBox(width: 10.sp),
-                    _mainActionBtn("فشل", Colors.red, Icons.cancel, () => _updateStatus(docId, 'failed')),
+                    _mainConfirmBtn("فشل التوصيل ❌", Colors.red[700]!, 
+                      () => _updateStatus(docId, 'failed')),
                   ],
                 )
               ],
@@ -202,84 +171,46 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     );
   }
 
-  void _showOrderDetails(Map<String, dynamic> order) {
-    final items = order['items'] as List? ?? [];
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-        padding: EdgeInsets.symmetric(horizontal: 15.sp),
-        height: 60.h,
-        child: Column(
-          children: [
-            SizedBox(height: 12.sp),
-            Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
-            SizedBox(height: 15.sp),
-            Text("تفاصيل الطلب", style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold)),
-            const Divider(),
-            Expanded(
-              child: ListView.builder(
-                itemCount: items.length,
-                itemBuilder: (context, i) => ListTile(
-                  title: Text(items[i]['name'] ?? "-", style: TextStyle(fontSize: 12.sp)),
-                  trailing: Text("x${items[i]['quantity']}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ),
-            SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(bottom: 20.sp, top: 10.sp),
-                child: SizedBox(
-                  width: 80.w,
-                  height: 45.sp,
-                  child: ElevatedButton.icon(
-                    onPressed: () { Navigator.pop(context); _printInvoice(order); }, 
-                    icon: const Icon(Icons.print, color: Colors.white), 
-                    label: const Text("طباعة الفاتورة", style: TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                  ),
-                ),
-              ),
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _rowInfo(String label, String value, {bool isTotal = false, double fontSize = 12}) {
+  Widget _rowInfo(String label, String value, {bool isBold = false}) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4.sp),
+      padding: EdgeInsets.symmetric(vertical: 3.sp),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700], fontSize: fontSize)),
-          Expanded(child: Text(value, textAlign: TextAlign.end, style: TextStyle(fontWeight: isTotal ? FontWeight.bold : FontWeight.normal, color: isTotal ? Colors.blue[900] : Colors.black, fontSize: fontSize))),
+          Text(label, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[600], fontSize: 11.sp)),
+          SizedBox(width: 5.sp),
+          Expanded(child: Text(value, style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.normal, fontSize: 12.sp))),
         ],
       ),
     );
   }
 
-  Widget _smallActionBtn(String label, Color color, IconData icon, VoidCallback onTap) {
+  Widget _actionBtn(String label, Color color, IconData icon, VoidCallback onTap) {
     return Expanded(
       child: OutlinedButton.icon(
         onPressed: onTap,
         icon: Icon(icon, size: 14.sp, color: color),
-        label: Text(label, style: TextStyle(color: color, fontSize: 10.sp, fontWeight: FontWeight.bold)),
-        style: OutlinedButton.styleFrom(side: BorderSide(color: color), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        label: Text(label, style: TextStyle(color: color, fontSize: 11.sp, fontWeight: FontWeight.bold)),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: color, width: 1.5),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: EdgeInsets.symmetric(vertical: 8.sp)
+        ),
       ),
     );
   }
 
-  Widget _mainActionBtn(String label, Color color, IconData icon, VoidCallback onTap) {
+  Widget _mainConfirmBtn(String label, Color color, VoidCallback onTap) {
     return Expanded(
-      child: ElevatedButton.icon(
+      child: ElevatedButton(
         onPressed: onTap,
-        icon: Icon(icon, size: 16.sp),
-        label: Text(label, style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold)),
-        style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, padding: EdgeInsets.symmetric(vertical: 12.sp), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          padding: EdgeInsets.symmetric(vertical: 10.sp),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        child: Text(label, style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -289,7 +220,11 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
   }
 
   Widget _buildEmptyState() {
-    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.done_all, size: 60.sp, color: Colors.green[200]), SizedBox(height: 15.sp), Text("لا توجد مهام معلقة حالياً", style: TextStyle(color: Colors.grey, fontSize: 14.sp))]));
+    return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Icon(Icons.check_circle_outline, size: 60.sp, color: Colors.green[200]),
+      SizedBox(height: 10.sp),
+      Text("لا توجد مهام توصيل حالياً", style: TextStyle(color: Colors.grey, fontSize: 14.sp))
+    ]));
   }
 }
 

@@ -45,6 +45,7 @@ dependencies:
   lucide_icons: ^0.257.0
   pdf: ^3.11.3
   printing: ^5.14.2
+  intl: ^0.20.2
   
   # Printing & PDF (الإصدارات دي هي الأكثر استقراراً مع بعض)
 
