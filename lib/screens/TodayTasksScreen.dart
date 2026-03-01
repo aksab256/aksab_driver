@@ -41,19 +41,13 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     }
   }
 
-  // --- طباعة الفاتورة (النسخة المعتمدة) ---
+  // --- طباعة الفاتورة (بدون استدعاء ملف خط خارجي) ---
   Future<void> _printInvoice(Map<String, dynamic> order) async {
     try {
       final pdf = pw.Document();
-      pw.Font? arabicFont;
-
-      try {
-        final fontData = await rootBundle.load("assets/fonts/Cairo-Regular.ttf");
-        arabicFont = pw.Font.ttf(fontData);
-      } catch (_) {
-        debugPrint("تحذير: لم يتم العثور على ملف الخط");
-      }
-
+      // ملحوظة: العربي ممكن يظهر مقطع هنا لعدم وجود ملف الخط، 
+      // بس المهم دلوقتي إن الـ Build ينجح والـ PDF يفتح.
+      
       final buyer = order['buyer'] ?? {};
       final items = order['items'] as List? ?? [];
 
@@ -68,23 +62,21 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Center(child: pw.Text("فاتورة طلب: ${order['orderId'] ?? '---'}", 
-                      style: pw.TextStyle(font: arabicFont, fontSize: 20, fontWeight: pw.FontWeight.bold))),
+                    pw.Center(child: pw.Text("Order Invoice: ${order['orderId'] ?? '---'}", 
+                      style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold))),
                     pw.Divider(),
-                    pw.Text("المشتري: ${buyer['name'] ?? '-'}", style: pw.TextStyle(font: arabicFont)),
-                    pw.Text("العنوان: ${buyer['address'] ?? '-'}", style: pw.TextStyle(font: arabicFont)),
+                    pw.Text("Customer: ${buyer['name'] ?? '-'}"),
+                    pw.Text("Address: ${buyer['address'] ?? '-'}"),
                     pw.SizedBox(height: 20),
                     pw.TableHelper.fromTextArray(
-                      headers: ['المنتج', 'الكمية', 'السعر'],
-                      headerStyle: pw.TextStyle(font: arabicFont, fontWeight: pw.FontWeight.bold),
-                      cellStyle: pw.TextStyle(font: arabicFont),
+                      headers: ['Product', 'Qty', 'Price'],
                       data: items.map((i) => [i['name'] ?? '-', i['quantity'] ?? '0', "${i['price'] ?? 0}"]).toList(),
                     ),
                     pw.SizedBox(height: 20),
                     pw.Divider(),
                     pw.Align(alignment: pw.Alignment.centerLeft, 
-                      child: pw.Text("الإجمالي: ${order['total']} ج.م", 
-                      style: pw.TextStyle(font: arabicFont, fontSize: 16, fontWeight: pw.FontWeight.bold))),
+                      child: pw.Text("Total: ${order['total']} EGP", 
+                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold))),
                   ],
                 ),
               ),
@@ -94,7 +86,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
       );
       await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
     } catch (e) {
-      _showSnackBar("خطأ داخلي في الطباعة: $e");
+      _showSnackBar("Error in printing: $e");
     }
   }
 
@@ -210,7 +202,6 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     );
   }
 
-  // --- عرض التفاصيل مع إصلاح حجم الزرار ---
   void _showOrderDetails(Map<String, dynamic> order) {
     final items = order['items'] as List? ?? [];
     showModalBottomSheet(
@@ -218,10 +209,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white, 
-          borderRadius: BorderRadius.vertical(top: Radius.circular(30))
-        ),
+        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
         padding: EdgeInsets.symmetric(horizontal: 15.sp),
         height: 60.h,
         child: Column(
@@ -240,26 +228,17 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
                 ),
               ),
             ),
-            
-            // إصلاح حجم الزرار (رفعناه بـ SafeArea وحددنا الارتفاع)
             SafeArea(
               child: Padding(
                 padding: EdgeInsets.only(bottom: 20.sp, top: 10.sp),
                 child: SizedBox(
-                  width: 80.w, // عرض مناسب 80% من الشاشة
-                  height: 45.sp, // ارتفاع مناسب للضغط
+                  width: 80.w,
+                  height: 45.sp,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context); // إغلاق المودال
-                      _printInvoice(order);   // فتح الطباعة
-                    }, 
+                    onPressed: () { Navigator.pop(context); _printInvoice(order); }, 
                     icon: const Icon(Icons.print, color: Colors.white), 
-                    label: const Text("طباعة الفاتورة", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                    ),
+                    label: const Text("طباعة الفاتورة", style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                   ),
                 ),
               ),

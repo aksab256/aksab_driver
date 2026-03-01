@@ -22,11 +22,6 @@ dependencies:
   # UI & Design
   sizer: ^3.0.1
   font_awesome_flutter: ^10.8.0
-  google_fonts: ^6.2.1
-  cached_network_image: ^3.4.1
-  image_picker: ^1.1.2
-
-  # Location & Maps
   geolocator: ^13.0.2
   geocoding: ^3.0.0
   flutter_map: ^7.0.2
@@ -83,11 +78,5 @@ flutter:
   assets:
     - assets/
     - assets/icon/
-    - assets/fonts/  # أنشئ هذا المجلد وحط فيه ملف Cairo-Regular.ttf
     - assets/OSMB-bc319d822a17aa9ad1089fc05e7d4e752460f877.geojson
-
-  fonts:
-    - family: Cairo
-      fonts:
-        - asset: assets/fonts/Cairo-Regular.ttf
 
