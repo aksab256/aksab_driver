@@ -1,3 +1,4 @@
+// المسار: lib/screens/delivery_management_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -62,15 +63,23 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
     }
   }
 
-  // دالة الفحص الجغرافي (بدون تعديل لضمان الدقة)
-  bool _isOrderInMyArea(Map<String, dynamic> locationData) {
+  // 🎯 تعديل دالة الفحص الجغرافي لتقرأ من الـ buyer مباشرة (تتوافق مع الهيكل الجديد)
+  bool _isOrderInMyArea(Map<String, dynamic> buyerData) {
     if (role == 'delivery_manager') return true;
     if (geoJsonData == null) return false;
-    double lat = (locationData['lat'] as num).toDouble();
-    double lng = (locationData['lng'] as num).toDouble();
+    
+    // التحقق من وجود الإحداثيات داخل كائن الـ buyer مباشرة
+    if (buyerData['lat'] == null || buyerData['lng'] == null) return false;
+
+    double lat = (buyerData['lat'] as num).toDouble();
+    double lng = (buyerData['lng'] as num).toDouble();
     LatLng point = LatLng(lat, lng);
+
     for (var area in myAreas) {
-      var feature = geoJsonData!['features'].firstWhere((f) => f['properties']['name'].toString().trim() == area.trim(), orElse: () => null);
+      var feature = geoJsonData!['features'].firstWhere(
+        (f) => f['properties']['name'].toString().trim() == area.trim(), 
+        orElse: () => null
+      );
       if (feature == null) continue;
       var coords = feature['geometry']['coordinates'];
       var type = feature['geometry']['type'];
@@ -101,7 +110,7 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
         backgroundColor: const Color(0xFF2C3E50),
         centerTitle: true,
       ),
-      body: SafeArea( // حماية الصفحة بالكامل
+      body: SafeArea(
         child: isLoading 
           ? const Center(child: CircularProgressIndicator(color: Colors.blue)) 
           : StreamBuilder<QuerySnapshot>(
@@ -116,10 +125,13 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
                   if (role == 'delivery_manager') {
                     return data['status'] == 'new-order' && data['deliveryManagerAssigned'] != true;
                   }
+                  
                   bool isApproved = data['deliveryManagerAssigned'] == true;
                   bool isNotAssignedToRep = data['deliveryRepId'] == null;
-                  if (isApproved && isNotAssignedToRep && data['buyer']?['location'] != null) {
-                    return _isOrderInMyArea(data['buyer']['location']);
+                  
+                  // 🎯 التعديل هنا: الفحص يعتمد على وجود lat داخل buyer مباشرة
+                  if (isApproved && isNotAssignedToRep && data['buyer'] != null) {
+                    return _isOrderInMyArea(data['buyer']);
                   }
                   return false;
                 }).toList();
@@ -148,7 +160,7 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
       margin: EdgeInsets.only(bottom: 12.sp),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       child: InkWell(
-        onTap: () => _showOrderDetails(id, data), // المنبثقة تعمل هنا
+        onTap: () => _showOrderDetails(id, data),
         borderRadius: BorderRadius.circular(15),
         child: Padding(
           padding: EdgeInsets.all(15.sp),
@@ -262,6 +274,11 @@ class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
             'repName': rep['fullname'],
             'assignedAt': FieldValue.serverTimestamp(),
             'deliveryTaskStatus': 'pending',
+          });
+          // تحديث الطلب الأصلي بـ repCode لضمان عدم ظهوره لمشرفين آخرين
+          await FirebaseFirestore.instance.collection('orders').doc(id).update({
+            'deliveryRepId': val,
+            'repName': rep['fullname']
           });
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("تم الإسناد لـ ${rep['fullname']}")));
         },
