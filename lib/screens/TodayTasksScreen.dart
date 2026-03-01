@@ -41,18 +41,17 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     }
   }
 
-  // --- طباعة الفاتورة (نسخة مستقرة جداً) ---
+  // --- طباعة الفاتورة (النسخة المعتمدة) ---
   Future<void> _printInvoice(Map<String, dynamic> order) async {
     try {
       final pdf = pw.Document();
       pw.Font? arabicFont;
 
-      // محاولة تحميل الخط، لو مش موجود هيستخدم الخط الافتراضي
       try {
         final fontData = await rootBundle.load("assets/fonts/Cairo-Regular.ttf");
         arabicFont = pw.Font.ttf(fontData);
       } catch (_) {
-        debugPrint("تحذير: لم يتم العثور على ملف الخط، سيتم استخدام الخط الافتراضي");
+        debugPrint("تحذير: لم يتم العثور على ملف الخط");
       }
 
       final buyer = order['buyer'] ?? {};
@@ -124,7 +123,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FA),
       appBar: AppBar(
-        title: const Text("مهام اليوم التوصيل", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("مهام اليوم التوصيل", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         centerTitle: true,
         backgroundColor: const Color(0xFF007BFF),
         elevation: 0,
@@ -211,6 +210,66 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     );
   }
 
+  // --- عرض التفاصيل مع إصلاح حجم الزرار ---
+  void _showOrderDetails(Map<String, dynamic> order) {
+    final items = order['items'] as List? ?? [];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white, 
+          borderRadius: BorderRadius.vertical(top: Radius.circular(30))
+        ),
+        padding: EdgeInsets.symmetric(horizontal: 15.sp),
+        height: 60.h,
+        child: Column(
+          children: [
+            SizedBox(height: 12.sp),
+            Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+            SizedBox(height: 15.sp),
+            Text("تفاصيل الطلب", style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold)),
+            const Divider(),
+            Expanded(
+              child: ListView.builder(
+                itemCount: items.length,
+                itemBuilder: (context, i) => ListTile(
+                  title: Text(items[i]['name'] ?? "-", style: TextStyle(fontSize: 12.sp)),
+                  trailing: Text("x${items[i]['quantity']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ),
+            
+            // إصلاح حجم الزرار (رفعناه بـ SafeArea وحددنا الارتفاع)
+            SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 20.sp, top: 10.sp),
+                child: SizedBox(
+                  width: 80.w, // عرض مناسب 80% من الشاشة
+                  height: 45.sp, // ارتفاع مناسب للضغط
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context); // إغلاق المودال
+                      _printInvoice(order);   // فتح الطباعة
+                    }, 
+                    icon: const Icon(Icons.print, color: Colors.white), 
+                    label: const Text("طباعة الفاتورة", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _rowInfo(String label, String value, {bool isTotal = false, double fontSize = 12}) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 4.sp),
@@ -246,59 +305,6 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     );
   }
 
-  // --- التعديل النهائي للزرار والـ BottomSheet ---
-  void _showOrderDetails(Map<String, dynamic> order) {
-    final items = order['items'] as List? ?? [];
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-        padding: EdgeInsets.all(15.sp),
-        height: 55.h, // تقليل الارتفاع شوية عشان الزرار يظهر
-        child: Column(
-          children: [
-            Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
-            SizedBox(height: 15.sp),
-            Text("تفاصيل الطلب", style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
-            const Divider(),
-            Expanded(
-              child: ListView.builder(
-                itemCount: items.length,
-                itemBuilder: (context, i) => ListTile(
-                  title: Text(items[i]['name'] ?? "-", style: TextStyle(fontSize: 11.sp)),
-                  trailing: Text("x${items[i]['quantity']}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ),
-            
-            // زرار الطباعة - حجم طبيعي وبعيد عن الحافة
-            SafeArea(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 10.sp),
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _printInvoice(order);
-                  }, 
-                  icon: const Icon(Icons.print), 
-                  label: const Text("طباعة الفاتورة"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(horizontal: 30.sp, vertical: 10.sp),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showSnackBar(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
   }
@@ -307,3 +313,4 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.done_all, size: 60.sp, color: Colors.green[200]), SizedBox(height: 15.sp), Text("لا توجد مهام معلقة حالياً", style: TextStyle(color: Colors.grey, fontSize: 14.sp))]));
   }
 }
+
