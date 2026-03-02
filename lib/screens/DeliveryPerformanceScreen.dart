@@ -20,8 +20,19 @@ class DeliveryPerformanceScreen extends StatefulWidget {
 }
 
 class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
-  DateTime startDate = DateTime.now().subtract(const Duration(hours: 48));
-  DateTime endDate = DateTime.now();
+  // تصحيح نطاق التاريخ ليكون 48 ساعة من بداية يوم الأمس وحتى نهاية اليوم
+  late DateTime startDate;
+  late DateTime endDate;
+
+  @override
+  void initState() {
+    super.initState();
+    DateTime now = DateTime.now();
+    // بداية يوم أمس (00:00:00)
+    startDate = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 1));
+    // نهاية يومنا الحالي (23:59:59)
+    endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,8 +41,8 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
       appBar: AppBar(
         title: Column(
           children: [
-            Text("متابعة أداء المندوب", style: TextStyle(fontSize: 10.sp, color: Colors.white70)),
-            Text(widget.repName, style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, color: Colors.white)),
+            const Text("متابعة أداء المندوب", style: TextStyle(fontSize: 12, color: Colors.white70)),
+            Text(widget.repName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
           ],
         ),
         centerTitle: true,
@@ -44,9 +55,7 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
             .where('repCode', isEqualTo: widget.repCode)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20)));
-          }
+          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
 
           var allDocs = snapshot.data?.docs ?? [];
           
@@ -54,17 +63,26 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
           double totalSettled = 0;   
           int pendingTasks = 0;      
 
+          // تصفية البيانات برمجياً لضمان الدقة
+          List<QueryDocumentSnapshot> filteredList = [];
+
           for (var doc in allDocs) {
             final data = doc.data() as Map<String, dynamic>;
-            double amount = (data['netTotal'] ?? data['total'] ?? 0.0).toDouble();
+            // معالجة مشكلة الـ Null في المبلغ
+            double amount = 0.0;
+            if (data['netTotal'] != null) amount = (data['netTotal']).toDouble();
+            else if (data['total'] != null) amount = (data['total']).toDouble();
 
             if (data['deliveryTaskStatus'] == 'pending') {
               pendingTasks++;
+              filteredList.add(doc); // إضافة المهام المعلقة للرؤية
             } else {
               Timestamp? ts = data['completedAt'] as Timestamp?;
               if (ts != null) {
-                DateTime date = ts.toDate();
-                if (date.isAfter(startDate) && date.isBefore(endDate.add(const Duration(days: 1)))) {
+                DateTime completedDate = ts.toDate();
+                // التأكد أن العملية تقع ضمن الـ 48 ساعة
+                if (completedDate.isAfter(startDate) && completedDate.isBefore(endDate)) {
+                  filteredList.add(doc);
                   if (data['deliveryTaskStatus'] == 'delivered') {
                     if (data['isSettled'] == true) {
                       totalSettled += amount;
@@ -95,11 +113,10 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
               _buildStatusBanner(pendingTasks),
               
               SizedBox(height: 20.sp),
-              Text("سجل عمليات العهدة (التفاصيل)", 
-                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
+              const Text("سجل عمليات العهدة (التفاصيل)", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const Divider(),
 
-              _buildDetailedList(allDocs),
+              _buildDetailedList(filteredList),
             ],
           );
         },
@@ -114,15 +131,15 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: color.withOpacity(0.3)),
+          boxShadow: [BoxShadow(color: color.withOpacity(0.1), blurRadius: 10)],
         ),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 20.sp),
-            SizedBox(height: 5.sp),
-            Text(title, style: TextStyle(fontSize: 10.sp, color: Colors.grey[600])),
+            Icon(icon, color: color, size: 25),
+            const SizedBox(height: 5),
+            Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
             Text("${amount.toStringAsFixed(1)} ج.م", 
-              style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w900, color: color)),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: color)),
           ],
         ),
       ),
@@ -130,48 +147,53 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
   }
 
   Widget _buildStatusBanner(int pending) {
-    bool isWorking = pending > 0;
     return Container(
-      padding: EdgeInsets.all(12.sp),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isWorking ? Colors.amber[50] : Colors.green[50],
+        color: pending > 0 ? Colors.amber[50] : Colors.green[50],
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(isWorking ? Icons.hourglass_top : Icons.check_circle, 
-              color: isWorking ? Colors.orange[800] : Colors.green[800], size: 16.sp),
-          SizedBox(width: 10.sp),
-          Text(
-            isWorking ? "متبقي $pending مهمة قيد التوصيل" : "تم إنهاء كافة المهام بنجاح",
-            style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold),
-          ),
+          Icon(Icons.hourglass_bottom, color: pending > 0 ? Colors.orange : Colors.green),
+          const SizedBox(width: 10),
+          Text("متبقي $pending مهمة قيد التوصيل", style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 
   Widget _buildDetailedList(List<QueryDocumentSnapshot> docs) {
-    var displayDocs = docs.where((d) => d['deliveryTaskStatus'] != 'pending').toList();
-    
+    // ترتيب العمليات من الأحدث للأقدم
+    docs.sort((a, b) {
+      Timestamp tA = (a.data() as Map)['completedAt'] ?? (a.data() as Map)['assignedAt'] ?? Timestamp.now();
+      Timestamp tB = (b.data() as Map)['completedAt'] ?? (b.data() as Map)['assignedAt'] ?? Timestamp.now();
+      return tB.compareTo(tA);
+    });
+
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: displayDocs.length,
+      itemCount: docs.length,
       itemBuilder: (context, index) {
-        var data = displayDocs[index].data() as Map<String, dynamic>;
+        var data = docs[index].data() as Map<String, dynamic>;
         bool isSettled = data['isSettled'] ?? false;
         bool isDelivered = data['deliveryTaskStatus'] == 'delivered';
+        
+        // معالجة الـ Null في السعر داخل القائمة
+        String price = "0";
+        if (data['netTotal'] != null) price = data['netTotal'].toString();
+        else if (data['total'] != null) price = data['total'].toString();
 
         return Card(
-          margin: EdgeInsets.symmetric(vertical: 5.sp),
+          elevation: 0,
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
           child: ListTile(
-            leading: Icon(isDelivered ? Icons.check_circle : Icons.cancel, 
-                        color: isDelivered ? Colors.green : Colors.red),
-            title: Text("طلب #${displayDocs[index].id.substring(0,6)}"),
+            leading: Icon(isDelivered ? Icons.check_circle : Icons.error, color: isDelivered ? Colors.green : Colors.red),
+            title: Text("طلب #${docs[index].id.substring(0, 6)}", style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text(isSettled ? "تم التوريد ✅" : "عهدة مع المندوب ⏳"),
-            trailing: Text("${data['netTotal']} ج.م", 
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
+            trailing: Text("$price ج.م", style: const TextStyle(fontWeight: FontWeight.w900)),
           ),
         );
       },
@@ -179,15 +201,11 @@ class _DeliveryPerformanceScreenState extends State<DeliveryPerformanceScreen> {
   }
 
   Widget _buildDateFilter() {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10.sp, vertical: 5.sp),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text("نطاق التقرير:", style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.bold)),
-          Text("${DateFormat('dd/MM').format(startDate)} - ${DateFormat('dd/MM').format(endDate)}"),
-        ],
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        "نطاق التقرير: ${DateFormat('dd/MM').format(startDate)} - ${DateFormat('dd/MM').format(endDate)}",
+        style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold),
       ),
     );
   }
