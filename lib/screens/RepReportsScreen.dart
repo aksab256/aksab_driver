@@ -19,7 +19,8 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
   DateTime _endDate = DateTime.now();
 
   List<QueryDocumentSnapshot> _currentFilteredDocs = [];
-  double _totalCash = 0;
+  double _totalCashInPeriod = 0; 
+  double _unsettledCash = 0;     
   int _success = 0;
   int _failed = 0;
 
@@ -29,13 +30,13 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
       backgroundColor: const Color(0xFFF4F7F6),
       appBar: AppBar(
         title: Text("تقارير العهدة والتحصيل", 
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18.sp, color: Colors.white)),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, color: Colors.white)),
         backgroundColor: const Color(0xFF1B5E20),
         centerTitle: true,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            icon: Icon(Icons.picture_as_pdf, color: Colors.white, size: 22.sp),
+            icon: Icon(Icons.picture_as_pdf, color: Colors.white, size: 20.sp),
             onPressed: () => _generateReportPDF(),
           ),
         ],
@@ -51,7 +52,7 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
 
   Widget _buildFilterHeader() {
     return Container(
-      padding: EdgeInsets.symmetric(vertical: 15.sp, horizontal: 10.sp),
+      padding: EdgeInsets.symmetric(vertical: 12.sp, horizontal: 10.sp),
       decoration: const BoxDecoration(
         color: Color(0xFF1B5E20),
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(25)),
@@ -60,7 +61,7 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _datePickerBox("من تاريخ", _startDate, (date) => setState(() => _startDate = date)),
-          Icon(Icons.compare_arrows, color: Colors.white54, size: 24.sp),
+          Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 15.sp),
           _datePickerBox("إلى تاريخ", _endDate, (date) => setState(() => _endDate = date)),
         ],
       ),
@@ -80,17 +81,17 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
       },
       child: Column(
         children: [
-          Text(label, style: TextStyle(color: Colors.white70, fontSize: 12.sp)),
-          SizedBox(height: 6.sp),
+          Text(label, style: TextStyle(color: Colors.white70, fontSize: 10.sp)),
+          SizedBox(height: 5.sp),
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 14.sp, vertical: 8.sp),
+            padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 6.sp),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white30),
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white24),
             ),
             child: Text(DateFormat('yyyy/MM/dd').format(date),
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp)),
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.sp)),
           ),
         ],
       ),
@@ -103,11 +104,10 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
           .collection('waitingdelivery')
           .where('repCode', isEqualTo: widget.repCode)
           .orderBy('completedAt', descending: true)
-          .limit(100)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Center(child: Text("خطأ: ${snapshot.error}"));
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20)));
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+        if (snapshot.hasError) return Center(child: Text("خطأ في تحميل البيانات"));
 
         final allDocs = snapshot.data?.docs ?? [];
         
@@ -119,37 +119,32 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
                  orderDate.isBefore(_endDate.add(const Duration(days: 1)));
         }).toList();
 
-        _totalCash = 0;
+        _totalCashInPeriod = 0;
+        _unsettledCash = 0;
         _success = 0;
         _failed = 0;
 
         for (var doc in _currentFilteredDocs) {
           final data = doc.data() as Map<String, dynamic>;
+          double amount = (data['netTotal'] ?? data['total'] ?? 0.0).toDouble();
+          bool isSettled = data['isSettled'] ?? false;
+
           if (data['deliveryTaskStatus'] == 'delivered') {
-            _totalCash += (data['netTotal'] ?? data['total'] ?? 0.0).toDouble();
+            _totalCashInPeriod += amount;
             _success++;
+            if (!isSettled) _unsettledCash += amount; 
           } else if (data['deliveryTaskStatus'] == 'failed') {
             _failed++;
           }
         }
 
         return ListView(
-          padding: EdgeInsets.all(15.sp),
+          padding: EdgeInsets.all(12.sp),
           children: [
             _buildSummaryDashboard(),
-            SizedBox(height: 20.sp),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("سجل العمليات", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, color: Colors.blueGrey[900])),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 4.sp),
-                  decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(20)),
-                  child: Text("${_currentFilteredDocs.length} عملية", style: TextStyle(color: Colors.black87, fontSize: 11.sp, fontWeight: FontWeight.bold)),
-                ),
-              ],
-            ),
-            const Divider(thickness: 1.5),
+            SizedBox(height: 15.sp),
+            _buildSectionTitle(),
+            const Divider(),
             _buildOrdersList(),
           ],
         );
@@ -160,13 +155,13 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
   Widget _buildSummaryDashboard() {
     return Column(
       children: [
-        _statCard("إجمالي الكاش (العهدة الحالية)", "${_totalCash.toStringAsFixed(2)}", " ج.م", Icons.payments, Colors.green, true),
-        SizedBox(height: 12.sp),
+        _statCard("عهدة كاش حالية (غير موردة)", "${_unsettledCash.toStringAsFixed(1)}", " ج.م", Icons.warning_amber_rounded, Colors.orange[800]!, true),
+        SizedBox(height: 10.sp),
         Row(
           children: [
-            _statCard("تم تسليمه", "$_success", " طلب", Icons.check_circle, Colors.blue, false),
-            SizedBox(width: 12.sp),
-            _statCard("المرتجعات", "$_failed", " طلب", Icons.assignment_return, Colors.orange, false),
+            _statCard("إجمالي تحصيل", "${_totalCashInPeriod.toStringAsFixed(1)}", " ج.م", Icons.account_balance_wallet, Colors.green[700]!, false),
+            SizedBox(width: 8.sp),
+            _statCard("مرتجع", "$_failed", " طلب", Icons.assignment_return, Colors.red[700]!, false),
           ],
         ),
       ],
@@ -178,29 +173,25 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
       flex: isFullWidth ? 0 : 1,
       child: Container(
         width: isFullWidth ? double.infinity : null,
-        padding: EdgeInsets.all(16.sp),
+        padding: EdgeInsets.all(14.sp),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: color.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 8))],
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: [BoxShadow(color: color.withOpacity(0.05), blurRadius: 10)],
+          border: Border.all(color: color.withOpacity(0.1)),
         ),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 22.sp,
-              backgroundColor: color.withOpacity(0.1), 
-              child: Icon(icon, color: color, size: 24.sp)
-            ),
-            SizedBox(width: 15.sp),
+            Icon(icon, color: color, size: 20.sp),
+            SizedBox(width: 10.sp),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(fontSize: 11.sp, color: Colors.grey[600], fontWeight: FontWeight.bold)),
-                  SizedBox(height: 4.sp),
+                  Text(title, style: TextStyle(fontSize: 9.sp, color: Colors.grey[600])),
                   RichText(text: TextSpan(children: [
-                    TextSpan(text: value, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.w900, color: Colors.black)),
-                    TextSpan(text: " $unit", style: TextStyle(fontSize: 11.sp, color: Colors.black54, fontWeight: FontWeight.bold)),
+                    TextSpan(text: value, style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w900, color: Colors.black)),
+                    TextSpan(text: " $unit", style: TextStyle(fontSize: 9.sp, color: Colors.black54)),
                   ])),
                 ],
               ),
@@ -211,12 +202,27 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
     );
   }
 
-  Widget _buildOrdersList() {
-    if (_currentFilteredDocs.isEmpty) return Center(child: Padding(
-      padding: EdgeInsets.only(top: 10.h),
-      child: Text("لا توجد بيانات للفترة المحددة", style: TextStyle(fontSize: 14.sp, color: Colors.grey)),
-    ));
+  Widget _buildSectionTitle() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text("سجل عمليات العهدة", style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold)),
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 10.sp, vertical: 2.sp),
+          decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(15)),
+          child: Text("${_currentFilteredDocs.length} حركة", style: TextStyle(fontSize: 9.sp, fontWeight: FontWeight.bold)),
+        ),
+      ],
+    );
+  }
 
+  Widget _buildOrdersList() {
+    if (_currentFilteredDocs.isEmpty) {
+      return Center(child: Padding(
+        padding: EdgeInsets.only(top: 20.sp),
+        child: Text("لا توجد بيانات للفترة المحددة"),
+      ));
+    }
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -227,53 +233,24 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
         bool isSettled = data['isSettled'] ?? false;
         DateTime date = (data['completedAt'] as Timestamp).toDate();
 
-        return Container(
-          margin: EdgeInsets.symmetric(vertical: 8.sp),
-          padding: EdgeInsets.all(4.sp),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)],
-            border: Border.all(color: isDelivered ? Colors.transparent : Colors.red.withOpacity(0.3), width: 1.5),
-          ),
+        return Card(
+          elevation: 0,
+          margin: EdgeInsets.symmetric(vertical: 5.sp),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade100)),
           child: ListTile(
-            contentPadding: EdgeInsets.symmetric(horizontal: 15.sp, vertical: 8.sp),
-            leading: CircleAvatar(
-              backgroundColor: isDelivered ? Colors.green[50] : Colors.orange[50],
-              radius: 20.sp,
-              child: Icon(isDelivered ? Icons.receipt_long : Icons.assignment_return, 
-                color: isDelivered ? Colors.green[700] : Colors.orange[800], size: 20.sp),
-            ),
-            title: Text("طلب #${_currentFilteredDocs[index].id.substring(0, 6).toUpperCase()}", 
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp)),
-            subtitle: Padding(
-              padding: EdgeInsets.only(top: 5.sp),
-              child: Text(DateFormat('yyyy/MM/dd - hh:mm a').format(date), style: TextStyle(fontSize: 11.sp, color: Colors.grey[600])),
-            ),
+            leading: Icon(isDelivered ? Icons.circle : Icons.error_outline, 
+                    color: isDelivered ? (isSettled ? Colors.blue : Colors.orange) : Colors.red, size: 12.sp),
+            title: Text("طلب #${_currentFilteredDocs[index].id.substring(0, 6)}", 
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.sp)),
+            subtitle: Text(DateFormat('dd/MM hh:mm a').format(date), style: TextStyle(fontSize: 8.sp)),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text("${(data['netTotal'] ?? data['total'] ?? 0).toStringAsFixed(1)} ج.م", 
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15.sp, color: isDelivered ? Colors.black : Colors.red)),
-                SizedBox(height: 5.sp),
-                isSettled 
-                  ? Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8.sp, vertical: 2.sp),
-                      decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(8)),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text("مورد ", style: TextStyle(color: Colors.blue[700], fontSize: 9.sp, fontWeight: FontWeight.bold)),
-                        Icon(Icons.verified, color: Colors.blue, size: 12.sp),
-                      ]),
-                    )
-                  : Container(
-                      padding: EdgeInsets.symmetric(horizontal: 8.sp, vertical: 2.sp),
-                      decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(8)),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text("عهدة ", style: TextStyle(color: Colors.orange[900], fontSize: 9.sp, fontWeight: FontWeight.bold)),
-                        Icon(Icons.pending_actions, color: Colors.orange[800], size: 12.sp),
-                      ]),
-                    ),
+                Text("${(data['netTotal'] ?? 0).toStringAsFixed(1)} ج.م", 
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.sp)),
+                Text(isSettled ? "تم التوريد" : (isDelivered ? "عهدة معك" : "مرتجع"),
+                  style: TextStyle(fontSize: 8.sp, color: isSettled ? Colors.blue : Colors.orange[800])),
               ],
             ),
           ),
@@ -284,6 +261,7 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
 
   Future<void> _generateReportPDF() async {
     if (_currentFilteredDocs.isEmpty) return;
+    
     final pdf = pw.Document();
     final font = await PdfGoogleFonts.cairoRegular();
     final boldFont = await PdfGoogleFonts.cairoBold();
@@ -300,25 +278,25 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
                 pw.Header(level: 0, child: pw.Center(child: pw.Text("تقرير تحصيل عهدة - نظام أكسب", style: pw.TextStyle(font: boldFont, fontSize: 22)))),
                 pw.SizedBox(height: 10),
                 pw.Text("كود المندوب: ${widget.repCode}", style: pw.TextStyle(font: font, fontSize: 14)),
-                pw.Text("تاريخ التقرير: ${DateFormat('yyyy/MM/dd hh:mm a').format(DateTime.now())}", style: pw.TextStyle(font: font, fontSize: 12)),
+                pw.Text("الفترة: ${DateFormat('yyyy/MM/dd').format(_startDate)} - ${DateFormat('yyyy/MM/dd').format(_endDate)}", style: pw.TextStyle(font: font, fontSize: 12)),
                 pw.Divider(),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text("إجمالي العهدة: ${_totalCash.toStringAsFixed(2)} ج.م", style: pw.TextStyle(font: boldFont, fontSize: 16, color: PdfColors.green900)),
-                    pw.Text("ناجح: $_success", style: pw.TextStyle(font: font, fontSize: 14)),
-                    pw.Text("مرتجع: $_failed", style: pw.TextStyle(font: font, fontSize: 14)),
+                    pw.Text("إجمالي التحصيل: ${_totalCashInPeriod.toStringAsFixed(2)} ج.م", style: pw.TextStyle(font: boldFont, fontSize: 16)),
+                    pw.Text("عهدة غير موردة: ${_unsettledCash.toStringAsFixed(2)} ج.م", style: pw.TextStyle(font: boldFont, fontSize: 16, color: PdfColors.orange900)),
                   ],
                 ),
                 pw.SizedBox(height: 20),
                 pw.TableHelper.fromTextArray(
-                  headers: ['رقم الطلب', 'التاريخ', 'الحالة', 'المبلغ'],
+                  headers: ['رقم الطلب', 'التاريخ', 'الحالة', 'التوريد', 'المبلغ'],
                   data: _currentFilteredDocs.map((doc) {
                     final data = doc.data() as Map<String, dynamic>;
                     return [
                       doc.id.substring(0, 8),
                       DateFormat('yyyy/MM/dd').format((data['completedAt'] as Timestamp).toDate()),
                       data['deliveryTaskStatus'] == 'delivered' ? 'تم التسليم' : 'مرتجع',
+                      data['isSettled'] == true ? 'تم التوريد' : 'عهدة طرفه',
                       "${data['netTotal'] ?? data['total'] ?? 0} ج.م"
                     ];
                   }).toList(),
@@ -328,7 +306,15 @@ class _RepReportsScreenState extends State<RepReportsScreen> {
                   cellAlignment: pw.Alignment.center,
                 ),
                 pw.SizedBox(height: 30),
-                pw.Text("توقيع المندوب: ....................", style: pw.TextStyle(font: font, fontSize: 12)),
+                pw.Text("إقرار: أقر أنا المندوب المذكور أعلاه بصحة البيانات وأن المبالغ (غير الموردة) هي في عهدتي الشخصية.", style: pw.TextStyle(font: font, fontSize: 10)),
+                pw.SizedBox(height: 20),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+                  children: [
+                    pw.Text("توقيع المندوب: ....................", style: pw.TextStyle(font: font, fontSize: 12)),
+                    pw.Text("توقيع المحاسب: ....................", style: pw.TextStyle(font: font, fontSize: 12)),
+                  ],
+                ),
               ],
             ),
           );
