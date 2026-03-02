@@ -30,17 +30,23 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
   }
 
   Future<void> _checkRole() async {
-    final snap = await _firestore
-        .collection('managers')
-        .where('uid', isEqualTo: currentUserId)
-        .get();
+    try {
+      final snap = await _firestore
+          .collection('managers')
+          .where('uid', isEqualTo: currentUserId)
+          .get();
 
-    if (snap.docs.isNotEmpty) {
-      setState(() {
-        userRole = snap.docs.first.data()['role'];
-        userDocId = snap.docs.first.id;
-        isLoadingRole = false;
-      });
+      if (snap.docs.isNotEmpty) {
+        setState(() {
+          userRole = snap.docs.first.data()['role'];
+          userDocId = snap.docs.first.id;
+          isLoadingRole = false;
+        });
+      } else {
+        setState(() => isLoadingRole = false);
+      }
+    } catch (e) {
+      setState(() => isLoadingRole = false);
     }
   }
 
@@ -61,8 +67,10 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F2F6),
       appBar: AppBar(
-        title: Text(userRole == 'delivery_manager' ? "إدارة المشرفين" : "فريق المناديب التابع لي",
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          userRole == 'delivery_manager' ? "إدارة المشرفين" : "فريق المناديب التابع لي",
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
         backgroundColor: const Color(0xFF2F3542),
         elevation: 0,
         centerTitle: true,
@@ -102,12 +110,19 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          )
+        ],
       ),
       child: Column(
         children: [
           ListTile(
             onTap: () {
+              // الربط الصحيح مع الشاشة الجديدة مع تمرير كافة المتغيرات المطلوبة
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -124,13 +139,23 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
               radius: 25,
               backgroundColor: const Color(0xFF1ABC9C).withOpacity(0.1),
               child: Icon(
-                  userRole == 'delivery_manager' ? Icons.badge : Icons.delivery_dining,
-                  color: const Color(0xFF1ABC9C),
-                  size: 30),
+                userRole == 'delivery_manager' ? Icons.badge : Icons.delivery_dining,
+                color: const Color(0xFF1ABC9C),
+                size: 30,
+              ),
             ),
-            title: Text(data['fullname'] ?? 'غير مسمى',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: const Color(0xFF2F3542))),
-            subtitle: Text(data['phone'] ?? 'بدون رقم هاتف', style: TextStyle(fontSize: 10.sp)),
+            title: Text(
+              data['fullname'] ?? 'غير مسمى',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13.sp,
+                color: const Color(0xFF2F3542),
+              ),
+            ),
+            subtitle: Text(
+              data['phone'] ?? 'بدون رقم هاتف',
+              style: TextStyle(fontSize: 10.sp),
+            ),
             trailing: _buildStatusBadge(hasTarget),
           ),
           Padding(
@@ -142,8 +167,13 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
                   _buildInfoItem(Icons.map_outlined, "المناطق", "${(data['geographicArea'] as List?)?.length ?? 0}"),
                 if (userRole == 'delivery_supervisor')
                   _buildInfoItem(Icons.qr_code, "كود المندوب", "${data['repCode'] ?? '---'}"),
-                _buildInfoItem(Icons.calendar_month_outlined, "تاريخ البدء",
-                    data['approvedAt'] != null ? DateFormat('yyyy/MM/dd').format((data['approvedAt'] as Timestamp).toDate()) : "جديد"),
+                _buildInfoItem(
+                  Icons.calendar_month_outlined,
+                  "تاريخ البدء",
+                  data['approvedAt'] != null
+                      ? DateFormat('yyyy/MM/dd').format((data['approvedAt'] as Timestamp).toDate())
+                      : "جديد",
+                ),
               ],
             ),
           ),
@@ -163,7 +193,11 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
       ),
       child: Text(
         hasTarget ? "تم تعيين الهدف" : "بدون هدف",
-        style: TextStyle(color: hasTarget ? Colors.green : Colors.orange, fontSize: 8.sp, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: hasTarget ? Colors.green : Colors.orange,
+          fontSize: 8.sp,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -173,7 +207,10 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
       padding: EdgeInsets.all(8.sp),
       decoration: const BoxDecoration(
         color: Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(15), bottomRight: Radius.circular(15)),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(15),
+          bottomRight: Radius.circular(15),
+        ),
       ),
       child: Row(
         children: [
@@ -184,7 +221,6 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      // تم حذف الـ supervisorId والـ supervisorName لتطابق الكلاس ManagerGeoDistScreen
                       builder: (context) => const ManagerGeoDistScreen(),
                     ),
                   );
@@ -237,7 +273,9 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
               });
               if (mounted) {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم حفظ الهدف بنجاح ✅")));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("تم حفظ الهدف بنجاح ✅")),
+                );
               }
             },
             child: const Text("حفظ"),
@@ -260,13 +298,17 @@ class _DeliveryFleetScreenState extends State<DeliveryFleetScreen> {
 
   Widget _buildDialogField(TextEditingController ctrl, String label, IconData icon) {
     return TextField(
-        controller: ctrl,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)));
+      controller: ctrl,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
+    );
   }
 
   Widget _buildEmptyState() {
-    return Center(child: Text(userRole == 'delivery_manager' ? "لا يوجد مشرفين" : "لا يوجد مناديب تابعين لك"));
+    return Center(
+      child: Text(
+        userRole == 'delivery_manager' ? "لا يوجد مشرفين" : "لا يوجد مناديب تابعين لك",
+      ),
+    );
   }
 }
-
