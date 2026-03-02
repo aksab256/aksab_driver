@@ -20,7 +20,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
   // دالة لفتح خرائط جوجل لموقع العميل
   Future<void> _navigateToCustomer(Map<String, dynamic>? buyerData) async {
     if (buyerData == null || buyerData['lat'] == null || buyerData['lng'] == null) {
-      _showSnackBar("موقع العميل غير متوفر");
+      _showCustomSnackBar("موقع العميل غير متوفر 📍", isError: true);
       return;
     }
     final double lat = (buyerData['lat'] as num).toDouble();
@@ -31,15 +31,53 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
       if (await canLaunchUrl(Uri.parse(googleUrl))) {
         await launchUrl(Uri.parse(googleUrl), mode: LaunchMode.externalApplication);
       } else {
-        _showSnackBar("تعذر فتح الخرائط");
+        _showCustomSnackBar("تعذر فتح الخرائط 🗺️", isError: true);
       }
     } catch (e) {
-      _showSnackBar("خطأ في فتح الخرائط");
+      _showCustomSnackBar("خطأ في فتح الخرائط ⚠️", isError: true);
     }
+  }
+
+  // نافذة التأكيد لمنع الضغط بالخطأ
+  void _showConfirmDialog(String docId, String status) {
+    String title = status == 'delivered' ? "تأكيد العهدة ✅" : "تسجيل فشل المهمة ❌";
+    String message = status == 'delivered' 
+        ? "بإدخال كود التاجر، أنت تؤكد استلام الشحنة في عهدتك. سيتم تخصيص (نقاط أمان) من حسابك تعادل قيمة الشحنة لضمان النقل الآمن. لا يمكن التراجع بعد تأكيد العهدة."
+        : "هل أنت متأكد من تسجيل هذه الشحنة كفشل توصيل؟ ستظل في عهدتك كمرتجع لحين التصفية.";
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(title, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
+        content: Text(message, textAlign: TextAlign.center, style: TextStyle(fontSize: 13.sp, color: Colors.black87)),
+        actionsAlignment: MainAxisAlignment.spaceEvenly,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text("تراجع", style: TextStyle(color: Colors.grey[700], fontSize: 13.sp, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: status == 'delivered' ? Colors.green[800] : Colors.red[800],
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: EdgeInsets.symmetric(horizontal: 20.sp, vertical: 8.sp)
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              _updateStatus(docId, status);
+            },
+            child: Text("تأكيد", style: TextStyle(color: Colors.white, fontSize: 13.sp, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   // الدالة المطورة لتحديث الحالة وإضافة علامات التوريد المالي
   Future<void> _updateStatus(String docId, String status) async {
+    if (!mounted) return;
     setState(() => _isProcessing = true);
     try {
       Map<String, dynamic> updateData = {
@@ -47,10 +85,9 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
         'completedAt': FieldValue.serverTimestamp(),
       };
 
-      // 🚩 إذا تم التسليم بنجاح (المندوب استلم الكاش)
       if (status == 'delivered') {
-        updateData['cashCollected'] = true; // علامة استلام المبلغ من العميل
-        updateData['isSettled'] = false;    // لم يتم توريد المبلغ للخزينة بعد
+        updateData['cashCollected'] = true; 
+        updateData['isSettled'] = false;    
       }
 
       await FirebaseFirestore.instance
@@ -58,12 +95,47 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
           .doc(docId)
           .update(updateData);
 
-      _showSnackBar(status == 'delivered' ? "تم تأكيد استلام العهدة بنجاح ✅" : "تم تسجيل فشل المهمة ❌");
+      _showCustomSnackBar(status == 'delivered' ? "تمت المهمة وتأكيد العهدة بنجاح 📦" : "تم تسجيل الشحنة كمرتجع 🔄");
     } catch (e) {
-      _showSnackBar("خطأ في التحديث: $e");
+      _showCustomSnackBar("عذراً، حدث خطأ في التحديث ⚠️", isError: true);
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  // سناك بار شيك يظهر في منتصف الشاشة
+  void _showCustomSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 3),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        content: Center(
+          child: Container(
+            padding: EdgeInsets.symmetric(vertical: 15.sp, horizontal: 20.sp),
+            decoration: BoxDecoration(
+              color: isError ? Colors.red[900]!.withOpacity(0.9) : Colors.black.withOpacity(0.85),
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: const Offset(0, 5))],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(isError ? Icons.error_outline : Icons.check_circle_outline, color: Colors.white, size: 20.sp),
+                SizedBox(width: 10.sp),
+                Flexible(
+                  child: Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -170,10 +242,10 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
                 : Row(
                   children: [
                     _mainConfirmBtn("تأكيد الاستلام ✅", Colors.green[700]!, 
-                      () => _updateStatus(docId, 'delivered')),
+                      () => _showConfirmDialog(docId, 'delivered')),
                     SizedBox(width: 10.sp),
                     _mainConfirmBtn("فشل ❌", Colors.red[800]!, 
-                      () => _updateStatus(docId, 'failed')),
+                      () => _showConfirmDialog(docId, 'failed')),
                   ],
                 )
               ],
@@ -226,14 +298,6 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
         child: Text(label, style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.bold)),
       ),
     );
-  }
-
-  void _showSnackBar(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: TextStyle(fontSize: 12.sp, fontFamily: 'Cairo')), 
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: Colors.black87,
-    ));
   }
 
   Widget _buildEmptyState() {
