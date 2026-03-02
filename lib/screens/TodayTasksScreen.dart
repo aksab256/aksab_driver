@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
 import 'package:url_launcher/url_launcher.dart';
-// تفعيل الاستيراد - تأكد من صحة المسار في مشروعك
+// تأكد من صحة مسار الملف في مشروعك
 import 'invoice_screen.dart'; 
 
 class TodayTasksScreen extends StatefulWidget {
@@ -17,6 +17,7 @@ class TodayTasksScreen extends StatefulWidget {
 class _TodayTasksScreenState extends State<TodayTasksScreen> {
   bool _isProcessing = false;
 
+  // دالة لفتح خرائط جوجل لموقع العميل
   Future<void> _navigateToCustomer(Map<String, dynamic>? buyerData) async {
     if (buyerData == null || buyerData['lat'] == null || buyerData['lng'] == null) {
       _showSnackBar("موقع العميل غير متوفر");
@@ -37,17 +38,27 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
     }
   }
 
+  // الدالة المطورة لتحديث الحالة وإضافة علامات التوريد المالي
   Future<void> _updateStatus(String docId, String status) async {
     setState(() => _isProcessing = true);
     try {
+      Map<String, dynamic> updateData = {
+        'deliveryTaskStatus': status,
+        'completedAt': FieldValue.serverTimestamp(),
+      };
+
+      // 🚩 إذا تم التسليم بنجاح (المندوب استلم الكاش)
+      if (status == 'delivered') {
+        updateData['cashCollected'] = true; // علامة استلام المبلغ من العميل
+        updateData['isSettled'] = false;    // لم يتم توريد المبلغ للخزينة بعد
+      }
+
       await FirebaseFirestore.instance
           .collection('waitingdelivery')
           .doc(docId)
-          .update({
-        'deliveryTaskStatus': status,
-        'completedAt': FieldValue.serverTimestamp(),
-      });
-      _showSnackBar(status == 'delivered' ? "تم تأكيد العهدة بنجاح ✅" : "تم تسجيل فشل المهمة ❌");
+          .update(updateData);
+
+      _showSnackBar(status == 'delivered' ? "تم تأكيد استلام العهدة بنجاح ✅" : "تم تسجيل فشل المهمة ❌");
     } catch (e) {
       _showSnackBar("خطأ في التحديث: $e");
     } finally {
@@ -65,8 +76,8 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
         centerTitle: true,
         backgroundColor: const Color(0xFF1B5E20),
         elevation: 2,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
-      // 🛡️ استخدام SafeArea لحماية المحتوى من زراير النظام ونوتش الشاشة
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
@@ -75,11 +86,13 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
               .where('deliveryTaskStatus', isEqualTo: 'pending')
               .snapshots(),
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20)));
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20)));
+            }
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return _buildEmptyState();
             
             return ListView.builder(
-              padding: EdgeInsets.fromLTRB(12.sp, 12.sp, 12.sp, 80.sp), // 👈 هيد بيلدنج عشان آخر كارت ميتداراش
+              padding: EdgeInsets.fromLTRB(12.sp, 12.sp, 12.sp, 80.sp),
               itemCount: snapshot.data!.docs.length,
               itemBuilder: (context, index) {
                 var doc = snapshot.data!.docs[index];
@@ -143,7 +156,6 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
                       if (phone.isNotEmpty) await launchUrl(Uri.parse("tel:$phone"));
                     }),
                     SizedBox(width: 10.sp),
-                    // 📑 الزرار دلوقتي شغال وهيفتح الفاتورة الذكية اللي عملناها
                     _actionBtn("الفاتورة", Colors.orange[900]!, Icons.receipt_long, () {
                       Navigator.push(
                         context,
@@ -217,7 +229,11 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
   }
 
   void _showSnackBar(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: TextStyle(fontSize: 12.sp)), behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: TextStyle(fontSize: 12.sp, fontFamily: 'Cairo')), 
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: Colors.black87,
+    ));
   }
 
   Widget _buildEmptyState() {
