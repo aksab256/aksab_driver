@@ -145,7 +145,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                         decoration: const pw.BoxDecoration(color: PdfColors.green50),
                         child: pw.Row(
-                          mainAxisSize: pw.MinMax.min,
+                          mainAxisSize: pw.MainAxisSize.min, // ✅ تصحيح MainAxisSize
                           mainAxisAlignment: pw.MainAxisAlignment.end,
                           children: [
                             pw.Text('${netAmount.toStringAsFixed(2)} ج.م', 
@@ -203,7 +203,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 : PdfPreview(
                     build: (format) => _buildSmartInvoice(format),
                     canChangePageFormat: true,
-                    initialPageFormat: PdfPageFormat.a4, // ✅ تم إصلاح اسم البارامتر
+                    initialPageFormat: PdfPageFormat.a4, 
                     pdfFileName: "Aksab_${widget.order['orderId']}.pdf",
                     loadingWidget: const Center(child: CircularProgressIndicator()),
                   ),
