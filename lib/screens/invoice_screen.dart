@@ -211,7 +211,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
               : PdfPreview(
                   build: (format) => _buildSmartInvoice(format),
                   canChangePageFormat: true, // السماح بتغيير المقاس يدوياً إذا لزم الأمر
-                  defaultPageFormat: PdfPageFormat.a4,
+                  defaultPageFormat: initialPageFormat
                   pdfFileName: "Aksab_${widget.order['orderId']}.pdf",
                   loadingWidget: const Center(child: CircularProgressIndicator()),
                 ),
