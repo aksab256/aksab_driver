@@ -401,7 +401,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   Widget _phoneButton({required String? phone, required String label, required Color color}) {
     if (phone == null || phone.isEmpty) return const SizedBox();
     return ElevatedButton.icon(
-      style: ElevatedButton.iconFrom(backgroundColor: color, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+      style: ElevatedButton.styleFrom(backgroundColor: color, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
       onPressed: () => launchUrl(Uri.parse("tel:$phone")),
       icon: Icon(Icons.phone_in_talk, color: Colors.white, size: 14.sp),
       label: Text(label, style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 11.sp, fontWeight: FontWeight.bold)),
