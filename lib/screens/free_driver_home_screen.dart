@@ -8,7 +8,8 @@ import 'package:sizer/sizer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:permission_handler/permission_handler.dart'; // المكتبة المطلوبة
+import 'package:permission_handler/permission_handler.dart'; 
+import 'package:geolocator/geolocator.dart'; // تأكد من إضافة هذه المكتبة
 
 // الصفحات التابعة
 import 'available_orders_screen.dart';
@@ -31,7 +32,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   int _selectedIndex = 0;
   String? _activeOrderId;
   String _vehicleConfig = 'motorcycleConfig';
-  bool _hasNewOrders = false; // للنقطة الحمراء
+  bool _hasNewOrders = false; 
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -43,7 +44,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     _loadVehicleConfig();
     _fetchInitialStatus(); 
     _listenToActiveOrders();
-    _listenToRadarNotifications(); // لسماع تنبيهات النقطة الحمراء
+    _listenToRadarNotifications();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkSecurityAndTerms();
@@ -91,18 +92,14 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     return true;
   }
 
-  // --- 📍 منطق الأونلاين المحدث مع الإفصاح وفحص الأذونات ---
+  // --- 📍 منطق الأونلاين (نظام اللقطة الواحدة Snapshot) ---
   void _toggleOnlineStatus(bool value) async {
     if (value) {
-      // 1. فحص هل الإذن ممنوح بالفعل؟
+      // فحص الأذونات بالترتيب الصحيح (Location ثم Always)
       var status = await Permission.location.status;
-      var backgroundStatus = await Permission.locationAlways.status;
-
-      if (status.isGranted && backgroundStatus.isGranted) {
-        // الإذن موجود مسبقاً، نفعل الأونلاين فوراً بدون رسائل
+      if (status.isGranted) {
         _updateOnlineInDB(true);
       } else {
-        // الإذن غير موجود، نظهر رسالة الإفصاح (Disclosure)
         _showLocationDisclosure();
       }
     } else {
@@ -127,7 +124,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           "يقوم تطبيق 'أكسب كابتن' بجمع بيانات الموقع لتمكين 'رادار الطلبات' وتتبع الرحلات النشطة لضمان النقل الآمن للعهدة، حتى عند إغلاق التطبيق أو عدم استخدامه.\n\n"
           "سيتم استخدام الموقع لـ:\n"
           "• عرض الطلبات المتاحة في نطاقك.\n"
-          "• تحديث حالة العهدة في الوقت الفعلي.",
+          "• تحديث حالة العهدة في الوقت الفعلي أثناء الرحلات.",
           textAlign: TextAlign.right,
           style: TextStyle(fontFamily: 'Cairo', fontSize: 14),
         ),
@@ -149,10 +146,9 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
 
     if (proceed == true) {
-      // طلب الإذن من النظام
-      var status = await Permission.location.request();
-      if (status.isGranted) {
-        await Permission.locationAlways.request(); // طلب إذن الخلفية
+      if (await Permission.location.request().isGranted) {
+        // نطلب Always لتكون جاهزة للطلب النشط (العهدة) مستقبلاً
+        await Permission.locationAlways.request(); 
         _updateOnlineInDB(true);
       } else {
         _showPermissionDeniedSnackBar();
@@ -160,12 +156,31 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     }
   }
 
+  // التحديث بإرسال "لقطة" الموقع الحالية فقط لـ Firebase
   void _updateOnlineInDB(bool value) async {
     setState(() => isOnline = value);
-    await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
+    
+    Map<String, dynamic> updateData = {
       'isOnline': value,
       'lastSeen': FieldValue.serverTimestamp(),
-    });
+    };
+
+    if (value) {
+      try {
+        // جلب الموقع الحالي (مرة واحدة)
+        Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 5)
+        );
+        updateData['lat'] = position.latitude;
+        updateData['lng'] = position.longitude;
+        updateData['lastLocationUpdate'] = FieldValue.serverTimestamp();
+      } catch (e) {
+        debugPrint("⚠️ Location Error: $e");
+      }
+    }
+
+    await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update(updateData);
   }
 
   void _showPermissionDeniedSnackBar() {
@@ -261,7 +276,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     }
   }
 
-  // --- ⚙️ الدوال الأساسية ---
   void _loadVehicleConfig() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() => _vehicleConfig = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig');
@@ -291,7 +305,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   void _onItemTapped(int index) async {
     if (index == 1) {
        if (!isOnline) { _showOnlineSnackBar(); return; }
-       setState(() => _hasNewOrders = false); // تصفير النقطة الحمراء عند الدخول للرادار
+       setState(() => _hasNewOrders = false); 
     }
     setState(() => _selectedIndex = index);
   }
@@ -315,7 +329,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         if (didPop) return;
         final shouldExit = await _handleWillPop();
         if (shouldExit && mounted) {
-          SystemNavigator.pop(); // الخروج الفعلي
+          SystemNavigator.pop(); 
         }
       },
       child: Scaffold(
@@ -530,7 +544,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           icon: Stack(
             children: [
               const Icon(Icons.radar),
-              if (_hasNewOrders) // النقطة الحمراء
+              if (_hasNewOrders) 
                 Positioned(
                   right: 0,
                   child: Container(
