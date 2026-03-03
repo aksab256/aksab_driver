@@ -25,8 +25,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   @override
   void initState() {
     super.initState();
-    _showLocationDisclosure();
-    // مؤقت لتحديث العداد التنازلي كل ثانية في الواجهة لجميع الكروت
+    // نبدأ فوراً في جلب الموقع لأننا ضمنا الأذونات من صفحة الـ Home
+    _updateLocationSnapshot();
+    
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -38,7 +39,36 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     super.dispose();
   }
 
-  // دالة حساب الوقت المتبقي (15 دقيقة من تاريخ الإنشاء)
+  // دالة تحديث الموقع (النبضة) فور فتح الرادار
+  Future<void> _updateLocationSnapshot() async {
+    try {
+      // جلب الموقع الحالي بسرعة
+      Position pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 5)
+      );
+
+      if (mounted) {
+        setState(() {
+          _myCurrentLocation = pos;
+          _isGettingLocation = false;
+        });
+
+        // تحديث Firebase بالنبضة الجديدة عشان الـ AWS يحس بتحرك المندوب
+        if (_uid != null) {
+          FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
+            'lat': pos.latitude,
+            'lng': pos.longitude,
+            'lastLocationUpdate': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠️ Radar Location Error: $e");
+      if (mounted) setState(() => _isGettingLocation = false);
+    }
+  }
+
   String _getTimerText(Timestamp? createdAt) {
     if (createdAt == null) return "00:00";
     DateTime expiryTime = createdAt.toDate().add(const Duration(minutes: 15));
@@ -49,99 +79,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return "$minutes:$seconds";
   }
 
-  // دالة الإفصاح المحدثة لتوافق شروط جوجل بلاي
-  Future<void> _showLocationDisclosure() async {
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      if (!mounted) return;
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-            title: Row(
-              children: [
-                Icon(Icons.security_rounded, color: Colors.blue[900], size: 22.sp),
-                const SizedBox(width: 10),
-                Text("إشعار خصوصية الموقع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "هذا التطبيق مخصص للعمليات اللوجستية ويقوم بجمع بيانات الموقع لتمكين الميزات التالية حتى عند إغلاق التطبيق أو عدم استخدامه:",
-                  style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 15),
-                _buildDisclosurePoint("📍 استلام طلبات العهدة القريبة منك لحظياً."),
-                _buildDisclosurePoint("🛡️ ضمان النقل الآمن للطلبات وتتبع مسار الشحنة."),
-                _buildDisclosurePoint("📊 حساب دقيق للمسافات لضمان مستحقاتك الممالية."),
-                const SizedBox(height: 15),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(10)),
-                  child: Text(
-                    "⚠️ ملاحظة: في حال رفض الصلاحية، لن يتمكن الرادار من رصد الطلبات ولن تستطيع استقبال أي عهدة جديدة.",
-                    style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp, color: Colors.red[900]),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("عذراً، يجب تفعيل الموقع لاستخدام رادار الطلبات", style: TextStyle(fontFamily: 'Cairo')))
-                  );
-                },
-                child: Text("رفض", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[600], fontSize: 13.sp)),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue[900],
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Text("موافق ومتابعة", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 13.sp)),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    _initSequence();
-  }
-
-  Widget _buildDisclosurePoint(String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.check_circle, color: Colors.green, size: 16),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp))),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _initSequence() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) { if (mounted) setState(() => _isGettingLocation = false); return; }
-    await Geolocator.requestPermission();
-    try {
-      Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      if (mounted) setState(() { _myCurrentLocation = pos; _isGettingLocation = false; });
-    } catch (e) { if (mounted) setState(() => _isGettingLocation = false); }
-  }
-
-  // --- دالة قبول الطلب المحصنة بالـ Transaction ---
   Future<void> _acceptOrder(String orderId) async {
     try {
       showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
@@ -189,18 +126,24 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       appBar: AppBar(
         title: Text("رادار الطلبات القريبة", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, fontFamily: 'Cairo')),
         centerTitle: true, backgroundColor: Colors.white, elevation: 0.5,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.black),
+            onPressed: () {
+              setState(() => _isGettingLocation = true);
+              _updateLocationSnapshot();
+            },
+          )
+        ],
       ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
         builder: (context, driverSnap) {
           double walletBalance = 0.0;
-          double creditLimit = 0.0;
           if (driverSnap.hasData && driverSnap.data!.exists) {
             var dData = driverSnap.data!.data() as Map<String, dynamic>;
             walletBalance = double.tryParse(dData['walletBalance']?.toString() ?? '0') ?? 0.0;
-            creditLimit = double.tryParse(dData['creditLimit']?.toString() ?? '0') ?? 0.0;
           }
-          double totalPower = walletBalance + creditLimit;
 
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
@@ -216,7 +159,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 GeoPoint? pickup = data['pickupLocation'];
                 if (pickup == null || _myCurrentLocation == null) return false;
                 double dist = Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pickup.latitude, pickup.longitude);
-                return dist <= 15000;
+                return dist <= 15000; // نطاق 15 كيلو متر
               }).toList();
 
               if (nearbyOrders.isEmpty) {
@@ -226,7 +169,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               return ListView.builder(
                 padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
                 itemCount: nearbyOrders.length,
-                itemBuilder: (context, index) => _buildOrderCard(nearbyOrders[index], walletBalance, totalPower),
+                itemBuilder: (context, index) => _buildOrderCard(nearbyOrders[index], walletBalance),
               );
             },
           );
@@ -235,7 +178,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
-  Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance, double totalPower) {
+  Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance) {
     var data = doc.data() as Map<String, dynamic>;
     double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
     double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
@@ -276,12 +219,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   ],
                 ),
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(color: Colors.black.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
                   child: Row(
                     children: [
                       Icon(Icons.timer_outlined, size: 14.sp, color: isMerchant ? merchantContent : Colors.white),
-                      SizedBox(width: 5),
+                      const SizedBox(width: 5),
                       Text(timeLeft, style: TextStyle(color: isMerchant ? merchantContent : Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo')),
                     ],
                   ),
@@ -311,7 +254,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text("إجمالي المسافة:", style: TextStyle(fontSize: 10.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
-                        Row(children: [Icon(Icons.map_outlined, size: 14.sp, color: Colors.blue[900]), SizedBox(width: 5), Text("$totalDistance كم", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.blue[900]))]),
+                        Row(children: [Icon(Icons.map_outlined, size: 14.sp, color: Colors.blue[900]), const SizedBox(width: 5), Text("$totalDistance كم", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.blue[900]))]),
                       ],
                     ),
                     Column(
