@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // ضرورية لإغلاق التطبيق برمجياً
+import 'package:flutter/services.dart'; 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
@@ -9,7 +9,8 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui'; 
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_background_service/flutter_background_service.dart'; // إضافة المكتبة
+import 'package:flutter_background_service/flutter_background_service.dart'; 
+import 'package:firebase_messaging/firebase_messaging.dart'; // ✅ إضافة مكتبة المراسلة
 
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -19,6 +20,12 @@ import 'screens/delivery_admin_dashboard.dart';
 
 // متغير عالمي لتتبع توقيت ضغطة زر الرجوع
 DateTime? _lastPressedAt;
+
+// ✅ إضافة معالج الرسائل في الخلفية لضمان عمل الإشعارات والتطبيق مغلق
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,22 +38,32 @@ void main() async {
     return true;
   };
 
-  // ✅ 2. تعريف قناة الإشعارات
-  const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'aksab_tracking_channel', 
-    'تأمين العهدة - أكسب 🛡️',
-    description: 'تستخدم لتتبع موقع المندوب أثناء الرحلة لضمان استرداد نقاط التأمين',
-    importance: Importance.high,
-  );
-
+  // ✅ 2. إعدادات الإشعارات الموحدة (مطابقة للتطبيق الأساسي)
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   
+  // تهيئة الإعدادات للأندرويد
+  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+  // تعريف القناة الموحدة بالاسم الجديد high_importance_channel
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'high_importance_channel', 
+    'إشعارات هامة',
+    description: 'هذه القناة مخصصة لإشعارات الطلبات والعهدة الهامة.',
+    importance: Importance.max, // أقصى درجة لضمان الصوت والظهور المفاجئ (Heads-up)
+    playSound: true,
+    enableVibration: true,
+  );
+
   await flutterLocalNotificationsPlugin
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
+  // ربط معالج الخلفية لـ Firebase
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
   // ✅ 3. أمر التنظيف الذكي: إيقاف أي خدمة قديمة معلقة عند بداية تشغيل التطبيق
-  // هذا يضمن عدم ظهور الإشعار "ورا بعضه" إلا إذا استدعاه الأوردر النشط
   try {
     FlutterBackgroundService().invoke("stopService");
   } catch (e) {
@@ -57,7 +74,6 @@ void main() async {
 }
 
 class AksabDriverApp extends StatelessWidget {
-  // مفتاح عالمي للتحكم في التنقل (Navigator) ومنع الخروج
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
   AksabDriverApp({super.key});
@@ -67,7 +83,7 @@ class AksabDriverApp extends StatelessWidget {
     return Sizer(
       builder: (context, orientation, deviceType) {
         return MaterialApp(
-          navigatorKey: navigatorKey, // ربط المفتاح هنا ضروري جداً
+          navigatorKey: navigatorKey, 
           title: 'أكسب كابتن',
           debugShowCheckedModeBanner: false,
           localizationsDelegates: const [
@@ -82,28 +98,24 @@ class AksabDriverApp extends StatelessWidget {
             fontFamily: 'Tajawal',
             scaffoldBackgroundColor: Colors.white,
           ),
-          // ✅ تغليف الـ AuthWrapper بـ PopScope للتحكم في زر الرجوع
           home: PopScope(
-            canPop: false, // نمنع الخروج التلقائي
+            canPop: false, 
             onPopInvokedWithResult: (didPop, result) async {
               if (didPop) return;
 
               final NavigatorState? navigator = navigatorKey.currentState;
 
-              // أولاً: إذا كان هناك صفحات مفتوحة (مثل المحفظة أو التفاصيل)، ارجع للرئيسية
               if (navigator != null && navigator.canPop()) {
                 navigator.pop();
                 return;
               }
 
-              // ثانياً: إذا كان المستخدم في الصفحة الرئيسية، نطلب منه الضغط مرتين للخروج
               final now = DateTime.now();
               const backButtonInterval = Duration(seconds: 2);
 
               if (_lastPressedAt == null || now.difference(_lastPressedAt!) > backButtonInterval) {
                 _lastPressedAt = now;
                 
-                // إظهار رسالة تنبيه للمندوب
                 ScaffoldMessenger.of(navigator!.context).showSnackBar(
                   const SnackBar(
                     content: Text(
@@ -118,10 +130,9 @@ class AksabDriverApp extends StatelessWidget {
                 return;
               }
 
-              // إذا ضغط المرة الثانية خلال ثانيتين، نغلق التطبيق فعلياً
               SystemNavigator.pop();
             },
-            child: AuthWrapper(),
+            child: const AuthWrapper(),
           ),
           routes: {
             '/login': (context) => LoginScreen(),
