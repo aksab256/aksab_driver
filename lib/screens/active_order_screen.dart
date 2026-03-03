@@ -1,3 +1,4 @@
+// lib/screens/active_order_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -22,7 +23,6 @@ class ActiveOrderScreen extends StatefulWidget {
   State<ActiveOrderScreen> createState() => _ActiveOrderScreenState();
 }
 
-// استخدام WidgetsBindingObserver لمراقبة خروج المندوب من التطبيق للـ Background
 class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindingObserver {
   LatLng? _currentLocation;
   List<LatLng> _routePoints = [];
@@ -31,38 +31,45 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   final String _mapboxToken = 'pk.eyJ1IjoiYW1yc2hpcGwiLCJhIjoiY21lajRweGdjMDB0eDJsczdiemdzdXV6biJ9.E--si9vOB93NGcAq7uVgGw';
   
-  // متغير للتحكم في حالة الخدمة برمجياً
   bool _isOrderStillActive = true;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // تسجيل مراقب حالة التطبيق
-    _configureBackgroundServiceOnly(); // إعداد الخدمة دون تشغيلها
+    WidgetsBinding.instance.addObserver(this);
+    // عند الدخول نتأكد أن الحالة 'busy' (احتياطياً)
+    _updateDriverStatus('busy');
+    _configureBackgroundServiceOnly();
     _initInitialLocation();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // إزالة المراقب
+    WidgetsBinding.instance.removeObserver(this);
     _positionStream?.cancel();
-    // إذا أغلقت الشاشة والرحلة انتهت، نضمن توقف الخدمة تماماً
     if (!_isOrderStillActive) {
        _stopBackgroundTracking();
     }
     super.dispose();
   }
 
-  // ملاحقة حالة التطبيق: إذا نزل للخلفية نشغل الإشعار، وإذا رجع نوقفه
+  // دالة موحدة لتحديث حالة المندوب لضمان الربط مع السيرفر
+  Future<void> _updateDriverStatus(String status) async {
+    if (_uid != null) {
+      await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
+        'currentStatus': status,
+        'lastSeen': FieldValue.serverTimestamp(),
+        if (status == 'online') 'activeOrderId': "" // تفريغ الطلب النشط عند العودة أونلاين
+      });
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!_isOrderStillActive) return;
-
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      // المندوب خرج من التطبيق أو قفل الشاشة -> شغل تتبع الخلفية فوراً
       _startBackgroundTracking();
     } else if (state == AppLifecycleState.resumed) {
-      // المندوب عاد للشاشة -> أوقف خدمة الخلفية (لأن التتبع الحي داخل الشاشة سيعمل)
       _stopBackgroundTracking();
     }
   }
@@ -81,7 +88,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
               onPressed: () {
-                _startBackgroundTracking(); // تفعيل الخدمة قبل الخروج للشاشة الرئيسية
+                _startBackgroundTracking();
                 Navigator.pop(context, true);
               }, 
               child: Text("الرئيسية", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 13.sp))
@@ -93,17 +100,15 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     if (shouldExit && mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 
-  // إعداد الخدمة وتجهيزها فقط (بدون Start)
   Future<void> _configureBackgroundServiceOnly() async {
     if (_uid != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('driver_uid', _uid!);
-      
       final service = FlutterBackgroundService();
       await service.configure(
         androidConfiguration: AndroidConfiguration(
           onStart: onStart, 
-          autoStart: false, // مهم جداً: لا تعمل تلقائياً
+          autoStart: false,
           isForegroundMode: true,
           notificationChannelId: 'aksab_tracking_channel',
           initialNotificationTitle: 'أكسب: تأمين العهدة نشط 🛡️',
@@ -194,20 +199,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
         'lastSeen': FieldValue.serverTimestamp()
       });
     }
-  }
-
-  Widget _phoneButton({required String? phone, required String label, required Color color}) {
-    if (phone == null || phone.isEmpty) return const SizedBox();
-    return ElevatedButton.icon(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        padding: EdgeInsets.symmetric(horizontal: 10.sp, vertical: 5.sp),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      onPressed: () => launchUrl(Uri.parse("tel:$phone")),
-      icon: Icon(Icons.phone_in_talk, color: Colors.white, size: 14.sp),
-      label: Text(label, style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 11.sp, fontWeight: FontWeight.bold)),
-    );
   }
 
   Widget _buildBottomPanel() {
@@ -351,6 +342,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
                       'updatedAt': FieldValue.serverTimestamp(),
                     });
                     await _stopBackgroundTracking(); 
+                    await _updateDriverStatus('online'); // العودة للحالة الطبيعية
                     if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
                   } else {
                     _updateStatus('picked_up');
@@ -391,7 +383,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
         'returnVerificationCode': generatedReturnCode,
         'updatedAt': FieldValue.serverTimestamp()
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم تحويل الوجهة لموقع التاجر", textAlign: TextAlign.center), backgroundColor: Colors.redAccent));
     }
   }
 
@@ -401,8 +392,20 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     await _stopBackgroundTracking(); 
     try {
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
+      await _updateDriverStatus('online'); // أهم خطوة: العودة للسيرفر
       if (mounted) { Navigator.pop(context); Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false); }
     } catch (e) { Navigator.pop(context); }
+  }
+
+  // --- دوال مساعدة للواجهة ---
+  Widget _phoneButton({required String? phone, required String label, required Color color}) {
+    if (phone == null || phone.isEmpty) return const SizedBox();
+    return ElevatedButton.icon(
+      style: ElevatedButton.iconFrom(backgroundColor: color, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+      onPressed: () => launchUrl(Uri.parse("tel:$phone")),
+      icon: Icon(Icons.phone_in_talk, color: Colors.white, size: 14.sp),
+      label: Text(label, style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 11.sp, fontWeight: FontWeight.bold)),
+    );
   }
 
   double _getSmartDistance(Map<String, dynamic> data, String status) {
@@ -470,6 +473,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
       setState(() => _isOrderStillActive = false);
       await _stopBackgroundTracking(); 
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'driver_cancelled_reseeking', 'lastDriverId': _uid, 'driverId': FieldValue.delete()});
+      await _updateDriverStatus('online'); // العودة للرادار لاستقبال طلب آخر
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }
   }
