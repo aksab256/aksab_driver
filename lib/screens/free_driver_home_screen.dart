@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +8,7 @@ import 'package:sizer/sizer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:permission_handler/permission_handler.dart'; // المكتبة المطلوبة
 
 // الصفحات التابعة
 import 'available_orders_screen.dart';
@@ -29,10 +31,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   int _selectedIndex = 0;
   String? _activeOrderId;
   String _vehicleConfig = 'motorcycleConfig';
+  bool _hasNewOrders = false; // للنقطة الحمراء
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  // متغير لتسجيل وقت آخر ضغطة لزر الرجوع
   DateTime? _lastBackPressTime;
 
   @override
@@ -41,27 +43,38 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     _loadVehicleConfig();
     _fetchInitialStatus(); 
     _listenToActiveOrders();
+    _listenToRadarNotifications(); // لسماع تنبيهات النقطة الحمراء
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkSecurityAndTerms();
     });
   }
 
-  // --- 🛡️ منطق التعامل مع زر الرجوع الذكي (حل مشكلة الخروج والسواد) ---
+  // --- 🔔 سماع تنبيهات الرادار للنقطة الحمراء ---
+  void _listenToRadarNotifications() {
+    FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: uid)
+        .where('eventType', isEqualTo: 'radar_new_order')
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen((snap) {
+      if (mounted) {
+        setState(() => _hasNewOrders = snap.docs.isNotEmpty);
+      }
+    });
+  }
+
+  // --- 🛡️ منطق التعامل مع زر الرجوع الذكي ---
   Future<bool> _handleWillPop() async {
-    // 1. لو القائمة الجانبية مفتوحة، يتم إغلاقها أولاً
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
       Navigator.pop(context);
       return false;
     }
-
-    // 2. لو المستخدم في أي تبويب غير الرئيسية (مثل طلباتي أو المحفظة)
     if (_selectedIndex != 0) {
-      setState(() => _selectedIndex = 0); // العودة للتبويب الأول (الرئيسية)
-      return false; // منع الخروج من التطبيق
+      setState(() => _selectedIndex = 0);
+      return false;
     }
-
-    // 3. لو المستخدم في التبويب الأول (الرئيسية) فعلياً
     DateTime now = DateTime.now();
     if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
       _lastBackPressTime = now;
@@ -73,9 +86,95 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           behavior: SnackBarBehavior.floating,
         ),
       );
-      return false; // منع الخروج في الضغطة الأولى
+      return false;
     }
-    return true; // السماح بالخروج في الضغطة الثانية السريعة
+    return true;
+  }
+
+  // --- 📍 منطق الأونلاين المحدث مع الإفصاح وفحص الأذونات ---
+  void _toggleOnlineStatus(bool value) async {
+    if (value) {
+      // 1. فحص هل الإذن ممنوح بالفعل؟
+      var status = await Permission.location.status;
+      var backgroundStatus = await Permission.locationAlways.status;
+
+      if (status.isGranted && backgroundStatus.isGranted) {
+        // الإذن موجود مسبقاً، نفعل الأونلاين فوراً بدون رسائل
+        _updateOnlineInDB(true);
+      } else {
+        // الإذن غير موجود، نظهر رسالة الإفصاح (Disclosure)
+        _showLocationDisclosure();
+      }
+    } else {
+      _updateOnlineInDB(false);
+    }
+  }
+
+  void _showLocationDisclosure() async {
+    bool? proceed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        title: Row(
+          children: [
+            Icon(Icons.location_on, color: Colors.orange[900]),
+            const SizedBox(width: 10),
+            const Text("تحسين الرادار", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          "يقوم تطبيق 'أكسب كابتن' بجمع بيانات الموقع لتمكين 'رادار الطلبات' وتتبع الرحلات النشطة لضمان النقل الآمن للعهدة، حتى عند إغلاق التطبيق أو عدم استخدامه.\n\n"
+          "سيتم استخدام الموقع لـ:\n"
+          "• عرض الطلبات المتاحة في نطاقك.\n"
+          "• تحديث حالة العهدة في الوقت الفعلي.",
+          textAlign: TextAlign.right,
+          style: TextStyle(fontFamily: 'Cairo', fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("ليس الآن", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[900],
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("موافق ومتابعة", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (proceed == true) {
+      // طلب الإذن من النظام
+      var status = await Permission.location.request();
+      if (status.isGranted) {
+        await Permission.locationAlways.request(); // طلب إذن الخلفية
+        _updateOnlineInDB(true);
+      } else {
+        _showPermissionDeniedSnackBar();
+      }
+    }
+  }
+
+  void _updateOnlineInDB(bool value) async {
+    setState(() => isOnline = value);
+    await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
+      'isOnline': value,
+      'lastSeen': FieldValue.serverTimestamp(),
+    });
+  }
+
+  void _showPermissionDeniedSnackBar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("⚠️ يتطلب وضع الاتصال الوصول للموقع دائمًا", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo')),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   // --- 🛡️ بوابة الأمان وفحص الشروط ---
@@ -116,10 +215,9 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           headers: {"Content-Type": "application/json"},
           body: jsonEncode({"userId": uid, "fcmToken": token, "role": "free_driver"}),
         );
-        debugPrint("✅ Free Driver AWS Sync Successful");
       }
     } catch (e) {
-      debugPrint("❌ Free Driver AWS Sync Error: $e");
+      debugPrint("❌ AWS Sync Error: $e");
     }
   }
 
@@ -174,7 +272,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     if (doc.exists && mounted) setState(() => isOnline = doc.data()?['isOnline'] ?? false);
   }
 
-  // ✅ تعديل: إضافة حالات المرتجع لضمان عدم فقدان الرحلة النشطة عند الخروج والعودة
   void _listenToActiveOrders() {
     FirebaseFirestore.instance
         .collection('specialRequests')
@@ -186,14 +283,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     });
   }
 
-  void _toggleOnlineStatus(bool value) async {
-    setState(() => isOnline = value);
-    await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
-      'isOnline': value,
-      'lastSeen': FieldValue.serverTimestamp(),
-    });
-  }
-
   Future<void> _launchPrivacyPolicy() async {
     final Uri url = Uri.parse('https://aksab.shop/');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) return;
@@ -201,10 +290,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   void _onItemTapped(int index) async {
     if (index == 1) {
-       var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
-       bool accepted = doc.data()?['hasAcceptedTerms'] ?? false;
-       if (!accepted) { _checkSecurityAndTerms(); return; }
        if (!isOnline) { _showOnlineSnackBar(); return; }
+       setState(() => _hasNewOrders = false); // تصفير النقطة الحمراء عند الدخول للرادار
     }
     setState(() => _selectedIndex = index);
   }
@@ -223,12 +310,12 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // نمنع الخروج التلقائي للتحكم فيه عبر الدالة
+      canPop: false, 
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldExit = await _handleWillPop();
         if (shouldExit && mounted) {
-          Navigator.of(context).pop(); // الخروج الفعلي من التطبيق
+          SystemNavigator.pop(); // الخروج الفعلي
         }
       },
       child: Scaffold(
@@ -261,7 +348,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
                     const CircleAvatar(radius: 35, backgroundColor: Colors.white, child: Icon(Icons.person, size: 45, color: Colors.orange)),
                     const SizedBox(height: 15),
                     const Text("كابتن أكسب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
-                    Text(FirebaseAuth.instance.currentUser?.email ?? FirebaseAuth.instance.currentUser?.phoneNumber ?? "", style: const TextStyle(fontFamily: 'Cairo', color: Colors.white70, fontSize: 12)),
+                    Text(FirebaseAuth.instance.currentUser?.phoneNumber ?? "", style: const TextStyle(fontFamily: 'Cairo', color: Colors.white70, fontSize: 12)),
                   ],
                 ),
               ),
@@ -377,7 +464,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // ✅ تعديل: تحديث نص البانر ولونه بناءً على حالة المرتجع
   Widget _buildActiveOrderBanner() {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('specialRequests').doc(_activeOrderId).snapshots(),
@@ -422,8 +508,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   Widget _buildOtherPages() {
     return [
-      const SizedBox(), // يتم استبدالها بـ Dashboard في الـ body الأساسي
-      // ✅ تعديل منطق الانتقال: إذا وجد أي طلب نشط (بما في ذلك المرتجع) يفتح شاشة التتبع فوراً
+      const SizedBox(), 
       _activeOrderId != null 
           ? ActiveOrderScreen(orderId: _activeOrderId!) 
           : AvailableOrdersScreen(vehicleType: _vehicleConfig), 
@@ -439,11 +524,26 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       selectedItemColor: Colors.orange[900],
       type: BottomNavigationBarType.fixed,
       selectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900),
-      items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
-        BottomNavigationBarItem(icon: Icon(Icons.radar), label: "الرادار"),
-        BottomNavigationBarItem(icon: Icon(Icons.assignment_rounded), label: "طلباتي"),
-        BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_rounded), label: "المحفظة"),
+      items: [
+        const BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
+        BottomNavigationBarItem(
+          icon: Stack(
+            children: [
+              const Icon(Icons.radar),
+              if (_hasNewOrders) // النقطة الحمراء
+                Positioned(
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                  ),
+                ),
+            ],
+          ),
+          label: "الرادار",
+        ),
+        const BottomNavigationBarItem(icon: Icon(Icons.assignment_rounded), label: "طلباتي"),
+        const BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_rounded), label: "المحفظة"),
       ],
     );
   }
