@@ -13,7 +13,7 @@ import 'dart:io';
 import 'package:permission_handler/permission_handler.dart'; 
 import 'package:geolocator/geolocator.dart';
 
-// الصفحات التابعة
+// الصفحات التابعة - تأكد من وجود هذه الملفات في مشروعك
 import 'available_orders_screen.dart';
 import 'active_order_screen.dart';
 import 'wallet_screen.dart';
@@ -51,7 +51,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     });
   }
 
-  // --- 🔄 الاستماع لحالة المندوب والطلبات (كود الاستقرار) ---
+  // --- 🔄 الاستماع لحالة المندوب والطلبات ---
   void _listenToDriverStatus() {
     if (uid.isEmpty) return;
     FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots().listen((snap) {
@@ -81,13 +81,16 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _resetDriverToOnline() async {
-    await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
-      'currentStatus': 'online',
-      'insurance_points': 0,
-    });
+    try {
+      await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
+        'currentStatus': 'online',
+        'insurance_points': 0,
+      });
+    } catch (e) {
+      debugPrint("Reset Status Error: $e");
+    }
   }
 
-  // --- 📱 واجهة المستخدم الرئيسية ---
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -98,7 +101,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       },
       child: Scaffold(
         key: _scaffoldKey,
-        drawer: _buildSideDrawer(), // دمج الشريط الجانبي الأنيق
+        drawer: _buildSideDrawer(), 
         backgroundColor: const Color(0xFFF4F7FA),
         body: _selectedIndex == 0 ? _buildModernDashboard() : _buildOtherPages(),
         bottomNavigationBar: _buildBottomNav(),
@@ -106,7 +109,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- 📋 بناء الشريط الجانبي (من الكود الأول بشياكة) ---
+  // --- 📋 بناء الشريط الجانبي ---
   Widget _buildSideDrawer() {
     return Drawer(
       width: 75.w,
@@ -177,7 +180,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- 🏠 لوحة التحكم (Dashboard) ---
+  // --- 🏠 لوحة التحكم ---
   Widget _buildModernDashboard() {
     return SafeArea(
       child: CustomScrollView(
@@ -270,7 +273,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       return;
     }
     if (shouldBeOnline) {
-      if (await Permission.location.isGranted) {
+      PermissionStatus status = await Permission.location.status;
+      if (status.isGranted) {
         _updateOnlineInDB(true);
       } else {
         _showLocationDisclosure();
@@ -318,10 +322,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _showErrorSnackBar(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo')), behavior: SnackBarBehavior.floating));
   }
 
-  // --- 🛠️ دوال المساعدة والبناء ---
   Widget _buildActiveOrderBanner() {
     return GestureDetector(
       onTap: () => setState(() => _selectedIndex = 1),
@@ -365,4 +369,47 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   void _loadVehicleConfig() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => _vehicleConfig = prefs.getString('user_vehicle
+    setState(() => _vehicleConfig = prefs.getString('user_vehicle_config') ?? 'motorcycleConfig');
+  }
+
+  Future<void> _checkSecurityAndTerms() async {
+    if (uid.isEmpty) return;
+    try {
+      var userDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
+      if (userDoc.exists && !(userDoc.data()?['hasAcceptedTerms'] ?? false) && mounted) {
+        final result = await showModalBottomSheet<bool>(context: context, isScrollControlled: true, isDismissible: false, builder: (context) => FreelanceTermsScreen(userId: uid));
+        if (result == true) _requestNotificationPermission();
+      } else { _requestNotificationPermission(); }
+    } catch (e) { debugPrint("Security Check Error: $e"); }
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    try {
+      FirebaseMessaging messaging = FirebaseMessaging.instance;
+      NotificationSettings settings = await messaging.requestPermission(alert: true, badge: true, sound: true);
+      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+        String? token = await messaging.getToken();
+        if (token != null) {
+          await http.post(
+            Uri.parse("https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction"),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({"userId": uid, "fcmToken": token, "role": "free_driver"}),
+          ).timeout(const Duration(seconds: 10));
+        }
+      }
+    } on SocketException { debugPrint("Network error in notifications"); }
+    catch (e) { debugPrint("Notification error: $e"); }
+  }
+
+  Future<bool> _handleWillPop() async {
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) { Navigator.pop(context); return false; }
+    if (_selectedIndex != 0) { setState(() => _selectedIndex = 0); return false; }
+    DateTime now = DateTime.now();
+    if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+      _lastBackPressTime = now;
+      _showErrorSnackBar("إضغط مرة أخرى للخروج");
+      return false;
+    }
+    return true;
+  }
+}
