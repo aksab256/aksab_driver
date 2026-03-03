@@ -25,9 +25,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   @override
   void initState() {
     super.initState();
-    // نبدأ فوراً في جلب الموقع لأننا ضمنا الأذونات من صفحة الـ Home
+    // 1. إبلاغ السيرفر فوراً أن المندوب يرى الرادار الآن (لكتم الإشعارات)
+    _updateDriverStatus('browsing_radar');
+    
+    // 2. تحديث لقطة الموقع
     _updateLocationSnapshot();
     
+    // 3. مؤقت الواجهة
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -35,14 +39,29 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   @override
   void dispose() {
+    // 4. عند إغلاق الرادار، نعود لحالة "أونلاين" لاستقبال الإشعارات مجدداً
+    _updateDriverStatus('online');
     _uiTimer?.cancel();
     super.dispose();
   }
 
-  // دالة تحديث الموقع (النبضة) فور فتح الرادار
+  // دالة تحديث الحالة في Firestore
+  Future<void> _updateDriverStatus(String status) async {
+    if (_uid != null) {
+      try {
+        await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
+          'currentStatus': status,
+          'lastSeen': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        debugPrint("❌ Error updating status: $e");
+      }
+    }
+  }
+
+  // دالة تحديث الموقع (النبضة)
   Future<void> _updateLocationSnapshot() async {
     try {
-      // جلب الموقع الحالي بسرعة
       Position pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 5)
@@ -54,9 +73,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           _isGettingLocation = false;
         });
 
-        // تحديث Firebase بالنبضة الجديدة عشان الـ AWS يحس بتحرك المندوب
         if (_uid != null) {
-          FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
+          await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
             'lat': pos.latitude,
             'lng': pos.longitude,
             'lastLocationUpdate': FieldValue.serverTimestamp(),
@@ -79,6 +97,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return "$minutes:$seconds";
   }
 
+  // --- دالة قبول الطلب (تتضمن تحديث الحالة لـ busy) ---
   Future<void> _acceptOrder(String orderId) async {
     try {
       showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
@@ -88,9 +107,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
+        DocumentReference driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(_uid);
+        
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         
         if (orderSnap.exists && orderSnap.get('status') == 'pending') {
+          // تحديث الطلب
           transaction.update(orderRef, {
             'status': 'accepted',
             'driverId': _uid,
@@ -98,6 +120,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             'acceptedAt': FieldValue.serverTimestamp(),
             'moneyLocked': false,
             'serverNote': "تأكيد العهدة: جاري معالجة الطلب ماليًا...",
+          });
+
+          // تحديث حالة المندوب فوراً لـ busy (لضمان عدم إرسال أي طلبات أخرى له من السيرفر)
+          transaction.update(driverRef, {
+            'currentStatus': 'busy',
+            'activeOrderId': orderId,
+            'lastSeen': FieldValue.serverTimestamp(),
           });
         } else {
           throw Exception("عذراً، الطلب لم يعد متاحاً (تم قبوله من زميل آخر)");
@@ -159,7 +188,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 GeoPoint? pickup = data['pickupLocation'];
                 if (pickup == null || _myCurrentLocation == null) return false;
                 double dist = Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pickup.latitude, pickup.longitude);
-                return dist <= 15000; // نطاق 15 كيلو متر
+                return dist <= 15000;
               }).toList();
 
               if (nearbyOrders.isEmpty) {
@@ -180,9 +209,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance) {
     var data = doc.data() as Map<String, dynamic>;
-    double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
     double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
     double orderFinalAmount = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0;
+    double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
     String totalDistance = data['totalDistance']?.toString() ?? "0";
 
     double insuranceRequired = (orderFinalAmount > 0) ? (orderFinalAmount - driverNet) : 0.0;
