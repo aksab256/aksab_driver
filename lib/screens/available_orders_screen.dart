@@ -49,6 +49,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return "$minutes:$seconds";
   }
 
+  // دالة الإفصاح المحدثة لتوافق شروط جوجل بلاي
   Future<void> _showLocationDisclosure() async {
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
@@ -59,23 +60,75 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         builder: (context) => Directionality(
           textDirection: TextDirection.rtl,
           child: AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
             title: Row(
               children: [
-                Icon(Icons.location_on, color: Colors.blue[900], size: 22.sp),
-                SizedBox(width: 10),
-                Text("بيانات الموقع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
+                Icon(Icons.security_rounded, color: Colors.blue[900], size: 22.sp),
+                const SizedBox(width: 10),
+                Text("إشعار خصوصية الموقع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
               ],
             ),
-            content: Text("نحتاج للوصول لموقعك لفلترة الطلبات القريبة منك وضمان النقل الآمن للعهدة.", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "هذا التطبيق مخصص للعمليات اللوجستية ويقوم بجمع بيانات الموقع لتمكين الميزات التالية حتى عند إغلاق التطبيق أو عدم استخدامه:",
+                  style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 15),
+                _buildDisclosurePoint("📍 استلام طلبات العهدة القريبة منك لحظياً."),
+                _buildDisclosurePoint("🛡️ ضمان النقل الآمن للطلبات وتتبع مسار الشحنة."),
+                _buildDisclosurePoint("📊 حساب دقيق للمسافات لضمان مستحقاتك الممالية."),
+                const SizedBox(height: 15),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(10)),
+                  child: Text(
+                    "⚠️ ملاحظة: في حال رفض الصلاحية، لن يتمكن الرادار من رصد الطلبات ولن تستطيع استقبال أي عهدة جديدة.",
+                    style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp, color: Colors.red[900]),
+                  ),
+                ),
+              ],
+            ),
             actions: [
-              ElevatedButton(onPressed: () => Navigator.pop(context), child: Text("موافق", style: TextStyle(fontFamily: 'Cairo'))),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("عذراً، يجب تفعيل الموقع لاستخدام رادار الطلبات", style: TextStyle(fontFamily: 'Cairo')))
+                  );
+                },
+                child: Text("رفض", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[600], fontSize: 13.sp)),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue[900],
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text("موافق ومتابعة", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 13.sp)),
+              ),
             ],
           ),
         ),
       );
     }
     _initSequence();
+  }
+
+  Widget _buildDisclosurePoint(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 16),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp))),
+        ],
+      ),
+    );
   }
 
   Future<void> _initSequence() async {
@@ -100,7 +153,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         
-        // هنا قفل الثغرة: نتحقق أن الحالة لا تزال 'pending' ولم يخطفه مندوب آخر
         if (orderSnap.exists && orderSnap.get('status') == 'pending') {
           transaction.update(orderRef, {
             'status': 'accepted',
@@ -153,7 +205,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('specialRequests')
-                .where('status', isEqualTo: 'pending') // ضمان عدم ظهور الملغي
+                .where('status', isEqualTo: 'pending')
                 .where('vehicleType', isEqualTo: cleanType)
                 .snapshots(),
             builder: (context, snapshot) {
