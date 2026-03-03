@@ -29,7 +29,6 @@ class FreeDriverHomeScreen extends StatefulWidget {
 }
 
 class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
-  // الاعتماد الكلي الآن على currentStatus بدلاً من isOnline (لتجنب التضارب)
   String _currentStatus = 'offline'; 
   int _selectedIndex = 0;
   String? _activeOrderId;
@@ -44,7 +43,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   void initState() {
     super.initState();
     _loadVehicleConfig();
-    _listenToDriverStatus(); // الاستماع للحالات (online, busy, offline)
+    _listenToDriverStatus();
     _listenToActiveOrders();
     _listenToRadarNotifications();
     
@@ -104,20 +103,19 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     return true;
   }
 
-  // --- 📍 منطق الحالات المطور (Online/Offline) ---
+  // --- 📍 منطق الأذونات والحالات ---
   void _toggleOnlineStatus(bool shouldBeOnline) async {
-    // منع الخروج إذا كان هناك رحلة قائمة (busy)
     if (!shouldBeOnline && _currentStatus == 'busy') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("لا يمكن التحول لوضع أوفلاين أثناء وجود رحلة نشطة", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo')))
-      );
+      _showErrorSnackBar("يجب إنهاء العهدة الحالية أولاً لتغيير الحالة");
       return;
     }
 
     if (shouldBeOnline) {
-      var status = await Permission.location.status;
+      PermissionStatus status = await Permission.location.status;
       if (status.isGranted) {
         _updateOnlineInDB(true);
+      } else if (status.isPermanentlyDenied) {
+        openAppSettings();
       } else {
         _showLocationDisclosure();
       }
@@ -131,41 +129,34 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-        title: Row(
-          children: [
-            Icon(Icons.location_on, color: Colors.orange[900]),
-            const SizedBox(width: 10),
-            const Text("تحسين الرادار", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-          ],
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("تحسين الرادار", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
         content: const Text(
-          "يقوم تطبيق 'أكسب كابتن' بجمع بيانات الموقع لتمكين 'رادار الطلبات' وتتبع الرحلات النشطة لضمان النقل الآمن للعهدة.\n\n"
-          "سيتم استخدام الموقع لعرض الطلبات المتاحة في نطاقك وتحديث حالة العهدة.",
-          textAlign: TextAlign.right,
+          "يحتاج 'أكسب كابتن' الوصول لموقعك لتمكين رادار الطلبات وتتبع العهدة النشطة لضمان النقل الآمن حتى عند إغلاق التطبيق.",
           style: TextStyle(fontFamily: 'Cairo'),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("ليس الآن")),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("موافق ومتابعة", style: TextStyle(color: Colors.white)),
+            child: const Text("موافق ومتابعة", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
           ),
         ],
       ),
     );
 
     if (proceed == true) {
-      if (await Permission.location.request().isGranted) {
-        await Permission.locationAlways.request(); 
+      PermissionStatus result = await Permission.location.request();
+      if (result.isGranted) {
         _updateOnlineInDB(true);
+        // طلب إذن الخلفية بعد الموافقة على الإذن الأساسي
+        await Permission.locationAlways.request();
       }
     }
   }
 
   void _updateOnlineInDB(bool value) async {
-    // تحديث الحالات بدقة ليتوافق مع السيرفر
     Map<String, dynamic> updateData = {
       'currentStatus': value ? 'online' : 'offline',
       'lastSeen': FieldValue.serverTimestamp(),
@@ -180,7 +171,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         debugPrint("⚠️ Location Error: $e");
       }
     }
-
     await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update(updateData);
   }
 
@@ -238,14 +228,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _onItemTapped(int index) {
-    // منع دخول الرادار (index 1) إذا كان المندوب أوفلاين
     if (index == 1 && _currentStatus == 'offline') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("برجاء تفعيل وضع الاتصال لفتح الرادار", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo')),
-          behavior: SnackBarBehavior.floating,
-        )
-      );
+      _showErrorSnackBar("برجاء تفعيل وضع الاتصال لفتح الرادار");
       return;
     }
     setState(() {
@@ -264,7 +248,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       },
       child: Scaffold(
         key: _scaffoldKey,
-        drawer: _buildSideDrawer(), 
+        drawer: const ProfileScreen(), 
         backgroundColor: const Color(0xFFF4F7FA),
         body: _selectedIndex == 0 ? _buildModernDashboard() : _buildOtherPages(),
         bottomNavigationBar: _buildBottomNav(),
@@ -278,15 +262,15 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         slivers: [
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 20, 10),
+              padding: const EdgeInsets.all(20.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(children: [
-                    IconButton(icon: const Icon(Icons.menu_rounded, size: 32), onPressed: () => _scaffoldKey.currentState?.openDrawer()),
+                    IconButton(icon: const Icon(Icons.menu_rounded, size: 30), onPressed: () => _scaffoldKey.currentState?.openDrawer()),
                     const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text("أهلاً بك 👋", style: TextStyle(fontSize: 14, color: Colors.blueGrey, fontFamily: 'Cairo')),
-                      Text("كابتن أكسب", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, fontFamily: 'Cairo'))
+                      Text("أهلاً بك 👋", style: TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'Cairo')),
+                      Text("كابتن أكسب", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))
                     ])
                   ]),
                   _buildStatusToggle(),
@@ -301,27 +285,70 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
+  // --- 🃏 بناء الكارنات (Live Stats) ---
+  Widget _buildLiveStatsGrid() {
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2, 
+          crossAxisSpacing: 15, 
+          mainAxisSpacing: 15, 
+          childAspectRatio: 1.1,
+        ),
+        delegate: SliverChildListDelegate([
+          _buildStatCard("نقاط التأمين", "0", Icons.security, Colors.blue),
+          _buildStatCard("إدارة عهدة اليوم", "0", Icons.inventory_2_outlined, Colors.orange),
+          _buildStatCard("التقييم المهني", "5.0", Icons.star_border_rounded, Colors.amber),
+          _buildStatCard("المحفظة (ج.م)", "0.0", Icons.account_balance_wallet_outlined, Colors.green),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white, 
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const Spacer(),
+          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(title, style: const TextStyle(color: Colors.grey, fontFamily: 'Cairo', fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatusToggle() {
     bool isActive = (_currentStatus == 'online' || _currentStatus == 'busy');
     return GestureDetector(
       onTap: () => _toggleOnlineStatus(!isActive),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300), 
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10), 
-        decoration: BoxDecoration(color: isActive ? Colors.green[600] : Colors.red[600], borderRadius: BorderRadius.circular(15)), 
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8), 
+        decoration: BoxDecoration(color: isActive ? Colors.green[600] : Colors.red[600], borderRadius: BorderRadius.circular(12)), 
         child: Row(children: [
-          Icon(isActive ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 18), 
-          const SizedBox(width: 8), 
-          Text(isActive ? "متصل" : "أوفلاين", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontFamily: 'Cairo'))
+          Icon(isActive ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 16), 
+          const SizedBox(width: 6), 
+          Text(isActive ? "متصل" : "أوفلاين", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))
         ])),
     );
   }
 
-  // --- 🛠️ حل مشكلة الشاشة الرمادية نهائياً ---
   Widget _buildOtherPages() {
     switch (_selectedIndex) {
       case 1:
-        // إذا كان مشغول في رحلة، يفتح شاشة الطلب النشط، وإلا يفتح الرادار
         if (_currentStatus == 'busy' && _activeOrderId != null) {
           return ActiveOrderScreen(orderId: _activeOrderId!);
         }
@@ -331,7 +358,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       case 3:
         return const WalletScreen();
       default:
-        return _buildModernDashboard(); // أمان في حال وجود Index خاطئ
+        return _buildModernDashboard();
     }
   }
 
@@ -342,8 +369,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       type: BottomNavigationBarType.fixed,
       selectedItemColor: Colors.orange[900],
       unselectedItemColor: Colors.grey,
-      selectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
-      unselectedLabelStyle: const TextStyle(fontFamily: 'Cairo'),
+      selectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11),
+      unselectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontSize: 11),
       items: [
         const BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
         BottomNavigationBarItem(
@@ -354,13 +381,32 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           label: "الرادار",
         ),
         const BottomNavigationBarItem(icon: Icon(Icons.history), label: "رحلاتي"),
-        const BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_outlined), label: "المحفظة"),
+        const BottomNavigationBarItem(icon: Icon(Icons.wallet), label: "المحفظة"),
       ],
     );
   }
 
-  // الدوال الفرعية المتبقية (Drawer, Stats, Banner) يتم استدعاؤها هنا
-  Widget _buildSideDrawer() { return const ProfileScreen(); } 
-  Widget _buildLiveStatsGrid() { return SliverToBoxAdapter(child: Container()); }
-  Widget _buildActiveOrderBanner() { return Container(); }
+  void _showErrorSnackBar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo')),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.redAccent,
+      )
+    );
+  }
+
+  Widget _buildActiveOrderBanner() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.orange.shade200)),
+      child: Row(children: [
+        const Icon(Icons.delivery_dining, color: Colors.orange),
+        const SizedBox(width: 10),
+        const Expanded(child: Text("لديك رحلة نشطة حالياً، اضغط لعرض العهدة", style: TextStyle(fontFamily: 'Cairo', fontSize: 13))),
+        TextButton(onPressed: () => setState(() => _selectedIndex = 1), child: const Text("فتح"))
+      ]),
+    );
+  }
 }
