@@ -29,7 +29,8 @@ class FreeDriverHomeScreen extends StatefulWidget {
 }
 
 class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
-  bool isOnline = false; 
+  // الاعتماد الكلي الآن على currentStatus بدلاً من isOnline (لتجنب التضارب)
+  String _currentStatus = 'offline'; 
   int _selectedIndex = 0;
   String? _activeOrderId;
   String _vehicleConfig = 'motorcycleConfig';
@@ -43,7 +44,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   void initState() {
     super.initState();
     _loadVehicleConfig();
-    _listenToDriverStatus(); // الاستماع للحالة بشكل حي (Online/Busy/Offline)
+    _listenToDriverStatus(); // الاستماع للحالات (online, busy, offline)
     _listenToActiveOrders();
     _listenToRadarNotifications();
     
@@ -52,21 +53,20 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     });
   }
 
-  // --- 📡 الاستماع لحالة المندوب من السيرفر ---
-  // هذا يضمن أنه إذا انتهت الرحلة في ActiveOrderScreen، سيتحدث الزر هنا تلقائياً
+  // --- 📡 الاستماع الموحد لحالة المندوب ---
   void _listenToDriverStatus() {
+    if (uid.isEmpty) return;
     FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots().listen((snap) {
       if (snap.exists && mounted) {
-        String status = snap.data()?['currentStatus'] ?? 'offline';
         setState(() {
-          // نعتبره "متصل" إذا كانت حالته online أو مشغول في رحلة busy
-          isOnline = (status == 'online' || status == 'busy');
+          _currentStatus = snap.data()?['currentStatus'] ?? 'offline';
         });
       }
     });
   }
 
   void _listenToRadarNotifications() {
+    if (uid.isEmpty) return;
     FirebaseFirestore.instance
         .collection('notifications')
         .where('userId', isEqualTo: uid)
@@ -104,17 +104,17 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     return true;
   }
 
-  // --- 📍 منطق الأونلاين المطور ---
-  void _toggleOnlineStatus(bool value) async {
-    // إذا كان المندوب حالياً في رحلة (Busy)، لا نسمح له بالإغلاق حتى تنتهي الرحلة
-    if (!value && _activeOrderId != null) {
+  // --- 📍 منطق الحالات المطور (Online/Offline) ---
+  void _toggleOnlineStatus(bool shouldBeOnline) async {
+    // منع الخروج إذا كان هناك رحلة قائمة (busy)
+    if (!shouldBeOnline && _currentStatus == 'busy') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("لا يمكن التحول لوضع أوفلاين أثناء وجود رحلة نشطة", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo')))
       );
       return;
     }
 
-    if (value) {
+    if (shouldBeOnline) {
       var status = await Permission.location.status;
       if (status.isGranted) {
         _updateOnlineInDB(true);
@@ -165,9 +165,9 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _updateOnlineInDB(bool value) async {
+    // تحديث الحالات بدقة ليتوافق مع السيرفر
     Map<String, dynamic> updateData = {
-      'isOnline': value,
-      'currentStatus': value ? 'online' : 'offline', // التحديث الجوهري
+      'currentStatus': value ? 'online' : 'offline',
       'lastSeen': FieldValue.serverTimestamp(),
     };
 
@@ -226,6 +226,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _listenToActiveOrders() {
+    if (uid.isEmpty) return;
     FirebaseFirestore.instance
         .collection('specialRequests')
         .where('driverId', isEqualTo: uid)
@@ -237,8 +238,14 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _onItemTapped(int index) {
-    if (index == 1 && !isOnline) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("برجاء تفعيل وضع الاتصال لفتح الرادار", style: TextStyle(fontFamily: 'Cairo'))));
+    // منع دخول الرادار (index 1) إذا كان المندوب أوفلاين
+    if (index == 1 && _currentStatus == 'offline') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("برجاء تفعيل وضع الاتصال لفتح الرادار", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo')),
+          behavior: SnackBarBehavior.floating,
+        )
+      );
       return;
     }
     setState(() {
@@ -295,33 +302,65 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   Widget _buildStatusToggle() {
+    bool isActive = (_currentStatus == 'online' || _currentStatus == 'busy');
     return GestureDetector(
-      onTap: () => _toggleOnlineStatus(!isOnline),
+      onTap: () => _toggleOnlineStatus(!isActive),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300), 
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10), 
-        decoration: BoxDecoration(color: isOnline ? Colors.green[600] : Colors.red[600], borderRadius: BorderRadius.circular(15)), 
+        decoration: BoxDecoration(color: isActive ? Colors.green[600] : Colors.red[600], borderRadius: BorderRadius.circular(15)), 
         child: Row(children: [
-          Icon(isOnline ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 18), 
+          Icon(isActive ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 18), 
           const SizedBox(width: 8), 
-          Text(isOnline ? "متصل" : "أوفلاين", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontFamily: 'Cairo'))
+          Text(isActive ? "متصل" : "أوفلاين", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontFamily: 'Cairo'))
         ])),
     );
   }
 
-  // --- بقية الواجهات (Drawer, Stats, BottomNav) ---
-  Widget _buildSideDrawer() { /* كود الدروير الخاص بك */ return Drawer(); }
-  Widget _buildLiveStatsGrid() { /* كود إحصائيات الأرباح */ return SliverToBoxAdapter(); }
-  Widget _buildActiveOrderBanner() { /* بانر الرحلة النشطة */ return Container(); }
+  // --- 🛠️ حل مشكلة الشاشة الرمادية نهائياً ---
   Widget _buildOtherPages() {
-    return [
-      const SizedBox(), 
-      _activeOrderId != null 
-          ? ActiveOrderScreen(orderId: _activeOrderId!) 
-          : AvailableOrdersScreen(vehicleType: _vehicleConfig), 
-      const OrdersHistoryScreen(), 
-      const WalletScreen()
-    ][_selectedIndex];
+    switch (_selectedIndex) {
+      case 1:
+        // إذا كان مشغول في رحلة، يفتح شاشة الطلب النشط، وإلا يفتح الرادار
+        if (_currentStatus == 'busy' && _activeOrderId != null) {
+          return ActiveOrderScreen(orderId: _activeOrderId!);
+        }
+        return AvailableOrdersScreen(vehicleType: _vehicleConfig);
+      case 2:
+        return const OrdersHistoryScreen();
+      case 3:
+        return const WalletScreen();
+      default:
+        return _buildModernDashboard(); // أمان في حال وجود Index خاطئ
+    }
   }
-  Widget _buildBottomNav() { /* الناف بار مع نقطة الرادار الحمراء */ return BottomNavigationBar(items: []); }
+
+  Widget _buildBottomNav() {
+    return BottomNavigationBar(
+      currentIndex: _selectedIndex,
+      onTap: _onItemTapped,
+      type: BottomNavigationBarType.fixed,
+      selectedItemColor: Colors.orange[900],
+      unselectedItemColor: Colors.grey,
+      selectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+      unselectedLabelStyle: const TextStyle(fontFamily: 'Cairo'),
+      items: [
+        const BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
+        BottomNavigationBarItem(
+          icon: Stack(children: [
+            const Icon(Icons.radar),
+            if (_hasNewOrders) Positioned(right: 0, child: Container(padding: const EdgeInsets.all(4), decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle))),
+          ]),
+          label: "الرادار",
+        ),
+        const BottomNavigationBarItem(icon: Icon(Icons.history), label: "رحلاتي"),
+        const BottomNavigationBarItem(icon: Icon(Icons.account_balance_wallet_outlined), label: "المحفظة"),
+      ],
+    );
+  }
+
+  // الدوال الفرعية المتبقية (Drawer, Stats, Banner) يتم استدعاؤها هنا
+  Widget _buildSideDrawer() { return const ProfileScreen(); } 
+  Widget _buildLiveStatsGrid() { return SliverToBoxAdapter(child: Container()); }
+  Widget _buildActiveOrderBanner() { return Container(); }
 }
