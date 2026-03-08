@@ -9,7 +9,6 @@ import 'package:sizer/sizer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:io'; 
 import 'package:permission_handler/permission_handler.dart'; 
 import 'package:geolocator/geolocator.dart';
 
@@ -34,7 +33,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   int _selectedIndex = 0;
   String? _activeOrderId;
   String _vehicleConfig = 'motorcycleConfig';
-  bool _showOnlinePrompt = false; // لمطالبة المندوب بتفعيل الوضع أونلاين
+  bool _showOnlinePrompt = false; 
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -52,7 +51,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     });
   }
 
-  // --- 🔄 الاستماع لحالة المندوب والطلبات ---
+  // --- 🔄 الاستماع لحالة المندوب والطلبات الحية ---
   void _listenToDriverStatus() {
     if (uid.isEmpty) return;
     FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots().listen((snap) {
@@ -85,7 +84,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     try {
       await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
         'currentStatus': 'online',
-        'insurance_points': 0,
       });
     } catch (e) {
       debugPrint("Reset Status Error: $e");
@@ -181,7 +179,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- 🏠 لوحة التحكم ---
+  // --- 🏠 لوحة التحكم الرئيسية ---
   Widget _buildModernDashboard() {
     return SafeArea(
       child: CustomScrollView(
@@ -205,31 +203,19 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
             ),
           ),
           
-          // --- 📢 أنيميشن التوجيه للوضع أونلاين ---
           if (_showOnlinePrompt && _currentStatus == 'offline')
             SliverToBoxAdapter(
-              child: TweenAnimationBuilder(
-                duration: const Duration(milliseconds: 1000),
-                tween: Tween<double>(begin: 0, end: 1),
-                builder: (context, double value, child) {
-                  return Opacity(
-                    opacity: value,
-                    child: Transform.translate(offset: Offset(0, (1 - value) * 15), child: child),
-                  );
-                },
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.orange[200]!)),
-                  child: Row(children: [
-                    const Icon(Icons.lightbulb_outline, color: Colors.orange),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text("فعل وضع 'متصل' الآن لتظهر في الرادار وتصلك الطلبات القريبة!", 
-    style: TextStyle(fontFamily: 'Cairo', fontSize: 12, color: Colors.orange[900]))),
-
-                    IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => setState(() => _showOnlinePrompt = false)),
-                  ]),
-                ),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.orange[200]!)),
+                child: Row(children: [
+                  const Icon(Icons.lightbulb_outline, color: Colors.orange),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text("فعل وضع 'متصل' الآن لتظهر في الرادار وتصلك الطلبات القريبة!", 
+                    style: TextStyle(fontFamily: 'Cairo', fontSize: 12, color: Colors.orange[900]))),
+                  IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => setState(() => _showOnlinePrompt = false)),
+                ]),
               ),
             ),
 
@@ -266,7 +252,13 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
       builder: (context, snapshot) {
-        var data = snapshot.hasData && snapshot.data!.exists ? snapshot.data!.data() as Map<String, dynamic> : {};
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+           return const SliverToBoxAdapter(child: Center(child: Padding(
+             padding: EdgeInsets.all(20.0),
+             child: CircularProgressIndicator(),
+           )));
+        }
+        var data = snapshot.data!.data() as Map<String, dynamic>;
         return SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           sliver: SliverGrid(
@@ -274,13 +266,20 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
             delegate: SliverChildListDelegate([
               _buildStatCard("نقاط التأمين", "${data['insurance_points'] ?? 0}", Icons.security, Colors.blue),
               _buildStatCard("أمانات مُسلمة اليوم", "${data['completed_today'] ?? 0}", Icons.task_alt, Colors.orange),
-              _buildStatCard("التقييم المهني", "${data['rating'] ?? 5.0}", Icons.star_border_rounded, Colors.amber),
-              _buildStatCard("المحفظة (ج.م)", "${(data['wallet_balance'] ?? 0.0).toStringAsFixed(2)}", Icons.account_balance_wallet_outlined, Colors.green),
+              _buildStatCard("التقييم المهني", _calculateRating(data), Icons.star_border_rounded, Colors.amber),
+              _buildStatCard("المحفظة (ج.م)", "${(data['walletBalance'] ?? 0.0).toStringAsFixed(2)}", Icons.account_balance_wallet_outlined, Colors.green),
             ]),
           ),
         );
       },
     );
+  }
+
+  String _calculateRating(Map<String, dynamic> data) {
+    double totalStars = (data['totalStars'] ?? 0.0).toDouble();
+    int reviewsCount = data['reviewsCount'] ?? 0;
+    if (reviewsCount == 0) return "5.0";
+    return (totalStars / reviewsCount).toStringAsFixed(1);
   }
 
   Widget _buildStatCard(String title, String value, IconData icon, Color color) {
@@ -296,60 +295,60 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- 🛡️ التحكم في الحالة والأمان ---
+  // --- 🛡️ إدارة الحالة وأذونات الموقع المحدثة ---
   void _toggleOnlineStatus(bool shouldBeOnline) async {
     if (!shouldBeOnline && _currentStatus == 'busy') {
       _showErrorSnackBar("يجب إنهاء العهدة الحالية أولاً");
       return;
     }
+
     if (shouldBeOnline) {
-      PermissionStatus status = await Permission.location.status;
-      if (status.isGranted) {
-        _updateOnlineInDB(true);
-        setState(() => _showOnlinePrompt = false);
-      } else {
-        _showLocationDisclosure();
+      LocationPermission permission = await Geolocator.checkPermission();
+      
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _showErrorSnackBar("مطلوب إذن الموقع لتتمكن من استقبال الطلبات");
+          return;
+        }
       }
+
+      if (permission == LocationPermission.deniedForever) {
+        _showErrorSnackBar("إذن الموقع مرفوض نهائياً، يرجى تفعيله من الإعدادات");
+        return;
+      }
+
+      // الإذن متاح، نقوم بالتحديث
+      _updateOnlineInDB(true);
+      setState(() => _showOnlinePrompt = false);
     } else {
       _updateOnlineInDB(false);
     }
   }
 
-  void _showLocationDisclosure() async {
-    bool? proceed = await showDialog<bool>(
-      context: context, barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("تتبع العهدة واللوجيستيات 🛡️", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-        content: const Text(
-            "يتطلب 'أكسب كابتن' الوصول للموقع في الخلفية لضمان استرداد نقاط التأمين وتحديث حالة الطلب للعملاء فور وجود 'طلب نشط' فقط.\n\n"
-            "• يتم التوقف عن إرسال الموقع فور الانتقال لوضع 'أوفلاين'."),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("ليس الآن")),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]), onPressed: () => Navigator.pop(context, true), child: const Text("موافق", style: TextStyle(color: Colors.white))),
-        ],
-      ),
-    );
-    if (proceed == true) {
-      if (await Permission.location.request().isGranted) {
-        _updateOnlineInDB(true);
-        setState(() => _showOnlinePrompt = false);
-        await Permission.locationAlways.request();
+  void _updateOnlineInDB(bool value) async {
+    try {
+      Map<String, dynamic> updateData = {
+        'currentStatus': value ? 'online' : 'offline', 
+        'lastSeen': FieldValue.serverTimestamp()
+      };
+
+      if (value) {
+        // تحديث الموقع الجغرافي مرة واحدة لضبط الرادار
+        Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+        updateData['location'] = GeoPoint(pos.latitude, pos.longitude);
+        updateData['lat'] = pos.latitude;
+        updateData['lng'] = pos.longitude;
       }
+
+      await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update(updateData);
+    } catch (e) { 
+      debugPrint("DB Update Error: $e"); 
+      _showErrorSnackBar("فشل تحديث الحالة، تأكد من اتصال الإنترنت");
     }
   }
 
-  void _updateOnlineInDB(bool value) async {
-    try {
-      Map<String, dynamic> updateData = {'currentStatus': value ? 'online' : 'offline', 'lastSeen': FieldValue.serverTimestamp()};
-      if (value) {
-        Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-        updateData['lat'] = pos.latitude; updateData['lng'] = pos.longitude;
-      }
-      await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update(updateData);
-    } catch (e) { debugPrint("DB Update Error: $e"); }
-  }
-
+  // --- 🛠️ دوال مساعدة إضافية ---
   Future<void> _launchPrivacyPolicy() async {
     final Uri url = Uri.parse('https://aksab.shop/');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) _showErrorSnackBar("تعذر فتح الرابط");
@@ -422,9 +421,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     } catch (e) { debugPrint("Security Check Error: $e"); }
   }
 
-  // --- 🔔 طلب الإشعارات مع رسالة إفصاح مسبقة ---
   Future<void> _requestNotificationWithDisclosure() async {
-    // إظهار تنبيه يوضح فائدة الإشعارات (متطلب لجوجل في بعض الحالات)
     bool? proceed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -455,7 +452,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
             ).timeout(const Duration(seconds: 10));
           }
         }
-        // بعد الانتهاء من الإشعارات، فعل أنيميشن التوجيه
         if (_currentStatus == 'offline') setState(() => _showOnlinePrompt = true);
       } catch (e) { debugPrint("Notification error: $e"); }
     }
