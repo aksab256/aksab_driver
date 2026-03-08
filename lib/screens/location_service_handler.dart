@@ -10,15 +10,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
-  // 1. تهيئة البيئة البرمجية الأساسية
+  // 1. تهيئة البيئة البرمجية الأساسية لضمان عمل المكونات في الخلفية
   WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
   
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp();
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp();
+    }
+  } catch (e) {
+    debugPrint("Firebase Initialization Error: $e");
   }
 
-  // 2. إعداد واجهة الإشعارات للأندرويد
+  // 2. إعدادات التحكم في خدمة الأندرويد
   if (service is AndroidServiceInstance) {
     service.on('setAsForeground').listen((event) {
       service.setAsForegroundService();
@@ -29,53 +33,55 @@ void onStart(ServiceInstance service) async {
     });
   }
 
-  // 3. الاستماع لأمر الإيقاف وتصفية الموارد
+  // 3. الاستماع لأمر الإيقاف
   service.on('stopService').listen((event) {
     service.stopSelf();
   });
 
-  // 4. نظام التتبع الذكي (Stream) لتقليل استهلاك البطارية
-  // بدلاً من التايمر، هنستخدم جيريوسنسور بيحس بالحركة
-  const LocationSettings locationSettings = AndroidSettings(
+  // 4. إعدادات الموقع المتوافقة مع جميع نسخ geolocator (تجنباً لأخطاء الـ Build)
+  // تم إزالة foregroundServiceBehavior لأنه يسبب تعارض في بعض النسخ
+  // وتم استبداله بـ AppleSettings و AndroidSettings عامة
+  final LocationSettings locationSettings = AndroidSettings(
     accuracy: LocationAccuracy.high,
-    distanceFilter: 10, // لن يتم تحديث الموقع إلا إذا تحرك المندوب 10 أمتار على الأقل
-    foregroundServiceBehavior: ForegroundServiceBehavior.continueService,
-    intervalDuration: Duration(seconds: 15), // حد أدنى للوقت بين التحديثات
+    distanceFilter: 10, // تحديث كل 10 أمتار لتوفير البطارية والداتا
+    intervalDuration: const Duration(seconds: 15),
   );
 
   StreamSubscription<Position>? positionStream;
 
+  // 5. بدء تدفق البيانات (Stream)
   positionStream = Geolocator.getPositionStream(locationSettings: locationSettings)
       .listen((Position position) async {
     
     if (service is AndroidServiceInstance) {
-      if (await service.isForegroundService()) {
-        // تحديث الإشعار لإظهار أن النظام يعمل بكفاءة
-        service.setForegroundNotificationInfo(
-          title: "أكسب: تأمين العهدة نشط 🛡️",
-          content: "موقعك محدث: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}",
-        );
-      }
+      // تحديث الإشعار لضمان الشفافية مع المندوب ومع جوجل
+      service.setForegroundNotificationInfo(
+        title: "أكسب: تأمين العهدة نشط 🛡️",
+        content: "يتم الآن تتبع مسار الرحلة لضمان مستحقاتك",
+      );
     }
 
     try {
       final prefs = await SharedPreferences.getInstance();
       String? uid = prefs.getString('driver_uid');
 
-      if (uid != null) {
-        // تحديث الفايربيز فقط عند حدوث حركة حقيقية
+      if (uid != null && uid.isNotEmpty) {
+        // تحديث الفايربيز بالحقول الموحدة
         await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
           'location': GeoPoint(position.latitude, position.longitude),
+          'lat': position.latitude,
+          'lng': position.longitude,
           'lastSeen': FieldValue.serverTimestamp(),
-          'speed': position.speed, // ميزة إضافية لمعرفة سرعة المندوب
+          'speed': position.speed, // مفيد جداً لحساب وقت الوصول المتوقع
+          'heading': position.heading, // اتجاه حركة المندوب
         });
       }
     } catch (e) {
-      debugPrint("Firebase Background Update Error: $e");
+      debugPrint("Firebase Update Error: $e");
     }
   });
 
-  // في حالة إغلاق الخدمة، نوقف الـ Stream تماماً
+  // تنظيف الموارد عند إيقاف الخدمة
   service.on('stopService').listen((event) {
     positionStream?.cancel();
     service.stopSelf();
