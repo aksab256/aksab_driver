@@ -13,7 +13,7 @@ import 'dart:io';
 import 'package:permission_handler/permission_handler.dart'; 
 import 'package:geolocator/geolocator.dart';
 
-// الصفحات التابعة - تأكد من وجود هذه الملفات في مشروعك
+// الصفحات التابعة
 import 'available_orders_screen.dart';
 import 'active_order_screen.dart';
 import 'wallet_screen.dart';
@@ -34,6 +34,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   int _selectedIndex = 0;
   String? _activeOrderId;
   String _vehicleConfig = 'motorcycleConfig';
+  bool _showOnlinePrompt = false; // لمطالبة المندوب بتفعيل الوضع أونلاين
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -203,6 +204,33 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
               ),
             ),
           ),
+          
+          // --- 📢 أنيميشن التوجيه للوضع أونلاين ---
+          if (_showOnlinePrompt && _currentStatus == 'offline')
+            SliverToBoxAdapter(
+              child: TweenAnimationBuilder(
+                duration: const Duration(milliseconds: 1000),
+                tween: Tween<double>(begin: 0, end: 1),
+                builder: (context, double value, child) {
+                  return Opacity(
+                    opacity: value,
+                    child: Transform.translate(offset: Offset(0, (1 - value) * 15), child: child),
+                  );
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.orange[200]!)),
+                  child: Row(children: [
+                    const Icon(Icons.lightbulb_outline, color: Colors.orange),
+                    const SizedBox(width: 10),
+                    const Expanded(child: Text("فعل وضع 'متصل' الآن لتظهر في الرادار وتصلك الطلبات القريبة!", style: TextStyle(fontFamily: 'Cairo', fontSize: 12, color: Colors.orange[900]))),
+                    IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => setState(() => _showOnlinePrompt = false)),
+                  ]),
+                ),
+              ),
+            ),
+
           if (_activeOrderId != null) SliverToBoxAdapter(child: _buildActiveOrderBanner()),
           _buildLiveStatsGrid(),
         ],
@@ -276,6 +304,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       PermissionStatus status = await Permission.location.status;
       if (status.isGranted) {
         _updateOnlineInDB(true);
+        setState(() => _showOnlinePrompt = false);
       } else {
         _showLocationDisclosure();
       }
@@ -289,8 +318,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       context: context, barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("تأمين العهدة نشط 🛡️", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-        content: const Text("يتطلب 'أكسب كابتن' الوصول الدائم للموقع لضمان استرداد نقاط التأمين وتتبع الرحلة بأمان."),
+        title: const Text("تتبع العهدة واللوجيستيات 🛡️", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        content: const Text(
+            "يتطلب 'أكسب كابتن' الوصول للموقع في الخلفية لضمان استرداد نقاط التأمين وتحديث حالة الطلب للعملاء فور وجود 'طلب نشط' فقط.\n\n"
+            "• يتم التوقف عن إرسال الموقع فور الانتقال لوضع 'أوفلاين'."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("ليس الآن")),
           ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]), onPressed: () => Navigator.pop(context, true), child: const Text("موافق", style: TextStyle(color: Colors.white))),
@@ -300,6 +331,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     if (proceed == true) {
       if (await Permission.location.request().isGranted) {
         _updateOnlineInDB(true);
+        setState(() => _showOnlinePrompt = false);
         await Permission.locationAlways.request();
       }
     }
@@ -378,27 +410,53 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       var userDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (userDoc.exists && !(userDoc.data()?['hasAcceptedTerms'] ?? false) && mounted) {
         final result = await showModalBottomSheet<bool>(context: context, isScrollControlled: true, isDismissible: false, builder: (context) => FreelanceTermsScreen(userId: uid));
-        if (result == true) _requestNotificationPermission();
-      } else { _requestNotificationPermission(); }
+        if (result == true) {
+          _showErrorSnackBar("تم حفظ موافقتك القانونية بنجاح ✅");
+          _requestNotificationWithDisclosure();
+        }
+      } else { 
+        _requestNotificationWithDisclosure(); 
+      }
     } catch (e) { debugPrint("Security Check Error: $e"); }
   }
 
-  Future<void> _requestNotificationPermission() async {
-    try {
-      FirebaseMessaging messaging = FirebaseMessaging.instance;
-      NotificationSettings settings = await messaging.requestPermission(alert: true, badge: true, sound: true);
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        String? token = await messaging.getToken();
-        if (token != null) {
-          await http.post(
-            Uri.parse("https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction"),
-            headers: {"Content-Type": "application/json"},
-            body: jsonEncode({"userId": uid, "fcmToken": token, "role": "free_driver"}),
-          ).timeout(const Duration(seconds: 10));
+  // --- 🔔 طلب الإشعارات مع رسالة إفصاح مسبقة ---
+  Future<void> _requestNotificationWithDisclosure() async {
+    // إظهار تنبيه يوضح فائدة الإشعارات (متطلب لجوجل في بعض الحالات)
+    bool? proceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("تنبيهات الطلبات 🔔", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        content: const Text("يرجى تفعيل الإشعارات لتصلك تنبيهات الطلبات الجديدة وتحديثات العهدة لحظياً."),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("موافق", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (proceed == true) {
+      try {
+        FirebaseMessaging messaging = FirebaseMessaging.instance;
+        NotificationSettings settings = await messaging.requestPermission(alert: true, badge: true, sound: true);
+        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+          String? token = await messaging.getToken();
+          if (token != null) {
+            await http.post(
+              Uri.parse("https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction"),
+              headers: {"Content-Type": "application/json"},
+              body: jsonEncode({"userId": uid, "fcmToken": token, "role": "free_driver"}),
+            ).timeout(const Duration(seconds: 10));
+          }
         }
-      }
-    } on SocketException { debugPrint("Network error in notifications"); }
-    catch (e) { debugPrint("Notification error: $e"); }
+        // بعد الانتهاء من الإشعارات، فعل أنيميشن التوجيه
+        if (_currentStatus == 'offline') setState(() => _showOnlinePrompt = true);
+      } catch (e) { debugPrint("Notification error: $e"); }
+    }
   }
 
   Future<bool> _handleWillPop() async {
