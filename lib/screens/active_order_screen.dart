@@ -1,4 +1,3 @@
-// lib/screens/active_order_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -37,7 +36,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // تأمين حالة المندوب فور الدخول
     _updateDriverStatus('busy');
     _configureBackgroundServiceOnly();
     _initInitialLocation();
@@ -109,7 +107,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
           onStart: onStart, 
           autoStart: false,
           isForegroundMode: true,
-          // ✅ تم التوحيد مع main.dart والـ Manifest لحل كراش Bad Notification
           notificationChannelId: 'high_importance_channel', 
           initialNotificationTitle: 'أكسب: تأمين العهدة نشط 🛡️',
           initialNotificationContent: 'جاري تحديث مسار الرحلة لضمان استرداد نقاط التأمين',
@@ -136,22 +133,17 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     }
   }
 
-  // ✅ الخطوة الأهم: طلب إذن الموقع الدائم (Always Allow) برمجياً
   Future<void> _initInitialLocation() async {
     LocationPermission permission = await Geolocator.checkPermission();
-    
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
-
-    // إذا كان المندوب اختار "أثناء الاستخدام فقط"، نطلب منه "دائماً" لتجنب الكراش في الخلفية
     if (permission == LocationPermission.whileInUse) {
       bool? proceed = await _showBackgroundPermissionDialog();
       if (proceed == true) {
         permission = await Geolocator.requestPermission();
       }
     }
-
     if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
       Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       if (mounted) {
@@ -184,8 +176,16 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
       if (!orderSnap.exists || !mounted) return;
       var data = orderSnap.data() as Map<String, dynamic>;
       String status = data['status'];
-      bool moneyLocked = data['moneyLocked'] ?? false;
       
+      // ✅ مراقب الحالات النهائية لإنهاء اللودينج والخروج من الصفحة
+      if (status == 'delivered' || status == 'returned_successfully' || status == 'cancelled' || status.contains('cancelled')) {
+         if (_isOrderStillActive) {
+           _showCompletionDialog(status);
+         }
+         return;
+      }
+
+      bool moneyLocked = data['moneyLocked'] ?? false;
       if (status == 'pending' && !moneyLocked) {
          _showSecurityError();
          return;
@@ -197,6 +197,58 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
           
       _startSmartLiveTracking(LatLng(targetGeo.latitude, targetGeo.longitude));
     });
+  }
+
+  // ✅ رسالة انتهاء الرحلة (الشيك) وإيقاف التتبع
+  void _showCompletionDialog(String status) async {
+    setState(() => _isOrderStillActive = false);
+    await _stopBackgroundTracking();
+    await _updateDriverStatus('online');
+
+    if (!mounted) return;
+
+    String title = "تمت المهمة بنجاح! 🎉";
+    String message = "شكراً لك! الرحلة انتهت والعميل سيقوم بتقييمك الآن. يمكنك استقبال طلبات جديدة.";
+    IconData icon = Icons.check_circle_outline;
+    Color iconColor = Colors.green;
+
+    if (status.contains('cancelled')) {
+      title = "تم إلغاء الرحلة";
+      message = "نحيطك علماً بأن هذه الرحلة قد تم إلغاؤها. رصيدك في أمان ويمكنك العودة للرادار.";
+      icon = Icons.info_outline;
+      iconColor = Colors.orange;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 50.sp, color: iconColor),
+              SizedBox(height: 2.h),
+              Text(title, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
+              SizedBox(height: 1.h),
+              Text(message, textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp)),
+            ],
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false),
+                child: Text("العودة للرادار", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+              ),
+            )
+          ],
+        ),
+      ),
+    );
   }
 
   void _showSecurityError() {
@@ -257,9 +309,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
             margin: EdgeInsets.fromLTRB(10.sp, 0, 10.sp, 10.sp),
             padding: EdgeInsets.all(18.sp),
             decoration: BoxDecoration(
-              color: Colors.white, 
-              borderRadius: BorderRadius.circular(25), 
-              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 20)]
+              color: Colors.white, borderRadius: BorderRadius.circular(25), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 20)]
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -330,7 +380,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   void _showProfessionalOTP(String? correctCode, String currentStatus, bool isMerchant) {
     final TextEditingController codeController = TextEditingController();
     bool isReturning = currentStatus.contains('returning');
-
     showDialog(
       context: context, barrierDismissible: false,
       builder: (context) => Directionality(
@@ -341,25 +390,12 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(isReturning 
-                ? "أدخل كود المرتجع من التاجر لفك حجز نقاطك فوراً."
-                : isMerchant 
-                    ? "أدخل الكود المستلم من التاجر لتأكيد العهدة في أمانتك."
-                    : "أدخل الكود المستلم من العميل لتأكيد بدء رحلة النقل.", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)),
+              Text(isReturning ? "أدخل كود المرتجع من التاجر لفك حجز نقاطك فوراً." : isMerchant ? "أدخل الكود المستلم من التاجر لتأكيد العهدة في أمانتك." : "أدخل الكود المستلم من العميل لتأكيد بدء رحلة النقل.", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)),
               SizedBox(height: 20),
               TextField(
-                controller: codeController,
-                textAlign: TextAlign.center,
-                keyboardType: TextInputType.number,
-                maxLength: 4,
+                controller: codeController, textAlign: TextAlign.center, keyboardType: TextInputType.number, maxLength: 4,
                 style: TextStyle(fontSize: 25.sp, fontWeight: FontWeight.bold, letterSpacing: 20),
-                decoration: InputDecoration(
-                  hintText: "----",
-                  counterText: "",
-                  filled: true,
-                  fillColor: Colors.grey[100],
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
-                ),
+                decoration: InputDecoration(hintText: "----", counterText: "", filled: true, fillColor: Colors.grey[100], border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none)),
               ),
             ],
           ),
@@ -371,14 +407,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
                 if (codeController.text.trim() == correctCode?.trim()) {
                   Navigator.pop(context);
                   if (isReturning) {
-                    setState(() => _isOrderStillActive = false);
                     await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
                       'status': 'returned_successfully', 
                       'updatedAt': FieldValue.serverTimestamp(),
                     });
-                    await _stopBackgroundTracking(); 
-                    await _updateDriverStatus('online'); 
-                    if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+                    // هنا المستمع (Listener) سيكتشف التغيير ويظهر الـ CompletionDialog تلقائياً
                   } else {
                     _updateStatus('picked_up');
                   }
@@ -396,21 +429,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
 
   void _handleReturnFlow() async {
     bool? confirm = await showDialog(
-      context: context, 
-      builder: (c) => Directionality(
-        textDirection: TextDirection.rtl, 
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text("بدء إجراءات المرتجع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), 
-          content: const Text("سيتم توجيهك الآن لموقع التاجر لاستعادة عهدتك. سيظهر كود تأكيد جديد لدى التاجر لاستلامه الأمانات.", style: TextStyle(fontFamily: 'Cairo')), 
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), 
-            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("نعم، مرتجع", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))
-          ]
-        )
-      )
+      context: context, builder: (c) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), title: const Text("بدء إجراءات المرتجع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), content: const Text("سيتم توجيهك الآن لموقع التاجر لاستعادة عهدتك. سيظهر كود تأكيد جديد لدى التاجر لاستلامه الأمانات.", style: TextStyle(fontFamily: 'Cairo')), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("نعم، مرتجع", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))]))
     );
-
     if (confirm == true) {
       String generatedReturnCode = (1000 + Random().nextInt(8999)).toString();
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
@@ -422,14 +442,16 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   }
 
   void _completeOrder() async {
-    setState(() => _isOrderStillActive = false);
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
-    await _stopBackgroundTracking(); 
     try {
-      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
-      await _updateDriverStatus('online'); 
-      if (mounted) { Navigator.pop(context); Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false); }
-    } catch (e) { Navigator.pop(context); }
+      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
+        'status': 'delivered', 
+        'completedAt': FieldValue.serverTimestamp()
+      });
+      if (mounted) Navigator.pop(context); // إغلاق الـ Loading فقط، والـ Listener سيتكفل بالباقي
+    } catch (e) { 
+      if (mounted) Navigator.pop(context); 
+    }
   }
 
   Widget _phoneButton({required String? phone, required String label, required Color color}) {
@@ -457,7 +479,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
         String status = data['status'];
         GeoPoint pickup = data['pickupLocation'];
         GeoPoint dropoff = data['dropoffLocation'];
-        
         return FlutterMap(
           mapController: _mapController,
           options: MapOptions(initialCenter: _currentLocation ?? LatLng(pickup.latitude, pickup.longitude), initialZoom: 15),
@@ -504,11 +525,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog(context: context, builder: (c) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), title: const Text("اعتذار عن الرحلة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), content: const Text("هل أنت متأكد؟ لن يتم خصم عهدة إذا لم تستلم البضاعة بعد.", style: TextStyle(fontFamily: 'Cairo')), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد الاعتذار", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))])));
     if (confirm == true) {
-      setState(() => _isOrderStillActive = false);
-      await _stopBackgroundTracking(); 
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'driver_cancelled_reseeking', 'lastDriverId': _uid, 'driverId': FieldValue.delete()});
-      await _updateDriverStatus('online'); 
-      if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      // الـ Listener سيتكفل بالباقي بمجرد تغير الحالة
     }
   }
 
