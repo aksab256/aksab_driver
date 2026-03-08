@@ -123,7 +123,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                 ),
-                Position Navigator.canPop(context) ? const BackButton(color: Colors.white) : const SizedBox(),
+                Positioned(
+  top: 5.h,
+  right: 2.w,
+  child: Navigator.canPop(context) ? const BackButton(color: Colors.white) : const SizedBox(),
+),
+
               ],
             ),
     );
