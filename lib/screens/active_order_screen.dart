@@ -37,7 +37,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // عند الدخول نتأكد أن الحالة 'busy' (احتياطياً)
+    // تأمين حالة المندوب فور الدخول
     _updateDriverStatus('busy');
     _configureBackgroundServiceOnly();
     _initInitialLocation();
@@ -53,13 +53,12 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     super.dispose();
   }
 
-  // دالة موحدة لتحديث حالة المندوب لضمان الربط مع السيرفر
   Future<void> _updateDriverStatus(String status) async {
     if (_uid != null) {
       await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
         'currentStatus': status,
         'lastSeen': FieldValue.serverTimestamp(),
-        if (status == 'online') 'activeOrderId': "" // تفريغ الطلب النشط عند العودة أونلاين
+        if (status == 'online') 'activeOrderId': "" 
       });
     }
   }
@@ -110,7 +109,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
           onStart: onStart, 
           autoStart: false,
           isForegroundMode: true,
-          notificationChannelId: 'aksab_tracking_channel',
+          // ✅ تم التوحيد مع main.dart والـ Manifest لحل كراش Bad Notification
+          notificationChannelId: 'high_importance_channel', 
           initialNotificationTitle: 'أكسب: تأمين العهدة نشط 🛡️',
           initialNotificationContent: 'جاري تحديث مسار الرحلة لضمان استرداد نقاط التأمين',
           foregroundServiceNotificationId: 888,
@@ -136,12 +136,47 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     }
   }
 
+  // ✅ الخطوة الأهم: طلب إذن الموقع الدائم (Always Allow) برمجياً
   Future<void> _initInitialLocation() async {
-    Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-    if (mounted) {
-      setState(() => _currentLocation = LatLng(position.latitude, position.longitude));
-      _setupDynamicTracking();
+    LocationPermission permission = await Geolocator.checkPermission();
+    
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
     }
+
+    // إذا كان المندوب اختار "أثناء الاستخدام فقط"، نطلب منه "دائماً" لتجنب الكراش في الخلفية
+    if (permission == LocationPermission.whileInUse) {
+      bool? proceed = await _showBackgroundPermissionDialog();
+      if (proceed == true) {
+        permission = await Geolocator.requestPermission();
+      }
+    }
+
+    if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      if (mounted) {
+        setState(() => _currentLocation = LatLng(position.latitude, position.longitude));
+        _setupDynamicTracking();
+      }
+    }
+  }
+
+  Future<bool?> _showBackgroundPermissionDialog() async {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          title: const Text("تأمين التتبع 🛡️", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+          content: const Text("لكي نتمكن من حماية عهدتك المالية وتحديث موقعك حتى لو أغلقت الشاشة، يرجى اختيار 'السماح طوال الوقت' (Allow all the time) في الخطوة القادمة."),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("فهمت، متابعة")),
+          ],
+        ),
+      ),
+    );
   }
 
   void _setupDynamicTracking() {
@@ -342,7 +377,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
                       'updatedAt': FieldValue.serverTimestamp(),
                     });
                     await _stopBackgroundTracking(); 
-                    await _updateDriverStatus('online'); // العودة للحالة الطبيعية
+                    await _updateDriverStatus('online'); 
                     if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
                   } else {
                     _updateStatus('picked_up');
@@ -392,12 +427,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     await _stopBackgroundTracking(); 
     try {
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'delivered', 'completedAt': FieldValue.serverTimestamp()});
-      await _updateDriverStatus('online'); // أهم خطوة: العودة للسيرفر
+      await _updateDriverStatus('online'); 
       if (mounted) { Navigator.pop(context); Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false); }
     } catch (e) { Navigator.pop(context); }
   }
 
-  // --- دوال مساعدة للواجهة ---
   Widget _phoneButton({required String? phone, required String label, required Color color}) {
     if (phone == null || phone.isEmpty) return const SizedBox();
     return ElevatedButton.icon(
@@ -473,7 +507,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
       setState(() => _isOrderStillActive = false);
       await _stopBackgroundTracking(); 
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'driver_cancelled_reseeking', 'lastDriverId': _uid, 'driverId': FieldValue.delete()});
-      await _updateDriverStatus('online'); // العودة للرادار لاستقبال طلب آخر
+      await _updateDriverStatus('online'); 
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }
   }
