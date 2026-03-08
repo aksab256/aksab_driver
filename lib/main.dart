@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; 
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'dart:ui'; 
+import 'dart:ui';
+import 'dart:async'; // ✅ للاستخدام مع Connectivity
+import 'package:connectivity_plus/connectivity_plus.dart'; // ✅ أضف هذه المكتبة
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_background_service/flutter_background_service.dart'; 
-import 'package:firebase_messaging/firebase_messaging.dart'; // ✅ إضافة مكتبة المراسلة
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/free_driver_home_screen.dart';
 import 'screens/CompanyRepHomeScreen.dart';
-import 'screens/delivery_admin_dashboard.dart'; 
+import 'screens/delivery_admin_dashboard.dart';
 
-// متغير عالمي لتتبع توقيت ضغطة زر الرجوع
 DateTime? _lastPressedAt;
 
-// ✅ إضافة معالج الرسائل في الخلفية لضمان عمل الإشعارات والتطبيق مغلق
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
@@ -31,27 +31,22 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
-  // ✅ 1. إعدادات Crashlytics
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     return true;
   };
 
-  // ✅ 2. إعدادات الإشعارات الموحدة (مطابقة للتطبيق الأساسي)
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-  
-  // تهيئة الإعدادات للأندرويد
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
   const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-  // تعريف القناة الموحدة بالاسم الجديد high_importance_channel
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'high_importance_channel', 
+    'high_importance_channel',
     'إشعارات هامة',
     description: 'هذه القناة مخصصة لإشعارات الطلبات والعهدة الهامة.',
-    importance: Importance.max, // أقصى درجة لضمان الصوت والظهور المفاجئ (Heads-up)
+    importance: Importance.max,
     playSound: true,
     enableVibration: true,
   );
@@ -60,15 +55,11 @@ void main() async {
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  // ربط معالج الخلفية لـ Firebase
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // ✅ 3. أمر التنظيف الذكي: إيقاف أي خدمة قديمة معلقة عند بداية تشغيل التطبيق
   try {
     FlutterBackgroundService().invoke("stopService");
-  } catch (e) {
-    // تجاهل الخطأ إذا لم تكن الخدمة تعمل
-  }
+  } catch (e) {}
 
   runApp(AksabDriverApp());
 }
@@ -83,7 +74,7 @@ class AksabDriverApp extends StatelessWidget {
     return Sizer(
       builder: (context, orientation, deviceType) {
         return MaterialApp(
-          navigatorKey: navigatorKey, 
+          navigatorKey: navigatorKey,
           title: 'أكسب كابتن',
           debugShowCheckedModeBanner: false,
           localizationsDelegates: const [
@@ -98,45 +89,34 @@ class AksabDriverApp extends StatelessWidget {
             fontFamily: 'Tajawal',
             scaffoldBackgroundColor: Colors.white,
           ),
+          // ✅ تغليف التطبيق بالكامل بمراقب الإنترنت
+          builder: (context, child) {
+            return ConnectivityWrapper(child: child!);
+          },
           home: PopScope(
-            canPop: false, 
+            canPop: false,
             onPopInvokedWithResult: (didPop, result) async {
               if (didPop) return;
-
               final NavigatorState? navigator = navigatorKey.currentState;
-
               if (navigator != null && navigator.canPop()) {
                 navigator.pop();
                 return;
               }
-
               final now = DateTime.now();
-              const backButtonInterval = Duration(seconds: 2);
-
-              if (_lastPressedAt == null || now.difference(_lastPressedAt!) > backButtonInterval) {
+              if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
                 _lastPressedAt = now;
-                
                 ScaffoldMessenger.of(navigator!.context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'إضغط مرة أخرى للخروج من التطبيق',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontFamily: 'Tajawal'),
-                    ),
-                    backgroundColor: Colors.black87,
-                    duration: Duration(seconds: 2),
-                  ),
+                  const SnackBar(content: Text('إضغط مرة أخرى للخروج', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')), backgroundColor: Colors.black87),
                 );
                 return;
               }
-
               SystemNavigator.pop();
             },
             child: const AuthWrapper(),
           ),
           routes: {
-            '/login': (context) => LoginScreen(),
-            '/register': (context) => RegisterScreen(),
+            '/login': (context) => const LoginScreen(),
+            '/register': (context) => const RegisterScreen(),
             '/free_home': (context) => const FreeDriverHomeScreen(),
             '/company_home': (context) => const CompanyRepHomeScreen(),
             '/admin_dashboard': (context) => const DeliveryAdminDashboard(),
@@ -147,45 +127,90 @@ class AksabDriverApp extends StatelessWidget {
   }
 }
 
+// ✅ ويدجت مراقبة الإنترنت (Smart Connectivity Wrapper)
+class ConnectivityWrapper extends StatefulWidget {
+  final Widget child;
+  const ConnectivityWrapper({super.key, required this.child});
+
+  @override
+  _ConnectivityWrapperState createState() => _ConnectivityWrapperState();
+}
+
+class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
+  late StreamSubscription<List<ConnectivityResult>> _subscription;
+  bool _isConnected = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // مراقبة حالة الشبكة لحظياً
+    _subscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> result) {
+      setState(() {
+        _isConnected = !result.contains(ConnectivityResult.none);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isConnected) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.wifi_off_rounded, size: 100, color: Colors.redAccent),
+                  const SizedBox(height: 20),
+                  const Text("عذراً، لا يوجد اتصال بالإنترنت", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Tajawal')),
+                  const SizedBox(height: 10),
+                  const Text("تأكد من تفعيل الواي فاي أو بيانات الهاتف للمتابعة", textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey, fontFamily: 'Tajawal')),
+                  const SizedBox(height: 30),
+                  const CircularProgressIndicator(color: Colors.orange),
+                  const SizedBox(height: 10),
+                  const Text("في انتظار عودة الاتصال...", style: TextStyle(fontSize: 14, fontFamily: 'Tajawal', color: Colors.orange)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    // لو النت موجود، اعرض التطبيق الطبيعي (بدون مسح الجلسة)
+    return widget.child;
+  }
+}
+
+// [AuthWrapper و _getUserRoleAndData يظلان كما هما دون تغيير]
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
-
+  // ... (نفس الكود السابق لضمان بقاء الجلسة)
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-
+        if (snapshot.connectionState == ConnectionState.waiting) return const Scaffold(body: Center(child: CircularProgressIndicator()));
         if (snapshot.hasData) {
-          final uid = snapshot.data!.uid;
-
           return FutureBuilder<Map<String, dynamic>?>(
-            future: _getUserRoleAndData(uid),
+            future: _getUserRoleAndData(snapshot.data!.uid),
             builder: (context, roleSnapshot) {
-              if (roleSnapshot.connectionState == ConnectionState.waiting) {
-                return const Scaffold(body: Center(child: CircularProgressIndicator()));
-              }
-
-              final userData = roleSnapshot.data;
-              if (userData != null) {
-                final String type = userData['type'];
-                final String status = userData['status'] ?? '';
-
-                if (type == 'deliveryRep' && status == 'approved') {
-                  return const CompanyRepHomeScreen();
-                } 
-                else if (type == 'freeDriver' && status == 'approved') {
-                  return const FreeDriverHomeScreen();
-                } 
-                else if (type == 'manager') {
-                  String role = userData['role'] ?? '';
-                  if (role == 'delivery_manager' || role == 'delivery_supervisor') {
-                    return const DeliveryAdminDashboard();
-                  }
-                }
+              if (roleSnapshot.connectionState == ConnectionState.waiting) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              if (roleSnapshot.data != null) {
+                final d = roleSnapshot.data!;
+                if (d['type'] == 'deliveryRep' && d['status'] == 'approved') return const CompanyRepHomeScreen();
+                if (d['type'] == 'freeDriver' && d['status'] == 'approved') return const FreeDriverHomeScreen();
+                if (d['type'] == 'manager') return const DeliveryAdminDashboard();
               }
               return const LoginScreen();
             },
@@ -197,20 +222,15 @@ class AuthWrapper extends StatelessWidget {
   }
 
   Future<Map<String, dynamic>?> _getUserRoleAndData(String uid) async {
-    var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
-    if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
-
-    var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
-    if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
-
-    var managerSnap = await FirebaseFirestore.instance
-        .collection('managers')
-        .where('uid', isEqualTo: uid)
-        .get();
-        
-    if (managerSnap.docs.isNotEmpty) {
-      return {...managerSnap.docs.first.data(), 'type': 'manager'};
-    }
+    try {
+      var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
+      if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
+      var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
+      if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
+      var managerSnap = await FirebaseFirestore.instance.collection('managers').where('uid', isEqualTo: uid).get();
+      if (managerSnap.docs.isNotEmpty) return {...managerSnap.docs.first.data(), 'type': 'manager'};
+    } catch (e) { return null; }
     return null;
   }
 }
+

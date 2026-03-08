@@ -46,6 +46,7 @@ dependencies:
   pdf: ^3.11.3
   printing: ^5.14.2
   intl: ^0.20.2
+  connectivity_plus: ^7.0.0
   
   # Printing & PDF (الإصدارات دي هي الأكثر استقراراً مع بعض)
 
