@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart'; 
 import 'dart:convert';
 
+// تأكد من صحة مسارات الملفات لديك
 import 'free_driver_home_screen.dart';
 import 'CompanyRepHomeScreen.dart';
 import 'delivery_admin_dashboard.dart';
@@ -27,15 +28,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _launchPrivacyPolicy() async {
     final Uri url = Uri.parse('https://aksab.shop/');
-    try {
-      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-        _showError("تعذر فتح الرابط حالياً");
-      }
-    } catch (e) {
-      debugPrint("Privacy Policy Error: $e");
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      _showError("تعذر فتح الرابط حالياً");
     }
   }
 
+  // --- الربط مع AWS للإشعارات ---
   Future<void> _sendNotificationDataToAWS(String role) async {
     try {
       String? token = await FirebaseMessaging.instance.getToken();
@@ -51,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
             "fcmToken": token, 
             "role": role 
           }),
-        );
+        ).timeout(const Duration(seconds: 8));
       }
     } catch (e) {
       debugPrint("❌ AWS Notification Error: $e");
@@ -72,7 +70,9 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      String smartEmail = "${_phoneController.text.trim()}@aksab.com";
+      // الامتداد الجديد لضمان الفصل التام عن تطبيق العملاء
+      String smartEmail = "${_phoneController.text.trim()}@aksabship.com";
+      
       UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: smartEmail,
         password: _passwordController.text,
@@ -80,6 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       String uid = userCredential.user!.uid;
 
+      // 1. فحص مناديب الشركات
       var repSnap = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repSnap.exists) {
         var userData = repSnap.data()!;
@@ -89,11 +90,12 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         } else {
           await FirebaseAuth.instance.signOut();
-          _showError("❌ حساب المندوب غير مفعل. راجع الإدارة.");
+          _showError("❌ حساب المندوب غير مفعل حالياً.");
           return;
         }
       }
 
+      // 2. فحص المناديب الأحرار
       var freeSnap = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeSnap.exists) {
         var userData = freeSnap.data()!;
@@ -110,6 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
+      // 3. فحص المديرين والمشرفين
       var managerSnap = await FirebaseFirestore.instance.collection('managers').doc(uid).get();
       if (managerSnap.exists) {
         var managerData = managerSnap.data()!;
@@ -121,11 +124,17 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      _showError("لم يتم العثور على صلاحيات لهذا الحساب");
+      _showError("عذراً، هذا الحساب لا يملك صلاحيات دخول");
       await FirebaseAuth.instance.signOut();
 
     } on FirebaseAuthException catch (e) {
-      _showError("فشل الدخول: تأكد من رقم الهاتف وكلمة المرور");
+      if (e.code == 'user-not-found') {
+        _showError("رقم الهاتف غير مسجل في نظام المناديب");
+      } else if (e.code == 'wrong-password') {
+        _showError("كلمة المرور غير صحيحة");
+      } else {
+        _showError("فشل الدخول: تأكد من بياناتك");
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -133,112 +142,158 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo')),
+      content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 13.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
       backgroundColor: Colors.redAccent,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
     ));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.grey[50],
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.orange))
-          : SafeArea(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
-                child: Column(
-                  children: [
-                    SizedBox(height: 5.h),
-                    Container(
-                      padding: const EdgeInsets.all(15),
-                      decoration: BoxDecoration(
-                        color: Colors.orange[50],
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(Icons.moped_rounded, size: 50.sp, color: Colors.orange[900]),
+          : Stack(
+              children: [
+                // خلفية علوية بتدرج لوني
+                Container(
+                  height: 35.h,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.orange[900]!, Colors.orange[700]!],
+                      begin: Alignment.topRight,
+                      end: Alignment.bottomLeft,
                     ),
-                    SizedBox(height: 2.h),
-                    Text("أكسب مناديب",
-                        style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.w900, color: Colors.black87, fontFamily: 'Cairo')),
-                    Text("سجل دخولك لبدء العمل",
-                        style: TextStyle(fontSize: 14.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
-                    SizedBox(height: 4.h),
-                    _buildInput(_phoneController, "رقم الهاتف", Icons.phone, type: TextInputType.phone),
-                    _buildInput(_passwordController, "كلمة مرور", Icons.lock, isPass: true),
-                    SizedBox(height: 1.h),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black87,
-                        minimumSize: Size(100.w, 7.5.h),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                        elevation: 5,
-                      ),
-                      onPressed: _handleLogin,
-                      child: Text("دخول للنظام",
-                          style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-                    ),
-                    SizedBox(height: 1.h),
-                    TextButton(
-                      onPressed: () => Navigator.pushNamed(context, '/register'),
-                      child: Text("ليس لديك حساب؟ سجل الآن",
-                          style: TextStyle(color: Colors.orange[900], fontSize: 14.sp, fontWeight: FontWeight.w600, fontFamily: 'Cairo')),
-                    ),
-                    
-                    // --- رابط سياسة الخصوصية المحدث ---
-                    SizedBox(height: 2.h),
-                    GestureDetector(
-                      onTap: _launchPrivacyPolicy,
-                      child: Padding(
-                        padding: EdgeInsets.all(10.sp), // مساحة ضغط واسعة
-                        child: Text(
-                          "سياسة الخصوصية والاستخدام",
-                          style: TextStyle(
-                            color: Colors.blueGrey[700],
-                            fontSize: 13.sp, // تكبير الخط لسهولة القراءة
-                            decoration: TextDecoration.underline,
-                            fontFamily: 'Cairo',
-                            fontWeight: FontWeight.w500
+                    borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(100)),
+                  ),
+                ),
+                SafeArea(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(horizontal: 8.w),
+                    child: Column(
+                      children: [
+                        SizedBox(height: 6.h),
+                        // شعار التطبيق فلاتي
+                        _buildHeroIcon(),
+                        SizedBox(height: 3.h),
+                        Text("أكسب مناديب",
+                            style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Cairo')),
+                        Text("مرحباً بك مجدداً في فريقنا",
+                            style: TextStyle(fontSize: 12.sp, color: Colors.white70, fontFamily: 'Cairo')),
+                        SizedBox(height: 5.h),
+                        
+                        // كارت تسجيل الدخول
+                        _buildLoginCard(),
+                        
+                        SizedBox(height: 2.h),
+                        TextButton(
+                          onPressed: () => Navigator.pushNamed(context, '/register'),
+                          child: RichText(
+                            text: TextSpan(
+                              style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.grey[800]),
+                              children: [
+                                const TextSpan(text: "ليس لديك حساب؟ "),
+                                TextSpan(text: "سجل الآن", style: TextStyle(color: Colors.orange[900], fontWeight: FontWeight.bold)),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                        
+                        SizedBox(height: 3.h),
+                        _buildPrivacyButton(),
+                        SizedBox(height: 2.h),
+                      ],
                     ),
-                    SizedBox(height: 2.h),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
     );
   }
 
-  Widget _buildInput(TextEditingController controller, String label, IconData icon,
+  Widget _buildHeroIcon() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20)],
+      ),
+      child: Icon(Icons.delivery_dining_rounded, size: 55.sp, color: Colors.orange[900]),
+    );
+  }
+
+  Widget _buildLoginCard() {
+    return Container(
+      padding: EdgeInsets.all(6.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+      ),
+      child: Column(
+        children: [
+          _buildInputField(_phoneController, "رقم الهاتف", Icons.phone_android, type: TextInputType.phone),
+          SizedBox(height: 1.h),
+          _buildInputField(_passwordController, "كلمة المرور", Icons.lock_outline, isPass: true),
+          SizedBox(height: 3.h),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black87,
+              minimumSize: Size(100.w, 7.5.h),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              elevation: 5,
+            ),
+            onPressed: _handleLogin,
+            child: Text("دخول للنظام",
+                style: TextStyle(color: Colors.white, fontSize: 15.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputField(TextEditingController controller, String label, IconData icon,
       {bool isPass = false, TextInputType type = TextInputType.text}) {
     return Padding(
-      padding: EdgeInsets.only(bottom: 2.5.h),
+      padding: EdgeInsets.symmetric(vertical: 1.2.h),
       child: TextField(
         controller: controller,
         obscureText: isPass ? _obscurePassword : false,
         keyboardType: type,
         textAlign: TextAlign.right,
-        style: TextStyle(fontSize: 15.sp, fontFamily: 'Cairo'),
+        style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w500),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(fontSize: 13.sp, fontFamily: 'Cairo'),
-          contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 5.w),
-          prefixIcon: Icon(icon, color: Colors.orange[800], size: 22.sp),
+          labelStyle: TextStyle(fontSize: 12.sp, fontFamily: 'Cairo', color: Colors.grey[600]),
+          prefixIcon: Icon(icon, color: Colors.orange[900], size: 20.sp),
           suffixIcon: isPass
               ? IconButton(
-                  icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, size: 20.sp),
+                  icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, size: 18.sp, color: Colors.grey),
                   onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                 )
               : null,
           filled: true,
-          fillColor: Colors.grey[100],
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(15),
-            borderSide: BorderSide(color: Colors.orange[800]!, width: 2),
-          ),
+          fillColor: Colors.grey[50],
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey[200]!)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.orange[800]!, width: 1.5)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrivacyButton() {
+    return GestureDetector(
+      onTap: _launchPrivacyPolicy,
+      child: Text(
+        "سياسة الخصوصية والاستخدام",
+        style: TextStyle(
+          color: Colors.blueGrey[400],
+          fontSize: 11.sp,
+          decoration: TextDecoration.underline,
+          fontFamily: 'Cairo',
         ),
       ),
     );
