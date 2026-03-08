@@ -1,3 +1,4 @@
+// lib/screens/active_order_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -26,6 +27,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   LatLng? _currentLocation;
   List<LatLng> _routePoints = [];
   StreamSubscription<Position>? _positionStream;
+  StreamSubscription<DocumentSnapshot>? _orderSubscription; // مضاف لضمان إغلاق الـ Stream
   final MapController _mapController = MapController();
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   final String _mapboxToken = 'pk.eyJ1IjoiYW1yc2hpcGwiLCJhIjoiY21lajRweGdjMDB0eDJsczdiemdzdXV6biJ9.E--si9vOB93NGcAq7uVgGw';
@@ -36,6 +38,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // تأمين حالة المندوب فور الدخول
     _updateDriverStatus('busy');
     _configureBackgroundServiceOnly();
     _initInitialLocation();
@@ -45,18 +48,20 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _positionStream?.cancel();
+    _orderSubscription?.cancel(); // إغلاق متابعة الطلب
     if (!_isOrderStillActive) {
        _stopBackgroundTracking();
     }
     super.dispose();
   }
 
+  // تحديث حالة المندوب مع ضمان مسح الطلب النشط عند التفرغ
   Future<void> _updateDriverStatus(String status) async {
     if (_uid != null) {
       await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
         'currentStatus': status,
         'lastSeen': FieldValue.serverTimestamp(),
-        if (status == 'online') 'activeOrderId': "" 
+        'activeOrderId': (status == 'online') ? "" : widget.orderId,
       });
     }
   }
@@ -172,20 +177,12 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   }
 
   void _setupDynamicTracking() {
-    FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots().listen((orderSnap) {
+    _orderSubscription = FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots().listen((orderSnap) {
       if (!orderSnap.exists || !mounted) return;
       var data = orderSnap.data() as Map<String, dynamic>;
       String status = data['status'];
-      
-      // ✅ مراقب الحالات النهائية لإنهاء اللودينج والخروج من الصفحة
-      if (status == 'delivered' || status == 'returned_successfully' || status == 'cancelled' || status.contains('cancelled')) {
-         if (_isOrderStillActive) {
-           _showCompletionDialog(status);
-         }
-         return;
-      }
-
       bool moneyLocked = data['moneyLocked'] ?? false;
+      
       if (status == 'pending' && !moneyLocked) {
          _showSecurityError();
          return;
@@ -197,58 +194,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
           
       _startSmartLiveTracking(LatLng(targetGeo.latitude, targetGeo.longitude));
     });
-  }
-
-  // ✅ رسالة انتهاء الرحلة (الشيك) وإيقاف التتبع
-  void _showCompletionDialog(String status) async {
-    setState(() => _isOrderStillActive = false);
-    await _stopBackgroundTracking();
-    await _updateDriverStatus('online');
-
-    if (!mounted) return;
-
-    String title = "تمت المهمة بنجاح! 🎉";
-    String message = "شكراً لك! الرحلة انتهت والعميل سيقوم بتقييمك الآن. يمكنك استقبال طلبات جديدة.";
-    IconData icon = Icons.check_circle_outline;
-    Color iconColor = Colors.green;
-
-    if (status.contains('cancelled')) {
-      title = "تم إلغاء الرحلة";
-      message = "نحيطك علماً بأن هذه الرحلة قد تم إلغاؤها. رصيدك في أمان ويمكنك العودة للرادار.";
-      icon = Icons.info_outline;
-      iconColor = Colors.orange;
-    }
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 50.sp, color: iconColor),
-              SizedBox(height: 2.h),
-              Text(title, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp)),
-              SizedBox(height: 1.h),
-              Text(message, textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp)),
-            ],
-          ),
-          actions: [
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false),
-                child: Text("العودة للرادار", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
-              ),
-            )
-          ],
-        ),
-      ),
-    );
   }
 
   void _showSecurityError() {
@@ -309,7 +254,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
             margin: EdgeInsets.fromLTRB(10.sp, 0, 10.sp, 10.sp),
             padding: EdgeInsets.all(18.sp),
             decoration: BoxDecoration(
-              color: Colors.white, borderRadius: BorderRadius.circular(25), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 20)]
+              color: Colors.white, 
+              borderRadius: BorderRadius.circular(25), 
+              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 20)]
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -380,6 +327,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   void _showProfessionalOTP(String? correctCode, String currentStatus, bool isMerchant) {
     final TextEditingController codeController = TextEditingController();
     bool isReturning = currentStatus.contains('returning');
+
     showDialog(
       context: context, barrierDismissible: false,
       builder: (context) => Directionality(
@@ -390,12 +338,25 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(isReturning ? "أدخل كود المرتجع من التاجر لفك حجز نقاطك فوراً." : isMerchant ? "أدخل الكود المستلم من التاجر لتأكيد العهدة في أمانتك." : "أدخل الكود المستلم من العميل لتأكيد بدء رحلة النقل.", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)),
+              Text(isReturning 
+                ? "أدخل كود المرتجع من التاجر لفك حجز نقاطك فوراً."
+                : isMerchant 
+                    ? "أدخل الكود المستلم من التاجر لتأكيد العهدة في أمانتك."
+                    : "أدخل الكود المستلم من العميل لتأكيد بدء رحلة النقل.", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)),
               SizedBox(height: 20),
               TextField(
-                controller: codeController, textAlign: TextAlign.center, keyboardType: TextInputType.number, maxLength: 4,
+                controller: codeController,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
                 style: TextStyle(fontSize: 25.sp, fontWeight: FontWeight.bold, letterSpacing: 20),
-                decoration: InputDecoration(hintText: "----", counterText: "", filled: true, fillColor: Colors.grey[100], border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none)),
+                decoration: InputDecoration(
+                  hintText: "----",
+                  counterText: "",
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                ),
               ),
             ],
           ),
@@ -405,13 +366,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900], padding: EdgeInsets.symmetric(horizontal: 25, vertical: 10)),
               onPressed: () async {
                 if (codeController.text.trim() == correctCode?.trim()) {
-                  Navigator.pop(context);
+                  Navigator.pop(context); // قفل الـ Dialog
                   if (isReturning) {
-                    await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
-                      'status': 'returned_successfully', 
-                      'updatedAt': FieldValue.serverTimestamp(),
-                    });
-                    // هنا المستمع (Listener) سيكتشف التغيير ويظهر الـ CompletionDialog تلقائياً
+                    await _finishReturnProcess();
                   } else {
                     _updateStatus('picked_up');
                   }
@@ -427,10 +384,45 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     );
   }
 
+  // دالة مخصصة لإنهاء المرتجع وتصفية حالة المندوب
+  Future<void> _finishReturnProcess() async {
+    setState(() => _isOrderStillActive = false);
+    showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
+    
+    try {
+      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
+        'status': 'returned_successfully', 
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      await _updateDriverStatus('online'); 
+      await _stopBackgroundTracking(); 
+      
+      if (mounted) {
+        Navigator.pop(context); // إخفاء الـ Loading
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
   void _handleReturnFlow() async {
     bool? confirm = await showDialog(
-      context: context, builder: (c) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), title: const Text("بدء إجراءات المرتجع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), content: const Text("سيتم توجيهك الآن لموقع التاجر لاستعادة عهدتك. سيظهر كود تأكيد جديد لدى التاجر لاستلامه الأمانات.", style: TextStyle(fontFamily: 'Cairo')), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("نعم، مرتجع", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))]))
+      context: context, 
+      builder: (c) => Directionality(
+        textDirection: TextDirection.rtl, 
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text("بدء إجراءات المرتجع", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), 
+          content: const Text("سيتم توجيهك الآن لموقع التاجر لاستعادة عهدتك. سيظهر كود تأكيد جديد لدى التاجر لاستلامه الأمانات.", style: TextStyle(fontFamily: 'Cairo')), 
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), 
+            TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("نعم، مرتجع", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))
+          ]
+        )
+      )
     );
+
     if (confirm == true) {
       String generatedReturnCode = (1000 + Random().nextInt(8999)).toString();
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
@@ -441,14 +433,25 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     }
   }
 
+  // دالة إنهاء الطلب (Delivered) مع ضمان تصفية البيانات
   void _completeOrder() async {
+    setState(() => _isOrderStillActive = false);
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
+    
     try {
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
         'status': 'delivered', 
-        'completedAt': FieldValue.serverTimestamp()
+        'completedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp()
       });
-      if (mounted) Navigator.pop(context); // إغلاق الـ Loading فقط، والـ Listener سيتكفل بالباقي
+      
+      await _updateDriverStatus('online'); 
+      await _stopBackgroundTracking(); 
+      
+      if (mounted) { 
+        Navigator.pop(context); // إخفاء الـ Loading
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false); 
+      }
     } catch (e) { 
       if (mounted) Navigator.pop(context); 
     }
@@ -479,6 +482,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
         String status = data['status'];
         GeoPoint pickup = data['pickupLocation'];
         GeoPoint dropoff = data['dropoffLocation'];
+        
         return FlutterMap(
           mapController: _mapController,
           options: MapOptions(initialCenter: _currentLocation ?? LatLng(pickup.latitude, pickup.longitude), initialZoom: 15),
@@ -525,8 +529,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog(context: context, builder: (c) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), title: const Text("اعتذار عن الرحلة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), content: const Text("هل أنت متأكد؟ لن يتم خصم عهدة إذا لم تستلم البضاعة بعد.", style: TextStyle(fontFamily: 'Cairo')), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد الاعتذار", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))])));
     if (confirm == true) {
+      setState(() => _isOrderStillActive = false);
+      await _stopBackgroundTracking(); 
       await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'driver_cancelled_reseeking', 'lastDriverId': _uid, 'driverId': FieldValue.delete()});
-      // الـ Listener سيتكفل بالباقي بمجرد تغير الحالة
+      await _updateDriverStatus('online'); 
+      if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }
   }
 
