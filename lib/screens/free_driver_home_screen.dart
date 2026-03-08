@@ -224,7 +224,9 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
                   child: Row(children: [
                     const Icon(Icons.lightbulb_outline, color: Colors.orange),
                     const SizedBox(width: 10),
-                    const Expanded(child: Text("فعل وضع 'متصل' الآن لتظهر في الرادار وتصلك الطلبات القريبة!", style: TextStyle(fontFamily: 'Cairo', fontSize: 12, color: Colors.orange[900]))),
+                    Expanded(child: Text("فعل وضع 'متصل' الآن لتظهر في الرادار وتصلك الطلبات القريبة!", 
+    style: TextStyle(fontFamily: 'Cairo', fontSize: 12, color: Colors.orange[900]))),
+
                     IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => setState(() => _showOnlinePrompt = false)),
                   ]),
                 ),
