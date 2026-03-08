@@ -1,4 +1,4 @@
-name: Flutter Build & Sign (APK & AAB)
+Name: Flutter Build (APK Only)
 
 on:
   push:
@@ -30,15 +30,11 @@ jobs:
       - name: Decode Keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 --decode > android/app/upload-keystore.jks
 
-      - name: Build Release APK & AAB
-        run: |
-          flutter build appbundle --release
-          flutter build apk --release
+      - name: Build Release APK
+        run: flutter build apk --release
 
-      - name: Upload Artifacts
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-builds
-          path: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/bundle/release/app-release.aab
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
