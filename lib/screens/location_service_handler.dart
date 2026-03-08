@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_background_service_android/flutter_background_service_android.dart'; // مهم جداً للأندرويد
+import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -9,51 +10,74 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
-  // التأكد من تهيئة الإضافات والفايربيز داخل بيئة الخلفية (Background Isolate)
+  // 1. تهيئة البيئة البرمجية الأساسية
+  WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
-  if (Firebase.apps.isEmpty) await Firebase.initializeApp();
+  
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp();
+  }
 
-  // الاستماع لأمر إيقاف الخدمة من التطبيق الرئيسي
+  // 2. إعداد واجهة الإشعارات للأندرويد
+  if (service is AndroidServiceInstance) {
+    service.on('setAsForeground').listen((event) {
+      service.setAsForegroundService();
+    });
+
+    service.on('setAsBackground').listen((event) {
+      service.setAsBackgroundService();
+    });
+  }
+
+  // 3. الاستماع لأمر الإيقاف وتصفية الموارد
   service.on('stopService').listen((event) {
     service.stopSelf();
   });
 
-  // دورة تحديث الموقع كل 10 ثوانٍ
-  Timer.periodic(const Duration(seconds: 10), (timer) async {
-    // التحقق إذا كانت الخدمة ما زالت تعمل قبل تنفيذ أي كود
-    if (service is AndroidServiceInstance) {
-      if (!(await service.isForegroundService())) {
-        // إذا لم تعد الخدمة في الواجهة، لا داعي لتحديث الإشعار أو الموقع
-        return;
-      }
+  // 4. نظام التتبع الذكي (Stream) لتقليل استهلاك البطارية
+  // بدلاً من التايمر، هنستخدم جيريوسنسور بيحس بالحركة
+  const LocationSettings locationSettings = AndroidSettings(
+    accuracy: LocationAccuracy.high,
+    distanceFilter: 10, // لن يتم تحديث الموقع إلا إذا تحرك المندوب 10 أمتار على الأقل
+    foregroundServiceBehavior: ForegroundServiceBehavior.continueService,
+    intervalDuration: Duration(seconds: 15), // حد أدنى للوقت بين التحديثات
+  );
 
-      // تحديث محتوى الإشعار الظاهر للمندوب لضمان الشفافية
-      service.setForegroundNotificationInfo(
-        title: "أكسب: تأمين العهدة نشط 🛡️",
-        content: "جاري تتبع مسار الرحلة لضمان استرداد نقاط التأمين فور الوصول",
-      );
+  StreamSubscription<Position>? positionStream;
+
+  positionStream = Geolocator.getPositionStream(locationSettings: locationSettings)
+      .listen((Position position) async {
+    
+    if (service is AndroidServiceInstance) {
+      if (await service.isForegroundService()) {
+        // تحديث الإشعار لإظهار أن النظام يعمل بكفاءة
+        service.setForegroundNotificationInfo(
+          title: "أكسب: تأمين العهدة نشط 🛡️",
+          content: "موقعك محدث: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}",
+        );
+      }
     }
 
     try {
-      // الحصول على الموقع الحالي بدقة عالية
-      Position pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      
-      // جلب معرف المندوب المخزن في SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       String? uid = prefs.getString('driver_uid');
 
       if (uid != null) {
-        // تحديث مجموعة freeDrivers في فايربيز لتمكين التتبع الحي
+        // تحديث الفايربيز فقط عند حدوث حركة حقيقية
         await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
-          'location': GeoPoint(pos.latitude, pos.longitude),
+          'location': GeoPoint(position.latitude, position.longitude),
           'lastSeen': FieldValue.serverTimestamp(),
+          'speed': position.speed, // ميزة إضافية لمعرفة سرعة المندوب
         });
       }
     } catch (e) {
-      // طباعة الخطأ في الـ Debug Console فقط للتطوير
-      print("Background Service Error: $e");
+      debugPrint("Firebase Background Update Error: $e");
     }
+  });
+
+  // في حالة إغلاق الخدمة، نوقف الـ Stream تماماً
+  service.on('stopService').listen((event) {
+    positionStream?.cancel();
+    service.stopSelf();
   });
 }
