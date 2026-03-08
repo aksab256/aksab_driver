@@ -7,8 +7,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
-import 'dart:async'; // ✅ للاستخدام مع Connectivity
-import 'package:connectivity_plus/connectivity_plus.dart'; // ✅ أضف هذه المكتبة
+import 'dart:async'; 
+import 'package:connectivity_plus/connectivity_plus.dart'; 
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -89,7 +89,7 @@ class AksabDriverApp extends StatelessWidget {
             fontFamily: 'Tajawal',
             scaffoldBackgroundColor: Colors.white,
           ),
-          // ✅ تغليف التطبيق بالكامل بمراقب الإنترنت
+          // ✅ تغليف التطبيق بالكامل بمراقب الإنترنت الذكي
           builder: (context, child) {
             return ConnectivityWrapper(child: child!);
           },
@@ -106,7 +106,10 @@ class AksabDriverApp extends StatelessWidget {
               if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
                 _lastPressedAt = now;
                 ScaffoldMessenger.of(navigator!.context).showSnackBar(
-                  const SnackBar(content: Text('إضغط مرة أخرى للخروج', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')), backgroundColor: Colors.black87),
+                  const SnackBar(
+                    content: Text('إضغط مرة أخرى للخروج', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')), 
+                    backgroundColor: Colors.black87
+                  ),
                 );
                 return;
               }
@@ -143,12 +146,24 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
   @override
   void initState() {
     super.initState();
-    // مراقبة حالة الشبكة لحظياً
+    _checkInitialConnectivity();
     _subscription = Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> result) {
-      setState(() {
-        _isConnected = !result.contains(ConnectivityResult.none);
-      });
+      _updateConnectionStatus(result);
     });
+  }
+
+  Future<void> _checkInitialConnectivity() async {
+    List<ConnectivityResult> result = await Connectivity().checkConnectivity();
+    _updateConnectionStatus(result);
+  }
+
+  void _updateConnectionStatus(List<ConnectivityResult> result) {
+    bool hasConnection = result.isNotEmpty && !result.contains(ConnectivityResult.none);
+    if (mounted && _isConnected != hasConnection) {
+      setState(() {
+        _isConnected = hasConnection;
+      });
+    }
   }
 
   @override
@@ -159,53 +174,64 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isConnected) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: Colors.white,
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.wifi_off_rounded, size: 100, color: Colors.redAccent),
-                  const SizedBox(height: 20),
-                  const Text("عذراً، لا يوجد اتصال بالإنترنت", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Tajawal')),
-                  const SizedBox(height: 10),
-                  const Text("تأكد من تفعيل الواي فاي أو بيانات الهاتف للمتابعة", textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey, fontFamily: 'Tajawal')),
-                  const SizedBox(height: 30),
-                  const CircularProgressIndicator(color: Colors.orange),
-                  const SizedBox(height: 10),
-                  const Text("في انتظار عودة الاتصال...", style: TextStyle(fontSize: 14, fontFamily: 'Tajawal', color: Colors.orange)),
-                ],
+    return Stack(
+      children: [
+        widget.child,
+        if (!_isConnected)
+          Positioned.fill(
+            child: Container(
+              color: Colors.white,
+              child: Scaffold(
+                backgroundColor: Colors.white,
+                body: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.wifi_off_rounded, size: 100, color: Colors.redAccent),
+                        const SizedBox(height: 20),
+                        const Text("عذراً، لا يوجد اتصال بالإنترنت", 
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Tajawal')),
+                        const SizedBox(height: 10),
+                        const Text("تأكد من تفعيل الواي فاي أو بيانات الهاتف للمتابعة", 
+                          textAlign: TextAlign.center, 
+                          style: TextStyle(fontSize: 14, color: Colors.grey, fontFamily: 'Tajawal')),
+                        const SizedBox(height: 40),
+                        const CircularProgressIndicator(color: Colors.orange),
+                        const SizedBox(height: 15),
+                        const Text("جاري إعادة الاتصال تلقائياً...", 
+                          style: TextStyle(fontSize: 12, fontFamily: 'Tajawal', color: Colors.orange)),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-      );
-    }
-    // لو النت موجود، اعرض التطبيق الطبيعي (بدون مسح الجلسة)
-    return widget.child;
+      ],
+    );
   }
 }
 
-// [AuthWrapper و _getUserRoleAndData يظلان كما هما دون تغيير]
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
-  // ... (نفس الكود السابق لضمان بقاء الجلسة)
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
         if (snapshot.hasData) {
           return FutureBuilder<Map<String, dynamic>?>(
             future: _getUserRoleAndData(snapshot.data!.uid),
             builder: (context, roleSnapshot) {
-              if (roleSnapshot.connectionState == ConnectionState.waiting) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              if (roleSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              }
               if (roleSnapshot.data != null) {
                 final d = roleSnapshot.data!;
                 if (d['type'] == 'deliveryRep' && d['status'] == 'approved') return const CompanyRepHomeScreen();
@@ -225,12 +251,15 @@ class AuthWrapper extends StatelessWidget {
     try {
       var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
+      
       var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
+      
       var managerSnap = await FirebaseFirestore.instance.collection('managers').where('uid', isEqualTo: uid).get();
       if (managerSnap.docs.isNotEmpty) return {...managerSnap.docs.first.data(), 'type': 'manager'};
-    } catch (e) { return null; }
+    } catch (e) { 
+      return null; 
+    }
     return null;
   }
 }
-
