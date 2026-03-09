@@ -108,64 +108,67 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- 📋 بناء الشريط الجانبي ---
+  // --- 📋 بناء الشريط الجانبي (معدل بالمساحة الآمنة) ---
   Widget _buildSideDrawer() {
     return Drawer(
       width: 75.w,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.only(topLeft: Radius.circular(35), bottomLeft: Radius.circular(35))),
-      child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [Colors.orange[900]!, Colors.orange[700]!]),
-              borderRadius: const BorderRadius.only(bottomRight: Radius.circular(30)),
-            ),
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const CircleAvatar(radius: 35, backgroundColor: Colors.white, child: Icon(Icons.person, size: 45, color: Colors.orange)),
-                    const SizedBox(height: 15),
-                    const Text("كابتن أكسب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
-                    Text(FirebaseAuth.instance.currentUser?.email ?? "driver@aksab.shop", 
-                      style: const TextStyle(fontFamily: 'Cairo', color: Colors.white70, fontSize: 12)),
-                  ],
+      child: SafeArea( // ✅ حماية المحتوى من التداخل مع حواف الشاشة أو أزرار النظام
+        top: false, // نترك التوب للـ Header الملون
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [Colors.orange[900]!, Colors.orange[700]!]),
+                borderRadius: const BorderRadius.only(bottomRight: Radius.circular(30)),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const CircleAvatar(radius: 35, backgroundColor: Colors.white, child: Icon(Icons.person, size: 45, color: Colors.orange)),
+                      const SizedBox(height: 15),
+                      const Text("كابتن أكسب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
+                      Text(FirebaseAuth.instance.currentUser?.email ?? "driver@aksab.shop", 
+                        style: const TextStyle(fontFamily: 'Cairo', color: Colors.white70, fontSize: 12)),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-              children: [
-                _buildDrawerItem(Icons.account_circle_outlined, "حسابي الشخصي", 
-                  () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen()))),
-                _buildDrawerItem(Icons.privacy_tip_outlined, "سياسة الخصوصية", _launchPrivacyPolicy),
-                _buildDrawerItem(Icons.help_outline_rounded, "الدعم الفني", 
-                  () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SupportScreen()))),
-              ],
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+                children: [
+                  _buildDrawerItem(Icons.account_circle_outlined, "حسابي الشخصي", 
+                    () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ProfileScreen()))),
+                  _buildDrawerItem(Icons.privacy_tip_outlined, "سياسة الخصوصية", _launchPrivacyPolicy),
+                  _buildDrawerItem(Icons.help_outline_rounded, "الدعم الفني", 
+                    () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SupportScreen()))),
+                ],
+              ),
             ),
-          ),
-          const Divider(indent: 20, endIndent: 20),
-          ListTile(
-            leading: const Icon(Icons.logout_rounded, color: Colors.redAccent),
-            title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo', color: Colors.redAccent, fontWeight: FontWeight.bold)),
-            onTap: () async {
-              if (_currentStatus == 'busy') {
-                _showErrorSnackBar("لا يمكن تسجيل الخروج أثناء وجود عهدة نشطة");
-                return;
-              }
-              await FirebaseAuth.instance.signOut();
-              if (mounted) Navigator.pushReplacementNamed(context, '/login');
-            },
-          ),
-          const SizedBox(height: 20),
-        ],
+            const Divider(indent: 20, endIndent: 20),
+            ListTile(
+              leading: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+              title: const Text("تسجيل الخروج", style: TextStyle(fontFamily: 'Cairo', color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              onTap: () async {
+                if (_currentStatus == 'busy') {
+                  _showErrorSnackBar("لا يمكن تسجيل الخروج أثناء وجود عهدة نشطة");
+                  return;
+                }
+                await FirebaseAuth.instance.signOut();
+                if (mounted) Navigator.pushReplacementNamed(context, '/login');
+              },
+            ),
+            const SizedBox(height: 15), // ✅ مساحة إضافية لضمان عدم التداخل مع إيماءات التنقل
+          ],
+        ),
       ),
     );
   }
@@ -295,7 +298,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     );
   }
 
-  // --- 🛡️ إدارة الحالة وأذونات الموقع المحدثة ---
+  // --- 🛡️ إدارة الحالة وأذونات الموقع ---
   void _toggleOnlineStatus(bool shouldBeOnline) async {
     if (!shouldBeOnline && _currentStatus == 'busy') {
       _showErrorSnackBar("يجب إنهاء العهدة الحالية أولاً");
@@ -318,7 +321,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         return;
       }
 
-      // الإذن متاح، نقوم بالتحديث
       _updateOnlineInDB(true);
       setState(() => _showOnlinePrompt = false);
     } else {
@@ -334,7 +336,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       };
 
       if (value) {
-        // تحديث الموقع الجغرافي مرة واحدة لضبط الرادار
         Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
         updateData['location'] = GeoPoint(pos.latitude, pos.longitude);
         updateData['lat'] = pos.latitude;
@@ -421,40 +422,62 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     } catch (e) { debugPrint("Security Check Error: $e"); }
   }
 
+  // --- 🔔 فحص الإذن الذكي قبل عرض رسالة الإفصاح ---
   Future<void> _requestNotificationWithDisclosure() async {
-    bool? proceed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("تنبيهات الطلبات 🔔", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-        content: const Text("يرجى تفعيل الإشعارات لتصلك تنبيهات الطلبات الجديدة وتحديثات العهدة لحظياً."),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("موافق", style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (proceed == true) {
-      try {
-        FirebaseMessaging messaging = FirebaseMessaging.instance;
-        NotificationSettings settings = await messaging.requestPermission(alert: true, badge: true, sound: true);
-        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-          String? token = await messaging.getToken();
-          if (token != null) {
-            await http.post(
-              Uri.parse("https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction"),
-              headers: {"Content-Type": "application/json"},
-              body: jsonEncode({"userId": uid, "fcmToken": token, "role": "free_driver"}),
-            ).timeout(const Duration(seconds: 10));
-          }
-        }
+    try {
+      FirebaseMessaging messaging = FirebaseMessaging.instance;
+      
+      // ✅ أولاً: فحص حالة الإذن الحالية بدون عرض أي رسائل
+      NotificationSettings currentSettings = await messaging.getNotificationSettings();
+      
+      // إذا كان المستخدم قد وافق بالفعل مسبقاً، نقوم بتحديث التوكن فقط ولا نعرض الـ Dialog
+      if (currentSettings.authorizationStatus == AuthorizationStatus.authorized) {
+        _syncFcmToken();
         if (_currentStatus == 'offline') setState(() => _showOnlinePrompt = true);
-      } catch (e) { debugPrint("Notification error: $e"); }
-    }
+        return;
+      }
+
+      // إذا لم يكن هناك إذن، نعرض رسالة الإفصاح (Dialog) قبل طلب الإذن الرسمي
+      if (mounted) {
+        bool? proceed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text("تنبيهات الطلبات 🔔", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+            content: const Text("يرجى تفعيل الإشعارات لتصلك تنبيهات الطلبات الجديدة وتحديثات العهدة لحظياً."),
+            actions: [
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900]),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text("موافق", style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+
+        if (proceed == true) {
+          NotificationSettings settings = await messaging.requestPermission(alert: true, badge: true, sound: true);
+          if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+            _syncFcmToken();
+          }
+          if (_currentStatus == 'offline') setState(() => _showOnlinePrompt = true);
+        }
+      }
+    } catch (e) { debugPrint("Notification logic error: $e"); }
+  }
+
+  // دالة لمزامنة التوكن مع السيرفر
+  Future<void> _syncFcmToken() async {
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        await http.post(
+          Uri.parse("https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction"),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode({"userId": uid, "fcmToken": token, "role": "free_driver"}),
+        ).timeout(const Duration(seconds: 10));
+      }
+    } catch (e) { debugPrint("Sync token error: $e"); }
   }
 
   Future<bool> _handleWillPop() async {
