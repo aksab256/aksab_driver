@@ -7,7 +7,15 @@ import 'package:url_launcher/url_launcher.dart';
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
 
-  // --- 💸 1. تعبئة نقاط الأمان (تأمين عهدة العمل) ---
+  // دالة مساعدة لتحويل القيم من Firestore إلى Double بأمان
+  double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return 0.0;
+  }
+
+  // --- 💸 1. طلب شحن نقاط الأمان ---
   Future<void> _processCharge(BuildContext context, double amount) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _showLoading(context);
@@ -27,7 +35,7 @@ class WalletScreen extends StatelessWidget {
     }
   }
 
-  // --- 💰 2. تسوية مستحقات الأمانات (تحويل نقاط العهدة لكاش) ---
+  // --- 💰 2. طلب تسوية أرباح (سحب) ---
   Future<void> _executeWithdrawal(BuildContext context, double amount) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _showLoading(context);
@@ -57,6 +65,10 @@ class WalletScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFFBFBFB),
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new),
+          onPressed: () => Navigator.of(context).pop(), // رجوع خطوة واحدة
+        ),
         title: const Text("إدارة العهدة ونقاط الأمان", 
           style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 16)),
         centerTitle: true,
@@ -70,66 +82,51 @@ class WalletScreen extends StatelessWidget {
           if (!driverSnap.hasData) return const Center(child: CircularProgressIndicator(color: Colors.orange));
           
           var userData = driverSnap.data!.data() as Map<String, dynamic>?;
-          double walletBalance = (userData?['walletBalance'] ?? 0.0).toDouble();
-          double creditLimit = (userData?['creditLimit'] ?? 0.0).toDouble();
 
-          // --- 🛡️ مراقبة العهدة المحجوزة في الوقت الفعلي (من السيرفر) ---
-          return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('specialRequests')
-                .where('driverId', isEqualTo: uid)
-                .where('moneyLocked', isEqualTo: true)
-                .where('status', whereIn: ['accepted', 'picked_up'])
-                .snapshots(),
-            builder: (context, lockSnap) {
-              double lockedInsurance = 0.0;
-              if (lockSnap.hasData) {
-                for (var doc in lockSnap.data!.docs) {
-                  // استخدام الحقل التقني المتفق عليه مع السيرفر
-                  lockedInsurance += (doc['insurance_points'] ?? 0.0);
-                }
-              }
+          // قراءة البيانات من مستند المندوب مباشرة (كما في لقطة شاشة Firestore)
+          double walletBalance = _toDouble(userData?['walletBalance']);
+          double creditLimit = _toDouble(userData?['creditLimit']);
+          double lockedInsurance = _toDouble(userData?['insurance_points']); // القراءة المباشرة للعهدة المحجوزة
 
-              return SingleChildScrollView(
-                child: Column(
-                  children: [
-                    _buildMainAssetCard(walletBalance, creditLimit, lockedInsurance),
-                    
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text("إجمالي الأمانات بالذمة: ${(walletBalance + lockedInsurance).toStringAsFixed(2)} ج.م",
-                        style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.blueGrey[600])),
-                    ),
-
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                      child: Row(
-                        children: [
-                          Expanded(child: _actionBtn(Icons.add_moderator_outlined, "تعبئة نقاط", Colors.green[700]!, () => _showChargePicker(context))),
-                          const SizedBox(width: 15),
-                          Expanded(child: _actionBtn(Icons.account_balance_outlined, "طلب تسوية", Colors.blueGrey[800]!, () => _showWithdrawDialog(context, walletBalance))),
-                        ],
-                      ),
-                    ),
-
-                    _sectionHeader("سجل تأمين العهدة"),
-
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: _buildCombinedHistory(uid),
-                    ),
-
-                    _buildLegalDisclaimer(),
-                  ],
+          return SingleChildScrollView(
+            child: Column(
+              children: [
+                _buildMainAssetCard(walletBalance, creditLimit, lockedInsurance),
+                
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text("إجمالي الأمانات بالذمة: ${(walletBalance + lockedInsurance).toStringAsFixed(2)} ج.م",
+                    style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.blueGrey[600])),
                 ),
-              );
-            },
+
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  child: Row(
+                    children: [
+                      Expanded(child: _actionBtn(Icons.add_moderator_outlined, "تعبئة نقاط", Colors.green[700]!, () => _showChargePicker(context))),
+                      const SizedBox(width: 15),
+                      Expanded(child: _actionBtn(Icons.account_balance_outlined, "طلب تسوية", Colors.blueGrey[800]!, () => _showWithdrawDialog(context, walletBalance))),
+                    ],
+                  ),
+                ),
+
+                _sectionHeader("سجل تأمين العهدة"),
+
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: _buildCombinedHistory(uid),
+                ),
+
+                _buildLegalDisclaimer(),
+              ],
+            ),
           );
         },
       ),
     );
   }
 
-  // --- 🛠️ بناء كارت إدارة الأصول ---
+  // --- كارت الأرصدة الرئيسي ---
   Widget _buildMainAssetCard(double available, double limit, double locked) => Container(
     margin: const EdgeInsets.all(20), padding: const EdgeInsets.all(22),
     decoration: BoxDecoration(
@@ -140,11 +137,11 @@ class WalletScreen extends StatelessWidget {
     child: Column(children: [
       const Text("نقاط الأمان المتاحة", style: TextStyle(color: Colors.white70, fontFamily: 'Cairo', fontSize: 13)),
       const SizedBox(height: 5),
-      Text("${available.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900)),
+      Text(available.toStringAsFixed(2), style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900)),
       const Divider(color: Colors.white24, height: 30),
       Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-        _miniInfo("تأمين عهدة", "${locked.toStringAsFixed(1)}", Colors.orangeAccent),
-        _miniInfo("سقف المديونية", "${limit.toStringAsFixed(1)}", Colors.cyanAccent),
+        _miniInfo("تأمين عهدة", locked.toStringAsFixed(1), Colors.orangeAccent),
+        _miniInfo("سقف المديونية", limit.toStringAsFixed(1), Colors.cyanAccent),
       ])
     ]),
   );
@@ -154,6 +151,7 @@ class WalletScreen extends StatelessWidget {
     Text(value, style: TextStyle(color: valColor, fontWeight: FontWeight.w900, fontSize: 16)),
   ]);
 
+  // بناء السجل المدمج (فواتير + لوجز)
   Widget _buildCombinedHistory(String? uid) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('pendingInvoices')
@@ -169,6 +167,7 @@ class WalletScreen extends StatelessWidget {
               .snapshots(),
           builder: (context, logSnap) {
             List<Map<String, dynamic>> allItems = [];
+            
             if (pendingSnap.hasData) {
               for (var doc in pendingSnap.data!.docs) {
                 var d = doc.data() as Map<String, dynamic>;
@@ -195,7 +194,7 @@ class WalletScreen extends StatelessWidget {
               itemBuilder: (context, index) {
                 var item = allItems[index];
                 bool isInvoice = item['isInvoice'] ?? false;
-                double amount = (item['amount'] ?? 0.0).toDouble();
+                double amount = _toDouble(item['amount']);
 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
