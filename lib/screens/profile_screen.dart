@@ -2,122 +2,161 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
-import 'package:url_launcher/url_launcher.dart'; // مهم لفتح الروابط
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
-  String _getVehicleName(String? config) {
-    switch (config) {
-      case 'motorcycleConfig': return "موتوسيكل";
-      case 'pickupConfig': return "سيارة بيك أب";
-      case 'jumboConfig': return "سيارة جامبو";
-      default: return "مركبة نقل";
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final String? _uid = FirebaseAuth.instance.currentUser?.uid;
+
+  // دالة الحذف الناعم (Soft Delete)
+  Future<void> _handleSoftDelete() async {
+    bool confirm = await showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text("تأكيد حذف الحساب ⚠️", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.red)),
+          content: const Text("هل أنت متأكد من حذف حسابك نهائياً؟ سيتم إيقاف الخدمة وفقدان جميع بياناتك الحالية."),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("تراجع", style: TextStyle(fontFamily: 'Cairo'))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("تأكيد الحذف", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    ) ?? false;
+
+    if (confirm && _uid != null) {
+      // تنفيذ الحذف الناعم في Firestore
+      await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
+        'status': 'deleted_by_user', // تغيير الحالة بدلاً من حذف المستند
+        'lastSeen': FieldValue.serverTimestamp(),
+      });
+      
+      // تسجيل الخروج والعودة للبداية
+      await FirebaseAuth.instance.signOut();
+      if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new),
+          onPressed: () => Navigator.pop(context), // رجوع خطوة واحدة فقط
+        ),
+        title: const Text("حسابي الشخصي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        centerTitle: true,
+      ),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          var data = snapshot.data!.data() as Map<String, dynamic>;
 
-    return Drawer( // تحويلها لـ Drawer بدل Scaffold
-      width: 85.w,
-      child: Column(
-        children: [
-          // رأس القائمة (Header)
-          StreamBuilder<DocumentSnapshot>(
-            stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
-            builder: (context, snapshot) {
-              var name = "كابتن أكسب";
-              var phone = "جارٍ التحميل...";
-              if (snapshot.hasData && snapshot.data!.exists) {
-                var data = snapshot.data!.data() as Map<String, dynamic>;
-                name = data['fullname'] ?? name;
-                phone = data['phone'] ?? "";
-              }
-              return Container(
-                padding: EdgeInsets.only(top: 6.h, bottom: 3.h, left: 5.w, right: 5.w),
-                color: const Color(0xFF2C3E50),
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          return SingleChildScrollView(
+            padding: EdgeInsets.all(15.sp),
+            child: Column(
+              children: [
+                // كارت المعلومات المالية (الرصيد والعهد)
+                _buildInfoCard(
+                  title: "الوضع المالي",
+                  icon: Icons.account_balance_wallet,
+                  color: Colors.green[700]!,
                   children: [
-                    CircleAvatar(
-                      radius: 35.sp,
-                      backgroundColor: Colors.white24,
-                      child: Icon(Icons.person, size: 40.sp, color: Colors.white),
-                    ),
-                    SizedBox(height: 2.h),
-                    Text(name, style: TextStyle(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-                    Text(phone, style: TextStyle(color: Colors.white70, fontSize: 10.sp, fontFamily: 'Cairo')),
+                    _buildDataRow("رصيد المحفظة", "${data['walletBalance'] ?? 0} ج.م"),
+                    _buildDataRow("حد الائتمان", "${data['creditLimit'] ?? 0} ج.م"),
+                    _buildDataRow("الطلبات المكتملة", "${data['totalOrders'] ?? 0}"),
                   ],
                 ),
-              );
-            },
-          ),
 
-          // القائمة (Menu Items)
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                _buildDrawerItem(
-                  icon: Icons.privacy_tip_outlined,
-                  title: "سياسة الخصوصية",
-                  onTap: () {
-                    // هنا نضع رابط سياسة الخصوصية الخاص بك
-                    _launchURL("https://aksabeg.com/privacy-policy");
-                  },
+                SizedBox(height: 15.sp),
+
+                // كارت بيانات المركبة والهوية
+                _buildInfoCard(
+                  title: "بيانات التسجيل",
+                  icon: Icons.delivery_dining,
+                  color: Colors.blue[800]!,
+                  children: [
+                    _buildDataRow("الاسم", data['fullname'] ?? "غير مسجل"),
+                    _buildDataRow("رقم الهاتف", data['phone'] ?? ""),
+                    _buildDataRow("نوع المركبة", _getVehicleName(data['vehicleConfig'])),
+                    _buildDataRow("الحالة", data['status'] == 'approved' ? "نشط ومفعل ✅" : "قيد المراجعة"),
+                  ],
                 ),
-                _buildDrawerItem(
-                  icon: Icons.support_agent_rounded,
-                  title: "الدعم الفني",
-                  onTap: () {
-                    // فتح واتساب الدعم مثلاً
-                    _launchURL("https://wa.me/201234567890");
-                  },
+
+                SizedBox(height: 30.sp),
+
+                // زر حذف الحساب
+                TextButton.icon(
+                  onPressed: _handleSoftDelete,
+                  icon: const Icon(Icons.delete_forever, color: Colors.red),
+                  label: const Text("حذف الحساب نهائياً", style: TextStyle(color: Colors.red, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
                 ),
-                _buildDrawerItem(
-                  icon: Icons.info_outline_rounded,
-                  title: "عن التطبيق",
-                  onTap: () {},
-                ),
-                const Divider(),
-                _buildDrawerItem(
-                  icon: Icons.logout_rounded,
-                  title: "تسجيل الخروج",
-                  color: Colors.red,
-                  onTap: () async {
-                    await FirebaseAuth.instance.signOut();
-                    if (context.mounted) Navigator.of(context).pushReplacementNamed('/login');
-                  },
-                ),
+                Text("الإصدار 1.0.0", style: TextStyle(color: Colors.grey, fontSize: 10.sp)),
               ],
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ويدجت لبناء الكروت بشكل موحد
+  Widget _buildInfoCard({required String title, required IconData icon, required Color color, required List<Widget> children}) {
+    return Container(
+      padding: EdgeInsets.all(15.sp),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 5))],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color),
+              SizedBox(width: 10.sp),
+              Text(title, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13.sp, color: color)),
+            ],
           ),
-          
-          // الإصدار في الأسفل
-          Padding(
-            padding: EdgeInsets.all(15.sp),
-            child: Text("إصدار التجربة 1.0.2", style: TextStyle(color: Colors.grey, fontSize: 9.sp)),
-          ),
+          const Divider(),
+          ...children,
         ],
       ),
     );
   }
 
-  Widget _buildDrawerItem({required IconData icon, required String title, required VoidCallback onTap, Color? color}) {
-    return ListTile(
-      leading: Icon(icon, color: color ?? Colors.black87),
-      title: Text(title, style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp, fontWeight: FontWeight.w500, color: color)),
-      onTap: onTap,
+  Widget _buildDataRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 8.sp),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+          Text(value, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11.sp)),
+        ],
+      ),
     );
   }
 
-  Future<void> _launchURL(String url) async {
-    final Uri uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      debugPrint("Could not launch $url");
+  String _getVehicleName(String? config) {
+    switch (config) {
+      case 'motorcycleConfig': return "موتوسيكل";
+      case 'pickupConfig': return "بيك أب (دبابة)";
+      case 'jumboConfig': return "جامبو / نقل";
+      default: return "مركبة توصيل";
     }
   }
 }
