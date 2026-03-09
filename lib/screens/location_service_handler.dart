@@ -10,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
-  // 1. تهيئة البيئة البرمجية الأساسية لضمان عمل المكونات في الخلفية
   WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
   
@@ -22,68 +21,88 @@ void onStart(ServiceInstance service) async {
     debugPrint("Firebase Initialization Error: $e");
   }
 
-  // 2. إعدادات التحكم في خدمة الأندرويد
   if (service is AndroidServiceInstance) {
-    service.on('setAsForeground').listen((event) {
-      service.setAsForegroundService();
-    });
+    service.on('setAsForeground').listen((event) => service.setAsForegroundService());
+    service.on('setAsBackground').listen((event) => service.setAsBackgroundService());
+  }
 
-    service.on('setAsBackground').listen((event) {
-      service.setAsBackgroundService();
+  // مراجع للـ Streams عشان نقفلهم صح
+  StreamSubscription<Position>? positionStream;
+  StreamSubscription<DocumentSnapshot>? orderListener;
+
+  // دالة الإغلاق النظيف للموارد
+  Future<void> stopEverything() async {
+    await positionStream?.cancel();
+    await orderListener?.cancel();
+    service.stopSelf();
+  }
+
+  service.on('stopService').listen((event) async => await stopEverything());
+
+  final prefs = await SharedPreferences.getInstance();
+  String? uid = prefs.getString('driver_uid');
+  // بنجيب رقم الطلب الحالي من التخزين (لازم نكون حفظناه في الصفحة قبل تشغيل الخدمة)
+  String? activeOrderId = prefs.getString('active_order_id'); 
+
+  // --- الجزء الجديد: مراقبة حالة الطلب من الخلفية ---
+  if (uid != null && activeOrderId != null) {
+    orderListener = FirebaseFirestore.instance
+        .collection('specialRequests')
+        .doc(activeOrderId)
+        .snapshots()
+        .listen((snapshot) async {
+      if (snapshot.exists) {
+        String status = snapshot.data()?['status'] ?? '';
+        
+        // الحالات التي تستوجب إيقاف الخدمة فوراً من الخلفية
+        List<String> exitStatuses = [
+          'delivered',
+          'cancelled_by_user_after_accept',
+          'driver_cancelled_reseeking',
+          'returned_successfully'
+        ];
+
+        if (exitStatuses.contains(status)) {
+          // تحديث المندوب ليكون متاحاً مرة أخرى قبل قفل الخدمة
+          await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
+            'currentStatus': 'online',
+            'activeOrderId': "",
+            'lastSeen': FieldValue.serverTimestamp(),
+          });
+          await stopEverything();
+        }
+      }
     });
   }
 
-  // 3. الاستماع لأمر الإيقاف
-  service.on('stopService').listen((event) {
-    service.stopSelf();
-  });
-
-  // 4. إعدادات الموقع المتوافقة مع جميع نسخ geolocator (تجنباً لأخطاء الـ Build)
-  // تم إزالة foregroundServiceBehavior لأنه يسبب تعارض في بعض النسخ
-  // وتم استبداله بـ AppleSettings و AndroidSettings عامة
-  final LocationSettings locationSettings = AndroidSettings(
-    accuracy: LocationAccuracy.high,
-    distanceFilter: 10, // تحديث كل 10 أمتار لتوفير البطارية والداتا
-    intervalDuration: const Duration(seconds: 15),
-  );
-
-  StreamSubscription<Position>? positionStream;
-
-  // 5. بدء تدفق البيانات (Stream)
-  positionStream = Geolocator.getPositionStream(locationSettings: locationSettings)
-      .listen((Position position) async {
-    
+  // --- تتبع الموقع الحي ---
+  positionStream = Geolocator.getPositionStream(
+    locationSettings: AndroidSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+      intervalDuration: const Duration(seconds: 15),
+    ),
+  ).listen((Position position) async {
     if (service is AndroidServiceInstance) {
-      // تحديث الإشعار لضمان الشفافية مع المندوب ومع جوجل
       service.setForegroundNotificationInfo(
-        title: "أكسب: تأمين العهدة نشط 🛡️",
-        content: "يتم الآن تتبع مسار الرحلة لضمان مستحقاتك",
+        title: "أكسب: نظام التأمين نشط 🛡️",
+        content: "يتم تحديث المسار لضمان استحقاق النقاط المحجوزة",
       );
     }
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      String? uid = prefs.getString('driver_uid');
-
-      if (uid != null && uid.isNotEmpty) {
-        // تحديث الفايربيز بالحقول الموحدة
+    if (uid != null) {
+      try {
         await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
           'location': GeoPoint(position.latitude, position.longitude),
           'lat': position.latitude,
           'lng': position.longitude,
           'lastSeen': FieldValue.serverTimestamp(),
-          'speed': position.speed, // مفيد جداً لحساب وقت الوصول المتوقع
-          'heading': position.heading, // اتجاه حركة المندوب
+          'speed': position.speed,
+          'heading': position.heading,
         });
+      } catch (e) {
+        debugPrint("Update Error: $e");
       }
-    } catch (e) {
-      debugPrint("Firebase Update Error: $e");
     }
-  });
-
-  // تنظيف الموارد عند إيقاف الخدمة
-  service.on('stopService').listen((event) {
-    positionStream?.cancel();
-    service.stopSelf();
   });
 }
