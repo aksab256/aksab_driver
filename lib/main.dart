@@ -15,7 +15,8 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 // ✅ استيراد ملف الخدمة الخاص بك للوصول لـ onStart
-import 'location_service_handler.dart'; 
+import 'screens/location_service_handler.dart';
+
 
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
