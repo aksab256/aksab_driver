@@ -14,6 +14,9 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
+// ✅ استيراد ملف الخدمة الخاص بك للوصول لـ onStart
+import 'location_service_handler.dart'; 
+
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/free_driver_home_screen.dart';
@@ -27,9 +30,39 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
 }
 
+// ✅ دالة تهيئة الخدمة: تجهيز الإعدادات بدون تشغيل (autoStart: false)
+Future<void> initializeService() async {
+  final service = FlutterBackgroundService();
+
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onStart, // الدالة الموجودة في ملف location_service_handler.dart
+      autoStart: false, // ⚠️ لن تعمل الخدمة إلا بطلب يدوي من صفحة الأوردر
+      isForegroundMode: true,
+      notificationChannelId: 'high_importance_channel',
+      initialNotificationTitle: 'أكسب: تأمين العهدة نشط 🛡️',
+      initialNotificationContent: 'جاري مراقبة المسار لضمان أمان الطلب...',
+      foregroundServiceNotificationId: 888,
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: false,
+      onForeground: onStart,
+      onBackground: onIosBackground,
+    ),
+  );
+}
+
+@pragma('vm:entry-point')
+Future<bool> onIosBackground(ServiceInstance service) async {
+  return true;
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+
+  // ✅ تهيئة إعدادات الخدمة
+  await initializeService();
 
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
   PlatformDispatcher.instance.onError = (error, stack) {
@@ -57,6 +90,7 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
+  // ✅ التأكد من إغلاق أي خدمة قديمة كانت عالقة في الرامات
   try {
     FlutterBackgroundService().invoke("stopService");
   } catch (e) {}
@@ -129,10 +163,10 @@ class AksabDriverApp extends StatelessWidget {
   }
 }
 
+// --- ويدجت مراقبة الإنترنت (ConnectivityWrapper) ---
 class ConnectivityWrapper extends StatefulWidget {
   final Widget child;
   const ConnectivityWrapper({super.key, required this.child});
-
   @override
   _ConnectivityWrapperState createState() => _ConnectivityWrapperState();
 }
@@ -140,7 +174,7 @@ class ConnectivityWrapper extends StatefulWidget {
 class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
   late StreamSubscription<List<ConnectivityResult>> _subscription;
   bool _isConnected = true;
-  Timer? _connectivityTimer; // لضبط توقيت ظهور صفحة انقطاع النت
+  Timer? _connectivityTimer;
 
   @override
   void initState() {
@@ -157,26 +191,14 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
   }
 
   void _updateConnectionStatus(List<ConnectivityResult> result) {
-    // التأكد من وجود اتصال فعلي (واي فاي أو داتا)
     bool hasConnection = result.isNotEmpty && !result.contains(ConnectivityResult.none);
-
     if (hasConnection) {
-      // لو النت رجع.. نلغي التايمر ونخفي صفحة التنبيه فوراً
       _connectivityTimer?.cancel();
-      if (mounted && !_isConnected) {
-        setState(() {
-          _isConnected = true;
-        });
-      }
+      if (mounted && !_isConnected) setState(() => _isConnected = true);
     } else {
-      // لو النت قطع.. نصبر 3 ثواني قبل ما نظهر الصفحة عشان نمنع الرعشة
       _connectivityTimer?.cancel();
       _connectivityTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted && _isConnected) {
-          setState(() {
-            _isConnected = false;
-          });
-        }
+        if (mounted && _isConnected) setState(() => _isConnected = false);
       });
     }
   }
@@ -184,7 +206,7 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
   @override
   void dispose() {
     _subscription.cancel();
-    _connectivityTimer?.cancel(); // تنظيف التايمر عند إغلاق التطبيق
+    _connectivityTimer?.cancel();
     super.dispose();
   }
 
@@ -230,9 +252,9 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
   }
 }
 
+// --- AuthWrapper ---
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
-
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -267,15 +289,11 @@ class AuthWrapper extends StatelessWidget {
     try {
       var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
-      
       var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
-      
       var managerSnap = await FirebaseFirestore.instance.collection('managers').where('uid', isEqualTo: uid).get();
       if (managerSnap.docs.isNotEmpty) return {...managerSnap.docs.first.data(), 'type': 'manager'};
-    } catch (e) { 
-      return null; 
-    }
+    } catch (e) { return null; }
     return null;
   }
 }
