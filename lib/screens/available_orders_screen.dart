@@ -31,7 +31,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     // 2. تحديث لقطة الموقع
     _updateLocationSnapshot();
     
-    // 3. مؤقت الواجهة
+    // 3. مؤقت الواجهة لتحديث العداد الزمني للطلبات
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -59,7 +59,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // دالة تحديث الموقع (النبضة)
+  // دالة تحديث الموقع (النبضة) لجلب إحداثيات المندوب الحالية
   Future<void> _updateLocationSnapshot() async {
     try {
       Position pos = await Geolocator.getCurrentPosition(
@@ -87,6 +87,30 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
+  // ✅ دالة حساب المسافة الفعلية الإجمالية (من مكان المندوب إلى الاستلام ثم التسليم)
+  double _calculateFullTripDistance(GeoPoint pickup, GeoPoint dropoff) {
+    if (_myCurrentLocation == null) return 0.0;
+
+    // المسافة من موقع المندوب الحالي إلى نقطة الاستلام
+    double distanceToPickup = Geolocator.distanceBetween(
+      _myCurrentLocation!.latitude,
+      _myCurrentLocation!.longitude,
+      pickup.latitude,
+      pickup.longitude,
+    );
+
+    // المسافة من نقطة الاستلام إلى نقطة التسليم
+    double pickupToDropoff = Geolocator.distanceBetween(
+      pickup.latitude,
+      pickup.longitude,
+      dropoff.latitude,
+      dropoff.longitude,
+    );
+
+    // إرجاع الإجمالي بالكيلومتر
+    return (distanceToPickup + pickupToDropoff) / 1000;
+  }
+
   String _getTimerText(Timestamp? createdAt) {
     if (createdAt == null) return "00:00";
     DateTime expiryTime = createdAt.toDate().add(const Duration(minutes: 15));
@@ -97,7 +121,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return "$minutes:$seconds";
   }
 
-  // --- دالة قبول الطلب (تتضمن تحديث الحالة لـ busy) ---
+  // --- دالة قبول الطلب ---
   Future<void> _acceptOrder(String orderId) async {
     try {
       showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
@@ -112,7 +136,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         
         if (orderSnap.exists && orderSnap.get('status') == 'pending') {
-          // تحديث الطلب
           transaction.update(orderRef, {
             'status': 'accepted',
             'driverId': _uid,
@@ -122,7 +145,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             'serverNote': "تأكيد العهدة: جاري معالجة الطلب ماليًا...",
           });
 
-          // تحديث حالة المندوب فوراً لـ busy (لضمان عدم إرسال أي طلبات أخرى له من السيرفر)
           transaction.update(driverRef, {
             'currentStatus': 'busy',
             'activeOrderId': orderId,
@@ -209,10 +231,20 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance) {
     var data = doc.data() as Map<String, dynamic>;
+    
+    // ✅ استخراج نقاط الاستلام والتسليم للحساب اللحظي
+    GeoPoint? pickupLoc = data['pickupLocation'];
+    GeoPoint? dropoffLoc = data['dropoffLocation'];
+    
+    // ✅ حساب المسافة الفعلية الإجمالية
+    double fullDistance = 0.0;
+    if (pickupLoc != null && dropoffLoc != null) {
+      fullDistance = _calculateFullTripDistance(pickupLoc, dropoffLoc);
+    }
+
     double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
     double orderFinalAmount = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0;
     double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
-    String totalDistance = data['totalDistance']?.toString() ?? "0";
 
     double insuranceRequired = (orderFinalAmount > 0) ? (orderFinalAmount - driverNet) : 0.0;
     if (insuranceRequired < 0) insuranceRequired = 0;
@@ -282,8 +314,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("إجمالي المسافة:", style: TextStyle(fontSize: 10.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
-                        Row(children: [Icon(Icons.map_outlined, size: 14.sp, color: Colors.blue[900]), const SizedBox(width: 5), Text("$totalDistance كم", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.blue[900]))]),
+                        Text("إجمالي المسافة الفعلية:", style: TextStyle(fontSize: 10.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
+                        Row(children: [
+                          Icon(Icons.map_outlined, size: 14.sp, color: Colors.blue[900]),
+                          const SizedBox(width: 5),
+                          // ✅ عرض المسافة المحسوبة لحظياً
+                          Text("${fullDistance.toStringAsFixed(1)} كم", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.blue[900]))
+                        ]),
                       ],
                     ),
                     Column(
