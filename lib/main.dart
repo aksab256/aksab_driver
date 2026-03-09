@@ -156,15 +156,28 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
     List<ConnectivityResult> result = await Connectivity().checkConnectivity();
     _updateConnectionStatus(result);
   }
+Timer? _connectivityTimer; // أضف هذا المتغير فوق في الـ State
 
-  void _updateConnectionStatus(List<ConnectivityResult> result) {
-    bool hasConnection = result.isNotEmpty && !result.contains(ConnectivityResult.none);
-    if (mounted && _isConnected != hasConnection) {
-      setState(() {
-        _isConnected = hasConnection;
-      });
+void _updateConnectionStatus(List<ConnectivityResult> result) {
+  bool hasConnection = result.isNotEmpty && !result.contains(ConnectivityResult.none);
+
+  if (hasConnection) {
+    // لو النت رجع.. شيل صفحة "النت فاصل" فوراً بدون تأخير
+    _connectivityTimer?.cancel();
+    if (mounted && !_isConnected) {
+      setState(() => _isConnected = true);
     }
+  } else {
+    // لو النت قطع.. ما تظهرش الصفحة فوراً.. استنى 3 ثواني تأكيد
+    _connectivityTimer?.cancel();
+    _connectivityTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _isConnected) {
+        setState(() => _isConnected = false);
+      }
+    });
   }
+}
+
 
   @override
   void dispose() {
