@@ -25,13 +25,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   @override
   void initState() {
     super.initState();
-    // 1. إبلاغ السيرفر فوراً أن المندوب يرى الرادار الآن (لكتم الإشعارات)
     _updateDriverStatus('browsing_radar');
-    
-    // 2. تحديث لقطة الموقع
     _updateLocationSnapshot();
-    
-    // 3. مؤقت الواجهة لتحديث العداد الزمني للطلبات
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -39,13 +34,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   @override
   void dispose() {
-    // 4. عند إغلاق الرادار، نعود لحالة "أونلاين" لاستقبال الإشعارات مجدداً
     _updateDriverStatus('online');
     _uiTimer?.cancel();
     super.dispose();
   }
 
-  // دالة تحديث الحالة في Firestore
   Future<void> _updateDriverStatus(String status) async {
     if (_uid != null) {
       try {
@@ -59,7 +52,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // دالة تحديث الموقع (النبضة) لجلب إحداثيات المندوب الحالية
   Future<void> _updateLocationSnapshot() async {
     try {
       Position pos = await Geolocator.getCurrentPosition(
@@ -87,27 +79,16 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // ✅ دالة حساب المسافة الفعلية الإجمالية (من مكان المندوب إلى الاستلام ثم التسليم)
   double _calculateFullTripDistance(GeoPoint pickup, GeoPoint dropoff) {
     if (_myCurrentLocation == null) return 0.0;
-
-    // المسافة من موقع المندوب الحالي إلى نقطة الاستلام
     double distanceToPickup = Geolocator.distanceBetween(
-      _myCurrentLocation!.latitude,
-      _myCurrentLocation!.longitude,
-      pickup.latitude,
-      pickup.longitude,
+      _myCurrentLocation!.latitude, _myCurrentLocation!.longitude,
+      pickup.latitude, pickup.longitude,
     );
-
-    // المسافة من نقطة الاستلام إلى نقطة التسليم
     double pickupToDropoff = Geolocator.distanceBetween(
-      pickup.latitude,
-      pickup.longitude,
-      dropoff.latitude,
-      dropoff.longitude,
+      pickup.latitude, pickup.longitude,
+      dropoff.latitude, dropoff.longitude,
     );
-
-    // إرجاع الإجمالي بالكيلومتر
     return (distanceToPickup + pickupToDropoff) / 1000;
   }
 
@@ -121,7 +102,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return "$minutes:$seconds";
   }
 
-  // --- دالة قبول الطلب ---
   Future<void> _acceptOrder(String orderId) async {
     try {
       showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
@@ -132,7 +112,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
         DocumentReference driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(_uid);
-        
         DocumentSnapshot orderSnap = await transaction.get(orderRef);
         
         if (orderSnap.exists && orderSnap.get('status') == 'pending') {
@@ -144,7 +123,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             'moneyLocked': false,
             'serverNote': "تأكيد العهدة: جاري معالجة الطلب ماليًا...",
           });
-
           transaction.update(driverRef, {
             'currentStatus': 'busy',
             'activeOrderId': orderId,
@@ -173,9 +151,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     String cleanType = widget.vehicleType.replaceAll('Config', '');
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Text("رادار الطلبات القريبة", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, fontFamily: 'Cairo')),
+        title: Text("رادار الطلبات القريبة", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, fontFamily: 'Cairo', color: Colors.black)),
         centerTitle: true, backgroundColor: Colors.white, elevation: 0.5,
         actions: [
           IconButton(
@@ -214,7 +192,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               }).toList();
 
               if (nearbyOrders.isEmpty) {
-                return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.radar, size: 60.sp, color: Colors.grey[400]), Text("لا توجد طلبات متاحة حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, color: Colors.grey))]));
+                return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.radar, size: 60.sp, color: Colors.grey[300]), Text("لا توجد طلبات متاحة حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, color: Colors.grey))]));
               }
 
               return ListView.builder(
@@ -229,14 +207,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
+  // --- 🎨 تصميم الكارت الجديد والمحسن ---
   Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance) {
     var data = doc.data() as Map<String, dynamic>;
-    
-    // ✅ استخراج نقاط الاستلام والتسليم للحساب اللحظي
     GeoPoint? pickupLoc = data['pickupLocation'];
     GeoPoint? dropoffLoc = data['dropoffLocation'];
     
-    // ✅ حساب المسافة الفعلية الإجمالية
     double fullDistance = 0.0;
     if (pickupLoc != null && dropoffLoc != null) {
       fullDistance = _calculateFullTripDistance(pickupLoc, dropoffLoc);
@@ -253,99 +229,96 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     bool isMerchant = data['requestSource'] == 'retailer';
     String timeLeft = _getTimerText(data['createdAt'] as Timestamp?);
 
-    const Color goldStart = Color(0xFFFFD700);
-    const Color goldEnd = Color(0xFFFFA000);
-    const Color merchantContent = Color(0xFF5D4037); 
-
-    return Card(
-      elevation: 8, margin: EdgeInsets.only(bottom: 3.h),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+    return Container(
+      margin: EdgeInsets.only(bottom: 2.5.h),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: isMerchant ? Colors.orange.withOpacity(0.15) : Colors.black.withOpacity(0.05),
+            blurRadius: 10, offset: const Offset(0, 4)
+          )
+        ],
+      ),
       child: Column(
         children: [
+          // رأس الكارت: الربح والوقت
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
+            padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
             decoration: BoxDecoration(
-              gradient: isMerchant ? const LinearGradient(colors: [goldStart, goldEnd]) : null,
-              color: isMerchant ? null : (canAccept ? const Color(0xFF2D9E68) : const Color(0xFFD32F2F)),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+              gradient: isMerchant 
+                ? const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFA000)]) 
+                : LinearGradient(colors: [Colors.blueGrey[800]!, Colors.blueGrey[900]!]),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Icon(isMerchant ? FontAwesomeIcons.crown : Icons.delivery_dining, color: isMerchant ? merchantContent : Colors.white, size: 22.sp),
+                    Icon(isMerchant ? FontAwesomeIcons.crown : Icons.delivery_dining, 
+                      color: isMerchant ? const Color(0xFF5D4037) : Colors.white, size: 18.sp),
                     SizedBox(width: 3.w),
-                    Text("صافي ربحك: $driverNet ج.م", style: TextStyle(color: isMerchant ? merchantContent : Colors.white, fontWeight: FontWeight.w900, fontSize: 15.sp, fontFamily: 'Cairo')),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("ربحك الصافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037).withOpacity(0.7) : Colors.white70, fontSize: 9.sp, fontFamily: 'Cairo')),
+                        Text("$driverNet ج.م", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.w900, fontSize: 16.sp, fontFamily: 'Cairo')),
+                      ],
+                    ),
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.15), borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
                   child: Row(
                     children: [
-                      Icon(Icons.timer_outlined, size: 14.sp, color: isMerchant ? merchantContent : Colors.white),
+                      Icon(Icons.timer_outlined, size: 12.sp, color: isMerchant ? const Color(0xFF5D4037) : Colors.orangeAccent),
                       const SizedBox(width: 5),
-                      Text(timeLeft, style: TextStyle(color: isMerchant ? merchantContent : Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo')),
+                      Text(timeLeft, style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.bold, fontSize: 11.sp)),
                     ],
                   ),
                 ),
               ],
             ),
           ),
+
           Padding(
-            padding: EdgeInsets.all(5.w),
+            padding: EdgeInsets.all(4.w),
             child: Column(
               children: [
+                // شريط المعلومات السريع
                 Row(
                   children: [
-                    _buildFinanceInfo("تأمين عهدة", "${insuranceRequired.toStringAsFixed(2)} ن", Icons.security_sharp),
-                    _buildFinanceInfo("قيمة التحصيل", "${orderFinalAmount.toStringAsFixed(2)} ج.م", Icons.payments_outlined),
+                    _buildTag(Icons.map_outlined, "${fullDistance.toStringAsFixed(1)} كم", Colors.blue[700]!),
+                    SizedBox(width: 2.w),
+                    _buildTag(Icons.security, "${insuranceRequired.toStringAsFixed(0)} عهدة", Colors.red[700]!),
+                    const Spacer(),
+                    Text("إجمالي: $totalPrice ج.م", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.sp, color: Colors.black87)),
                   ],
                 ),
-                Divider(height: 4.h, thickness: 1.5),
-                _buildRouteRow(Icons.radio_button_checked, "استلام من: ${data['userName'] ?? 'الموقع'}", data['pickupAddress'] ?? "...", Colors.orange[800]!),
+                const Divider(height: 30),
+                // مسار الرحلة
+                _buildRouteItem(Icons.radio_button_checked, "من: ${data['userName'] ?? 'الموقع'}", data['pickupAddress'] ?? "...", Colors.orange[800]!),
                 SizedBox(height: 1.5.h),
-                _buildRouteRow(Icons.location_on, "تسليم إلى: ${data['customerName'] ?? 'العميل'}", data['dropoffAddress'] ?? "...", Colors.red[900]!),
-                Divider(height: 4.h, thickness: 1.5),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("إجمالي المسافة الفعلية:", style: TextStyle(fontSize: 10.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
-                        Row(children: [
-                          Icon(Icons.map_outlined, size: 14.sp, color: Colors.blue[900]),
-                          const SizedBox(width: 5),
-                          // ✅ عرض المسافة المحسوبة لحظياً
-                          Text("${fullDistance.toStringAsFixed(1)} كم", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.blue[900]))
-                        ]),
-                      ],
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text("قيمة الطلب:", style: TextStyle(fontSize: 10.sp, color: Colors.grey[600], fontFamily: 'Cairo')),
-                        Text("$totalPrice ج.م", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16.sp, color: Colors.black)),
-                      ],
-                    ),
-                  ],
-                ),
+                _buildRouteItem(Icons.location_on, "إلى: ${data['customerName'] ?? 'العميل'}", data['dropoffAddress'] ?? "...", Colors.red[800]!),
+                
                 SizedBox(height: 3.h),
-                InkWell(
-                  onTap: canAccept ? () => _acceptOrder(doc.id) : null,
-                  child: Container(
-                    width: double.infinity, height: 8.h,
-                    decoration: BoxDecoration(
-                      gradient: (canAccept && isMerchant) ? const LinearGradient(colors: [goldStart, goldEnd]) : null,
-                      color: canAccept ? (isMerchant ? null : Colors.green[800]) : Colors.grey[400],
-                      borderRadius: BorderRadius.circular(18),
+                // زر القبول
+                SizedBox(
+                  width: double.infinity,
+                  height: 7.h,
+                  child: ElevatedButton(
+                    onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: canAccept ? (isMerchant ? const Color(0xFF5D4037) : const Color(0xFF2D9E68)) : Colors.grey[400],
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                      elevation: 0,
                     ),
-                    alignment: Alignment.center,
                     child: Text(
-                      canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ للعهدة",
-                      style: TextStyle(color: canAccept ? (isMerchant ? merchantContent : Colors.white) : Colors.grey[700], fontWeight: FontWeight.w900, fontSize: 14.sp, fontFamily: 'Cairo'),
+                      canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ",
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo'),
                     ),
                   ),
                 ),
@@ -357,11 +330,36 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
-  Widget _buildFinanceInfo(String title, String value, IconData icon) {
-    return Expanded(child: Column(children: [Icon(icon, size: 20.sp, color: Colors.blueGrey[700]), Text(title, style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp, color: Colors.grey[600])), Text(value, style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, fontWeight: FontWeight.w900, color: const Color(0xFF0D47A1)))]));
+  Widget _buildTag(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        children: [
+          Icon(icon, size: 10.sp, color: color),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(color: color, fontSize: 9.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+        ],
+      ),
+    );
   }
 
-  Widget _buildRouteRow(IconData icon, String label, String addr, Color color) {
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(icon, color: color, size: 22.sp), SizedBox(width: 4.w), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: TextStyle(fontSize: 11.sp, color: Colors.grey[700], fontFamily: 'Cairo', fontWeight: FontWeight.bold)), Text(addr, style: TextStyle(fontSize: 12.sp, color: Colors.black, fontFamily: 'Cairo', fontWeight: FontWeight.w500), maxLines: 2, overflow: TextOverflow.ellipsis)]))]);
+  Widget _buildRouteItem(IconData icon, String title, String sub, Color color) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: color, size: 16.sp),
+        SizedBox(width: 3.w),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Cairo')),
+              Text(sub, style: TextStyle(fontSize: 11.sp, color: Colors.grey[600], fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
