@@ -1,4 +1,4 @@
-Name: Flutter Build (AAB & APK)
+name: Flutter Build (AAB & APK)
 
 on:
   push:
