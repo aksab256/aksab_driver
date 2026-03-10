@@ -66,9 +66,18 @@ class WalletScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFFBFBFB),
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new),
-          onPressed: () => Navigator.of(context).pop(), // رجوع خطوة واحدة
-        ),
+  icon: const Icon(Icons.arrow_back_ios_new),
+  onPressed: () {
+    // التحقق لو فيه شاشة قبلها يرجع لها
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      // لو دخل مباشرة أو حصل فقد في الـ Stack يرجعه للهوم المظبوط
+      Navigator.of(context).pushReplacementNamed('/free_home');
+    }
+  },
+),
+
         title: const Text("إدارة العهدة ونقاط الأمان", 
           style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 16)),
         centerTitle: true,
