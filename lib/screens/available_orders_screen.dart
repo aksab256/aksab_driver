@@ -263,8 +263,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("ربحك الصافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037).withOpacity(0.7) : Colors.white70, fontSize: 9.sp, fontFamily: 'Cairo')),
-                        Text("$driverNet ج.م", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.w900, fontSize: 16.sp, fontFamily: 'Cairo')),
+                        Text("ربحك الصافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037).withOpacity(0.7) : Colors.white70, fontSize: 10.sp, fontFamily: 'Cairo')),
+                        Text("$driverNet ج.م", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.w900, fontSize: 18.sp, fontFamily: 'Cairo')),
                       ],
                     ),
                   ],
@@ -318,7 +318,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     ),
                     child: Text(
                       canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ",
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo'),
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo'),
                     ),
                   ),
                 ),
@@ -332,13 +332,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   Widget _buildTag(IconData icon, String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
       child: Row(
         children: [
-          Icon(icon, size: 10.sp, color: color),
+          Icon(icon, size: 18.sp, color: color),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(color: color, fontSize: 9.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+          Text(label, style: TextStyle(color: color, fontSize: 11.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
         ],
       ),
     );
@@ -355,7 +355,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title, style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Cairo')),
-              Text(sub, style: TextStyle(fontSize: 11.sp, color: Colors.grey[600], fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(sub, style: TextStyle(fontSize: 12.5.sp, color: Colors.grey[600], fontFamily: 'Cairo'), maxLines: 1, overflow: TextOverflow.ellipsis),
             ],
           ),
         ),
