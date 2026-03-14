@@ -501,9 +501,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
             TileLayer(urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}?access_token=$_mapboxToken'),
             if (_routePoints.isNotEmpty) PolylineLayer(polylines: [Polyline(points: _routePoints, color: Colors.blueAccent, strokeWidth: 6)]),
             MarkerLayer(markers: [
-              if (_currentLocation != null) Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 45.sp)),
-              Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.location_on, color: status.contains('returning') ? Colors.red : Colors.orange[900], size: 35.sp)),
-              Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.black, size: 35.sp)),
+              if (_currentLocation != null) Marker(point: _currentLocation!, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 24.sp)),
+              Marker(point: LatLng(pickup.latitude, pickup.longitude), child: Icon(Icons.location_on, color: status.contains('returning') ? Colors.red : Colors.orange[900], size: 20.sp)),
+              Marker(point: LatLng(dropoff.latitude, dropoff.longitude), child: Icon(Icons.person_pin_circle, color: Colors.black, size: 20.sp)),
             ]),
           ],
         );
