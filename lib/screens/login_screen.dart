@@ -5,10 +5,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart'; 
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 
-// تأكد من صحة مسارات الملفات لديك
+// المسارات الخاصة بك
 import 'free_driver_home_screen.dart';
 import 'CompanyRepHomeScreen.dart';
 import 'delivery_admin_dashboard.dart';
@@ -38,16 +38,16 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       String? token = await FirebaseMessaging.instance.getToken();
       String? uid = FirebaseAuth.instance.currentUser?.uid;
-      
+
       if (token != null && uid != null) {
         const String apiUrl = "https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction";
         await http.post(
           Uri.parse(apiUrl),
           headers: {"Content-Type": "application/json"},
           body: jsonEncode({
-            "userId": uid, 
-            "fcmToken": token, 
-            "role": role 
+            "userId": uid,
+            "fcmToken": token,
+            "role": role
           }),
         ).timeout(const Duration(seconds: 8));
       }
@@ -70,9 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // الامتداد الجديد لضمان الفصل التام عن تطبيق العملاء
       String smartEmail = "${_phoneController.text.trim()}@aksabship.com";
-      
       UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: smartEmail,
         password: _passwordController.text,
@@ -126,7 +124,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
       _showError("عذراً، هذا الحساب لا يملك صلاحيات دخول");
       await FirebaseAuth.instance.signOut();
-
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') {
         _showError("رقم الهاتف غير مسجل في نظام المناديب");
@@ -142,10 +139,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 13.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+      content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 12.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
       backgroundColor: Colors.redAccent,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
     ));
   }
 
@@ -157,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ? const Center(child: CircularProgressIndicator(color: Colors.orange))
           : Stack(
               children: [
-                // خلفية علوية بتدرج لوني
+                // خلفية علوية بتدرج لوني مطابق لشاشة التسجيل
                 Container(
                   height: 35.h,
                   decoration: BoxDecoration(
@@ -175,35 +172,33 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       children: [
                         SizedBox(height: 6.h),
-                        // شعار التطبيق فلاتي
                         _buildHeroIcon(),
                         SizedBox(height: 3.h),
-                        Text("أكسب مناديب",
-                            style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Cairo')),
-                        Text("مرحباً بك مجدداً في فريقنا",
-                            style: TextStyle(fontSize: 12.sp, color: Colors.white70, fontFamily: 'Cairo')),
+                        Text("أكسب لوجستيك",
+                            style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Cairo')),
+                        Text("مرحباً بك في منصة إدارة العهدة",
+                            style: TextStyle(fontSize: 11.sp, color: Colors.white.withOpacity(0.9), fontFamily: 'Cairo')),
                         SizedBox(height: 5.h),
                         
-                        // كارت تسجيل الدخول
                         _buildLoginCard(),
-                        
-                        SizedBox(height: 2.h),
+
+                        SizedBox(height: 3.h),
                         TextButton(
                           onPressed: () => Navigator.pushNamed(context, '/register'),
                           child: RichText(
                             text: TextSpan(
-                              style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.grey[800]),
+                              style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, color: Colors.grey[800]),
                               children: [
                                 const TextSpan(text: "ليس لديك حساب؟ "),
-                                TextSpan(text: "سجل الآن", style: TextStyle(color: Colors.orange[900], fontWeight: FontWeight.bold)),
+                                TextSpan(text: "قدم طلب انضمام", style: TextStyle(color: Colors.orange[900], fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),
                         ),
-                        
-                        SizedBox(height: 3.h),
-                        _buildPrivacyButton(),
+
                         SizedBox(height: 2.h),
+                        _buildPrivacyButton(),
+                        SizedBox(height: 3.h),
                       ],
                     ),
                   ),
@@ -221,7 +216,7 @@ class _LoginScreenState extends State<LoginScreen> {
         shape: BoxShape.circle,
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20)],
       ),
-      child: Icon(Icons.delivery_dining_rounded, size: 55.sp, color: Colors.orange[900]),
+      child: Icon(Icons.moped_rounded, size: 50.sp, color: Colors.orange[900]),
     );
   }
 
@@ -236,19 +231,18 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Column(
         children: [
           _buildInputField(_phoneController, "رقم الهاتف", Icons.phone_android, type: TextInputType.phone),
-          SizedBox(height: 1.h),
           _buildInputField(_passwordController, "كلمة المرور", Icons.lock_outline, isPass: true),
           SizedBox(height: 3.h),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.black87,
-              minimumSize: Size(100.w, 7.5.h),
+              minimumSize: Size(100.w, 7.h),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               elevation: 5,
             ),
             onPressed: _handleLogin,
             child: Text("دخول للنظام",
-                style: TextStyle(color: Colors.white, fontSize: 15.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                style: TextStyle(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
           ),
         ],
       ),
@@ -258,44 +252,50 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildInputField(TextEditingController controller, String label, IconData icon,
       {bool isPass = false, TextInputType type = TextInputType.text}) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 1.2.h),
+      padding: EdgeInsets.symmetric(vertical: 1.h),
       child: TextField(
         controller: controller,
         obscureText: isPass ? _obscurePassword : false,
         keyboardType: type,
         textAlign: TextAlign.right,
-        style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w500),
+        style: TextStyle(fontSize: 13.sp, fontFamily: 'Cairo'),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(fontSize: 12.sp, fontFamily: 'Cairo', color: Colors.grey[600]),
-          prefixIcon: Icon(icon, color: Colors.orange[900], size: 20.sp),
+          labelStyle: TextStyle(fontSize: 11.sp, fontFamily: 'Cairo', color: Colors.grey[600]),
+          prefixIcon: Icon(icon, color: Colors.orange[900], size: 18.sp),
           suffixIcon: isPass
               ? IconButton(
-                  icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, size: 18.sp, color: Colors.grey),
+                  icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, size: 16.sp, color: Colors.grey),
                   onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                 )
               : null,
-          filled: true,
-          fillColor: Colors.grey[50],
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey[200]!)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.orange[800]!, width: 1.5)),
+          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey[200]!)),
+          focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.orange[800]!)),
         ),
       ),
     );
   }
 
   Widget _buildPrivacyButton() {
-    return GestureDetector(
+    return InkWell(
       onTap: _launchPrivacyPolicy,
-      child: Text(
-        "سياسة الخصوصية والاستخدام",
-        style: TextStyle(
-          color: Colors.blueGrey[400],
-          fontSize: 11.sp,
-          decoration: TextDecoration.underline,
-          fontFamily: 'Cairo',
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.security, size: 14.sp, color: Colors.blueGrey[300]),
+          SizedBox(width: 2.w),
+          Text(
+            "سياسة الخصوصية وشروط الاستخدام",
+            style: TextStyle(
+              color: Colors.blueGrey[400],
+              fontSize: 10.sp,
+              decoration: TextDecoration.underline,
+              fontFamily: 'Cairo',
+            ),
+          ),
+        ],
       ),
     );
   }
 }
+
