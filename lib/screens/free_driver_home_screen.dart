@@ -21,8 +21,8 @@ class FreeDriverHomeScreen extends StatefulWidget {
 
 class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   int _selectedIndex = 0;
-  // بدأنا بحالة 'loading' لمنع القفز المفاجئ للحالة الحمراء عند الفتح
-  String _currentStatus = 'loading'; 
+  // القيمة الابتدائية تأتي من الذاكرة المحلية فوراً في initState
+  String _currentStatus = 'offline'; 
   String? _activeOrderId;
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -30,7 +30,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchInitialStatus(); // جلب الحالة الفعلية فوراً
+    _syncStatusInstantly(); // المزامنة اللحظية لمنع الـ Offline التلقائي
     _initListeners();
     
     // فحص الأمان والإشعارات عند الفتح
@@ -39,17 +39,26 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     });
   }
 
-  // دالة مزامنة الحالة الأولية مع السيرفر
-  void _fetchInitialStatus() async {
+  // دالة المزامنة الذكية: تقرأ من الموبايل أولاً ثم تتأكد من السيرفر
+  void _syncStatusInstantly() async {
+    // 1. جلب آخر حالة مسجلة محلياً (Zero Latency)
+    String localStatus = await DriverApiService.getLocalStatus();
+    if (mounted) {
+      setState(() => _currentStatus = localStatus);
+    }
+
+    // 2. التحقق من الحالة الفعلية في Firestore كنسخة احتياطية
     try {
       var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (doc.exists && mounted) {
-        setState(() {
-          _currentStatus = doc.data()?['currentStatus'] ?? 'offline';
-        });
+        String serverStatus = doc.data()?['currentStatus'] ?? 'offline';
+        // إذا اختلف السيرفر عن الموبايل، نحدث الشاشة
+        if (serverStatus != _currentStatus) {
+          setState(() => _currentStatus = serverStatus);
+        }
       }
     } catch (e) {
-      if (mounted) setState(() => _currentStatus = 'offline');
+      debugPrint("Initial Sync Error: $e");
     }
   }
 
@@ -85,7 +94,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
   // التحكم في التنقل (حماية الرادار)
   void _onStepTapped(int index) {
-    if (index == 1 && (_currentStatus == 'offline' || _currentStatus == 'loading')) {
+    if (index == 1 && (_currentStatus == 'offline')) {
       DriverSecurityHelper.showErrorSnackBar(context, "يجب أن تكون 'متصل' أولاً لدخول الرادار");
       return;
     }
@@ -104,6 +113,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   Widget _buildBody() {
+    // استخدام IndexedStack للحفاظ على حالة الصفحات أثناء التنقل
     return IndexedStack(
       index: _selectedIndex,
       children: [

@@ -4,21 +4,64 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // أضف هذا السطر
 
 class DriverApiService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // 1. الاستماع لحالة المندوب الحالية
+  // 1. الاستماع لحالة المندوب (محسّنة)
   static void listenToStatus(String uid, Function(String) onStatusChange) {
     if (uid.isEmpty) return;
     _db.collection('freeDrivers').doc(uid).snapshots().listen((snap) {
-      if (snap.exists) {
-        onStatusChange(snap.data()?['currentStatus'] ?? 'offline');
+      if (snap.exists && snap.data() != null) {
+        String serverStatus = snap.data()?['currentStatus'] ?? 'offline';
+        onStatusChange(serverStatus);
+        // حفظ الحالة في ذاكرة الهاتف لضمان عدم التصفير عند الفتح القادم
+        _saveLocalStatus(serverStatus);
       }
     });
   }
 
-  // 2. الاستماع للطلبات النشطة (العهدة)
+  // 2. تحديث الحالة مع حماية الموقع
+  static Future<void> updateStatus(String uid, String status) async {
+    try {
+      Map<String, dynamic> updateData = {
+        'currentStatus': status,
+        'lastSeen': FieldValue.serverTimestamp(),
+      };
+
+      if (status == 'online') {
+        // التحقق من صلاحية الموقع أولاً لتجنب توقف الدالة
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+          Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+          updateData['location'] = GeoPoint(pos.latitude, pos.longitude);
+          updateData['lat'] = pos.latitude;
+          updateData['lng'] = pos.longitude;
+        }
+        _syncFcmToken(uid);
+      }
+
+      await _db.collection('freeDrivers').doc(uid).update(updateData);
+      await _saveLocalStatus(status); // حفظ محلي
+    } catch (e) {
+      debugPrint("Update Status API Error: $e");
+    }
+  }
+
+  // دالة الحفظ المحلي
+  static Future<void> _saveLocalStatus(String status) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('driver_last_status', status);
+  }
+
+  // دالة جلب الحالة المحلية (تُستدعى في initState بالهوم سكرين)
+  static Future<String> getLocalStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('driver_last_status') ?? 'offline';
+  }
+
+  // 3. الاستماع للطلبات النشطة (العهدة) - كما هي
   static void listenToActiveOrders(String uid, Function(String?, String?) onOrderChange) {
     if (uid.isEmpty) return;
     _db.collection('specialRequests')
@@ -35,32 +78,7 @@ class DriverApiService {
     });
   }
 
-  // 3. تحديث الحالة (Online / Offline) مع الموقع الجغرافي
-  static Future<void> updateStatus(String uid, String status) async {
-    try {
-      Map<String, dynamic> updateData = {
-        'currentStatus': status,
-        'lastSeen': FieldValue.serverTimestamp(),
-      };
-
-      if (status == 'online') {
-        Position pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-        updateData['location'] = GeoPoint(pos.latitude, pos.longitude);
-        updateData['lat'] = pos.latitude;
-        updateData['lng'] = pos.longitude;
-        
-        // مزامنة التوكن عند فتح الحالة
-        _syncFcmToken(uid);
-      }
-
-      await _db.collection('freeDrivers').doc(uid).update(updateData);
-    } catch (e) {
-      debugPrint("Update Status API Error: $e");
-      rethrow;
-    }
-  }
-
-  // 4. مزامنة توكن الإشعارات مع AWS (خاص بـ V2)
+  // 4. مزامنة توكن الإشعارات - كما هي
   static Future<void> _syncFcmToken(String uid) async {
     try {
       String? token = await FirebaseMessaging.instance.getToken();
