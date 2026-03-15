@@ -14,7 +14,7 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   
-  // الأدوار المحدثة لتشمل المشرف
+  // الأدوار المحدثة لتشمل المشرف والمدير في نفس المسار الإداري
   String _selectedRole = 'free_driver';
   String _vehicleConfig = 'motorcycleConfig';
   
@@ -40,6 +40,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
     
+    // التحقق من تطابق كلمة المرور
     if (_passwordController.text != _confirmPasswordController.text) {
       _showMsg("❌ كلمات المرور غير متطابقة");
       return;
@@ -53,13 +54,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // إنشاء البريد الإلكتروني الخاص بالمنظومة
       String smartEmail = "${_phoneController.text.trim()}@aksabship.com";
 
+      // 1. تسجيل المستخدم في Firebase Auth
       UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: smartEmail,
         password: _passwordController.text,
       );
 
+      // 2. تحديد المجموعة بناءً على الدور (المدير والمشرف يروحوا pendingManagers)
       String collectionName = _getCollectionName(_selectedRole);
       
       Map<String, dynamic> userData = {
@@ -67,23 +71,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'email': smartEmail,
         'phone': _phoneController.text.trim(),
         'address': _addressController.text.trim(),
-        'role': _selectedRole,
+        'role': _selectedRole, // هنا الفرق بين delivery_manager و delivery_supervisor
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
         'uid': userCredential.user!.uid,
       };
 
+      // تخصيص بيانات المندوب الحر ونظام الإحالة
       if (_selectedRole == 'free_driver') {
         userData['vehicleConfig'] = _vehicleConfig;
-        userData['referredBy'] = _referralController.text.trim();
-        userData['myReferralCode'] = "";
+        userData['referredBy'] = _referralController.text.trim(); // كود الشخص الذي دعاه
+        userData['myReferralCode'] = ""; // يترك فارغاً للتوليد عند التفعيل
         userData['walletBalance'] = 0.0;
-        userData['insurance_points'] = 0.0;
+        userData['insurance_points'] = 0.0; // نقاط التأمين (لوجستي)
         userData['totalReferralsCount'] = 0;
       } else {
         userData['vehicleConfig'] = 'none';
       }
 
+      // 3. حفظ البيانات في Firestore
       await FirebaseFirestore.instance.collection(collectionName).doc(userCredential.user!.uid).set(userData);
 
       _showSuccessDialog();
@@ -98,17 +104,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  // منطق توزيع الأدوار على الـ Collections في Firebase
+  // توزيع الأدوار على المجموعات (Collections)
   String _getCollectionName(String role) {
     switch (role) {
       case 'free_driver': 
         return 'pendingFreeDrivers';
       case 'delivery_rep': 
         return 'pendingReps';
-      case 'delivery_supervisor': // إضافة المشرف لمجموعة الإدارة أو مجموعة خاصة
-        return 'pendingManagers'; 
+      case 'delivery_supervisor': 
       case 'delivery_manager': 
-        return 'pendingManagers';
+        return 'pendingManagers'; // كلاهما في نفس المجموعة الإدارية
       default: 
         return 'pendingManagers';
     }
@@ -122,6 +127,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ? const Center(child: CircularProgressIndicator(color: Colors.orange))
           : Stack(
               children: [
+                // خلفية الهيدر
                 Container(
                   height: 28.h,
                   decoration: BoxDecoration(
@@ -149,6 +155,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           SizedBox(height: 4.h),
                           _buildRoleSelection(),
                           
+                          // حقول المندوب الحر
                           if (_selectedRole == 'free_driver') ...[
                             _buildVehiclePicker(),
                             SizedBox(height: 2.h),
