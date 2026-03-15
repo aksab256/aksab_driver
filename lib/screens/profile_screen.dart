@@ -23,10 +23,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             textDirection: TextDirection.rtl,
             child: AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: const Text("تأكيد حذف الحساب ⚠️", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.red)),
+              title: const Text("تأكيد حذف الحساب ⚠️",
+                  style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.red)),
               content: const Text("هل أنت متأكد من حذف حسابك نهائياً؟ سيتم إيقاف الخدمة وفقدان جميع بياناتك الحالية."),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("تراجع", style: TextStyle(fontFamily: 'Cairo'))),
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text("تراجع", style: TextStyle(fontFamily: 'Cairo'))),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                   onPressed: () => Navigator.pop(ctx, true),
@@ -55,7 +58,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 انضم إليّ في فريق مناديب أكسب! 🚚
 استخدم كود الإحالة الخاص بي: ($code) عند التسجيل وابدأ في إدارة عهدتك وزيادة أرباحك.
 حمل التطبيق الآن من هنا: https://aksab.shop/
-    """;
+""";
     Share.share(message);
   }
 
@@ -95,11 +98,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: EdgeInsets.all(15.sp),
             child: Column(
               children: [
-                // كارت دعوة الأصدقاء (Referral Card) الجديد مع عرض الحملة
+                // كارت دعوة الأصدقاء (Referral Card) الجديد المطور
                 _buildReferralCard(myCode),
-
                 SizedBox(height: 15.sp),
-
                 // كارت المعلومات المالية (الرصيد والعهد)
                 _buildInfoCard(
                   title: "الوضع اللوجستي (العهدة)",
@@ -111,9 +112,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _buildDataRow("إجمالي الإحالات الناجحة", "${data['totalReferralsCount'] ?? 0}"),
                   ],
                 ),
-
                 SizedBox(height: 15.sp),
-
                 // كارت بيانات المركبة والهوية
                 _buildInfoCard(
                   title: "بيانات التسجيل",
@@ -126,14 +125,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _buildDataRow("الحالة", data['status'] == 'approved' ? "نشط ومفعل ✅" : "قيد المراجعة"),
                   ],
                 ),
-
                 SizedBox(height: 30.sp),
-
                 // زر حذف الحساب
                 TextButton.icon(
                   onPressed: _handleSoftDelete,
                   icon: const Icon(Icons.delete_forever, color: Colors.red),
-                  label: const Text("حذف الحساب نهائياً", style: TextStyle(color: Colors.red, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                  label: const Text("حذف الحساب نهائياً",
+                      style: TextStyle(color: Colors.red, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
                 ),
                 Text("الإصدار 1.0.0", style: TextStyle(color: Colors.grey, fontSize: 10.sp)),
               ],
@@ -144,7 +142,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ويدجت كارت دعوة الأصدقاء - معدل لعرض الحملة النشطة
+  // ويدجت كارت دعوة الأصدقاء - معدل لعرض رسالة الإغراء وتوضيح نقاط الأمان
   Widget _buildReferralCard(String code) {
     return StreamBuilder<DocumentSnapshot>(
       // نجلب معرف الحملة النشطة أولاً
@@ -158,71 +156,128 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return Container(
           padding: EdgeInsets.all(15.sp),
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [Colors.orange[900]!, Colors.orange[700]!]),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.orange[900]!, Colors.orange[700]!],
+            ),
             borderRadius: BorderRadius.circular(25),
             boxShadow: [BoxShadow(color: Colors.orange.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
           ),
           child: Column(
             children: [
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Icon(Icons.stars, color: Colors.white),
-                  SizedBox(width: 8.sp),
-                  Text("برنامج مكافآت أكسب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.white)),
+                  Row(
+                    children: [
+                      const Icon(Icons.stars, color: Colors.yellowAccent),
+                      SizedBox(width: 8.sp),
+                      Text("برنامج مكافآت الداعي",
+                          style: TextStyle(
+                              fontFamily: 'Cairo',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13.sp,
+                              color: Colors.white)),
+                    ],
+                  ),
+                  const Icon(Icons.share_arrival_time, color: Colors.white54),
                 ],
               ),
               const Divider(color: Colors.white24),
-              SizedBox(height: 8.sp),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(code, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.orange[900])),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.copy, color: Colors.grey),
-                          onPressed: () => _copyToClipboard(code),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.share, color: Colors.green),
-                          onPressed: () => _shareReferralCode(code),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              SizedBox(height: 12.sp),
-              
-              // --- عرض تفاصيل الحملة النشطة بشكل ملفت ---
+              SizedBox(height: 10.sp),
+
+              // --- عرض رسالة الإغراء (campaignName) من الفايربيز ---
               StreamBuilder<DocumentSnapshot>(
                 stream: FirebaseFirestore.instance.collection('referralCampaigns').doc(activeId).snapshots(),
                 builder: (context, campSnap) {
-                  if (!campSnap.hasData || !campSnap.data!.exists) {
-                    return const Text("شارك الكود مع زملائك الجدد واكسب نقاط أمان فورية.", 
-                      textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'Cairo'));
-                  }
-                  
-                  var camp = campSnap.data!.data() as Map<String, dynamic>;
-                  var milestones = camp['milestones'] as Map<String, dynamic>? ?? {};
+                  String campaignMsg = "شارك كودك مع زملائك المناديب وابدأ في جني مكافآت التشغيل فوراً!";
+                  Map<String, dynamic> milestones = {};
 
-                  return Container(
-                    padding: EdgeInsets.all(10.sp),
-                    decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(15)),
-                    child: Column(
-                      children: [
-                        Text("مكافآت الحملة الحالية 🎁", style: TextStyle(color: Colors.yellowAccent, fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 10.sp)),
-                        SizedBox(height: 5.sp),
-                        ...milestones.entries.map((e) {
-                          String num = e.key.split('_').last;
-                          return Text("• أوردر رقم $num: مكافأة ${e.value} ج.م", 
-                            style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'Cairo'));
-                        }).toList(),
-                      ],
-                    ),
+                  if (campSnap.hasData && campSnap.data!.exists) {
+                    var campData = campSnap.data!.data() as Map<String, dynamic>;
+                    campaignMsg = campData['campaignName'] ?? campaignMsg;
+                    milestones = campData['milestones'] as Map<String, dynamic>? ?? {};
+                  }
+
+                  return Column(
+                    children: [
+                      Text(
+                        campaignMsg,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: Colors.white, fontSize: 11.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w500),
+                      ),
+                      SizedBox(height: 15.sp),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(code,
+                                style: TextStyle(
+                                    fontSize: 18.sp,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 2,
+                                    color: Colors.orange[900])),
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.copy, color: Colors.grey),
+                                  onPressed: () => _copyToClipboard(code),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.share, color: Colors.green),
+                                  onPressed: () => _shareReferralCode(code),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(height: 15.sp),
+
+                      // عرض الأهداف (Milestones) بشكل جذاب
+                      if (milestones.isNotEmpty)
+                        Container(
+                          padding: EdgeInsets.all(10.sp),
+                          decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(15)),
+                          child: Column(
+                            children: [
+                              Text("خطة مكافآتك عن كل زميل جديد 🎁",
+                                  style: TextStyle(
+                                      color: Colors.yellowAccent,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'Cairo',
+                                      fontSize: 10.sp)),
+                              SizedBox(height: 8.sp),
+                              ...milestones.entries.map((e) {
+                                String num = e.key.split('_').last;
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.check_circle_outline, color: Colors.white70, size: 14),
+                                      const SizedBox(width: 5),
+                                      Text("أوردر رقم $num: مكافأة ${e.value} ج.م",
+                                          style: const TextStyle(
+                                              color: Colors.white, fontSize: 10, fontFamily: 'Cairo')),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                              const Divider(color: Colors.white10),
+                              const Text(
+                                "💡 المكافآت تُضاف كـ (نقاط أمان) لرفع حد عهدتك ومساعدتك في قبول طلبيات أكبر.",
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'Cairo'),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   );
                 },
               ),
@@ -233,7 +288,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildInfoCard({required String title, required IconData icon, required Color color, required List<Widget> children}) {
+  Widget _buildInfoCard(
+      {required String title, required IconData icon, required Color color, required List<Widget> children}) {
     return Container(
       padding: EdgeInsets.all(15.sp),
       decoration: BoxDecoration(
@@ -247,7 +303,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Icon(icon, color: color),
               SizedBox(width: 10.sp),
-              Text(title, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13.sp, color: color)),
+              Text(title,
+                  style:
+                      TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13.sp, color: color)),
             ],
           ),
           const Divider(),
