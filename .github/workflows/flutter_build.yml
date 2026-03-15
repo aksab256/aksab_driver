@@ -1,4 +1,4 @@
-name: Flutter Build (APK Only)
+name: Flutter Build (AAB & APK)
 
 on:
   push:
@@ -30,22 +30,22 @@ jobs:
       - name: Decode Keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 --decode > android/app/upload-keystore.jks
 
-      # 🟢 [تعطيل مؤقت لنسخة المتجر]
-      # - name: Build Release Bundle (AAB)
-      #   run: flutter build appbundle --release
+      # 1. بناء نسخة المتجر الرسمية (AAB) - تم التفعيل بنجاح 🚀
+      - name: Build Release Bundle (AAB)
+        run: flutter build appbundle --release
 
-      # 1. بناء نسخة التجربة (APK) - هي دي اللي بنركز عليها حالياً
+      # 2. بناء نسخة التجربة السريعة (APK)
       - name: Build Release APK
         run: flutter build apk --release
 
-      # 🟢 [تعطيل مؤقت لرفع ملف المتجر]
-      # - name: Upload AAB Artifact
-      #   uses: uses/upload-artifact@v4
-      #   with:
-      #     name: Aksab-Captain-AAB
-      #     path: build/app/outputs/bundle/release/app-release.aab
+      # 3. رفع ملف الـ AAB للأرشفة (جاهز للرفع على جوجل بلاي)
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aksab-Captain-AAB
+          path: build/app/outputs/bundle/release/app-release.aab
 
-      # 2. رفع الـ APK في أرشيف لوحده (للتجربة والاختبار المغلق)
+      # 4. رفع الـ APK للأرشيف (للتجربة المباشرة)
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
