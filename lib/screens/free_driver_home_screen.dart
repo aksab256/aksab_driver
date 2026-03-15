@@ -22,7 +22,7 @@ class FreeDriverHomeScreen extends StatefulWidget {
 class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   int _selectedIndex = 0;
   // القيمة الابتدائية تأتي من الذاكرة المحلية فوراً في initState
-  String _currentStatus = 'offline'; 
+  String _currentStatus = 'offline';
   String? _activeOrderId;
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -30,31 +30,37 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _syncStatusInstantly(); // المزامنة اللحظية لمنع الـ Offline التلقائي
+    // 1. المزامنة الفورية من التخزين المحلي والاحتياطي من السيرفر
+    _syncStatusInstantly();
+    // 2. تفعيل المستمعات للحالة والطلبات
     _initListeners();
-    
+
     // فحص الأمان والإشعارات عند الفتح
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      DriverSecurityHelper.checkSecurityAndTerms(context, uid);
+      if (uid.isNotEmpty) {
+        DriverSecurityHelper.checkSecurityAndTerms(context, uid);
+      }
     });
   }
 
   // دالة المزامنة الذكية: تقرأ من الموبايل أولاً ثم تتأكد من السيرفر
   void _syncStatusInstantly() async {
-    // 1. جلب آخر حالة مسجلة محلياً (Zero Latency)
+    // جلب آخر حالة مسجلة محلياً لضمان سرعة الاستجابة (Zero Latency)
     String localStatus = await DriverApiService.getLocalStatus();
     if (mounted) {
       setState(() => _currentStatus = localStatus);
     }
 
-    // 2. التحقق من الحالة الفعلية في Firestore كنسخة احتياطية
+    // التحقق من الحالة الفعلية في Firestore كنسخة احتياطية
     try {
       var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (doc.exists && mounted) {
         String serverStatus = doc.data()?['currentStatus'] ?? 'offline';
-        // إذا اختلف السيرفر عن الموبايل، نحدث الشاشة
+        // تحديث الحالة فقط إذا كان هناك اختلاف حقيقي
         if (serverStatus != _currentStatus) {
           setState(() => _currentStatus = serverStatus);
+          // تحديث التخزين المحلي ليتطابق مع السيرفر
+          await DriverApiService.saveLocalStatus(serverStatus);
         }
       }
     } catch (e) {
@@ -65,37 +71,49 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   void _initListeners() {
     // الاستماع اللحظي لتغييرات الحالة (Online/Offline/Busy)
     DriverApiService.listenToStatus(uid, (status) {
-      if (mounted) setState(() => _currentStatus = status);
+      if (mounted && status != null && status != _currentStatus) {
+        setState(() => _currentStatus = status);
+        // حفظ الحالة محلياً عند كل تغيير قادم من السيرفر
+        DriverApiService.saveLocalStatus(status);
+      }
     });
+
     // الاستماع للطلبات النشطة (إدارة العهدة)
     DriverApiService.listenToActiveOrders(uid, (orderId, status) {
-      if (mounted) setState(() => _activeOrderId = orderId);
+      if (mounted) {
+        setState(() => _activeOrderId = orderId);
+      }
     });
   }
 
-  // دالة تغيير الحالة مع رسالة الإفصاح والتحقق اللوجستي
+  // دالة تغيير الحالة مع التحقق اللوجستي
   void _handleStatusChange(bool shouldBeOnline) async {
+    // منع التغيير إذا كان المندوب مشغولاً بعهدة (Busy)
+    if (_currentStatus == 'busy' && !shouldBeOnline) {
+      DriverSecurityHelper.showErrorSnackBar(context, "لا يمكن الإغلاق أثناء وجود عهدة نشطة (بضاعة في عهدتك)");
+      return;
+    }
+
     if (shouldBeOnline) {
-      // 1. طلب إذن الموقع مع رسالة الإفصاح القانونية
+      // طلب إذن الموقع مع رسالة الإفصاح القانونية لـ Google Play
       bool permissionGranted = await DriverSecurityHelper.requestLocationPermission(context);
       if (permissionGranted) {
+        setState(() => _currentStatus = 'online'); // تحديث بصري فوري
         await DriverApiService.updateStatus(uid, 'online');
-        DriverSecurityHelper.showOnlineHint(context); // حركة التأكيد البصرية
+        await DriverApiService.saveLocalStatus('online');
+        DriverSecurityHelper.showOnlineHint(context);
       }
     } else {
-      // منع الإغلاق إذا كان هناك عهدة (أمانات) قيد التوصيل
-      if (_currentStatus == 'busy') {
-        DriverSecurityHelper.showErrorSnackBar(context, "لا يمكن الإغلاق أثناء وجود عهدة نشطة");
-      } else {
-        await DriverApiService.updateStatus(uid, 'offline');
-      }
+      setState(() => _currentStatus = 'offline'); // تحديث بصري فوري
+      await DriverApiService.updateStatus(uid, 'offline');
+      await DriverApiService.saveLocalStatus('offline');
     }
   }
 
   // التحكم في التنقل (حماية الرادار)
   void _onStepTapped(int index) {
     if (index == 1 && (_currentStatus == 'offline')) {
-      DriverSecurityHelper.showErrorSnackBar(context, "يجب أن تكون 'متصل' أولاً لدخول الرادار");
+      DriverSecurityHelper.showErrorSnackBar(context, "يجب أن تكون 'متصل' أولاً لدخول الرادار واستقبال الطلبات");
       return;
     }
     setState(() => _selectedIndex = index);
@@ -113,7 +131,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   Widget _buildBody() {
-    // استخدام IndexedStack للحفاظ على حالة الصفحات أثناء التنقل
     return IndexedStack(
       index: _selectedIndex,
       children: [
