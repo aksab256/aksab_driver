@@ -13,24 +13,23 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  String _selectedRole = 'free_driver';
   
-  // متغيرات الحالة
-  String? _vehicleConfig; 
+  // الأدوار المحدثة لتشمل المشرف
+  String _selectedRole = 'free_driver';
+  String _vehicleConfig = 'motorcycleConfig';
+  
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _privacyAccepted = false;
 
-  // المتحكمات (Controllers)
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController(); 
-  final TextEditingController _referralController = TextEditingController(); 
+  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _referralController = TextEditingController();
 
-  // فتح سياسة الخصوصية
   Future<void> _launchPrivacyPolicy() async {
     final Uri url = Uri.parse('https://aksab.shop/');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
@@ -38,17 +37,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  // دالة التسجيل الرئيسية
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
     
-    // التأكد من تطابق كلمة المرور
     if (_passwordController.text != _confirmPasswordController.text) {
       _showMsg("❌ كلمات المرور غير متطابقة");
       return;
     }
 
-    // التأكد من الموافقة على الشروط
     if (!_privacyAccepted) {
       _showMsg("يجب الموافقة على سياسة الخصوصية أولاً");
       return;
@@ -57,49 +53,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // إنشاء بريد إلكتروني ذكي بناءً على الرقم
       String smartEmail = "${_phoneController.text.trim()}@aksabship.com";
 
-      // 1. إنشاء الحساب في Firebase Authentication
       UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: smartEmail,
         password: _passwordController.text,
       );
 
-      // تحديد اسم المجموعة بناءً على الدور
       String collectionName = _getCollectionName(_selectedRole);
       
-      // 2. تجهيز مستند البيانات (Document)
       Map<String, dynamic> userData = {
         'fullname': _nameController.text.trim(),
         'email': smartEmail,
         'phone': _phoneController.text.trim(),
         'address': _addressController.text.trim(),
         'role': _selectedRole,
-        'status': 'pending', // الحالة الافتراضية للمراجعة
+        'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
         'uid': userCredential.user!.uid,
       };
 
-      // إضافة تفاصيل المندوب الحر ونظام الإحالة
       if (_selectedRole == 'free_driver') {
         userData['vehicleConfig'] = _vehicleConfig;
-        
-        // نظام الإحالة المزدوج
-        userData['referredBy'] = _referralController.text.trim(); // الكود الذي أدخله المندوب (من زميله)
-        userData['myReferralCode'] = ""; // سيتم توليده عند التفعيل من لوحة الإدارة
-        
-        // البيانات اللوجستية والمالية
+        userData['referredBy'] = _referralController.text.trim();
+        userData['myReferralCode'] = "";
         userData['walletBalance'] = 0.0;
         userData['insurance_points'] = 0.0;
-        userData['totalReferralsCount'] = 0; // عداد الأشخاص الذين سجلوا بكوده لاحقاً
+        userData['totalReferralsCount'] = 0;
+      } else {
+        userData['vehicleConfig'] = 'none';
       }
 
-      // 3. حفظ البيانات في Firestore
-      await FirebaseFirestore.instance
-          .collection(collectionName)
-          .doc(userCredential.user!.uid)
-          .set(userData);
+      await FirebaseFirestore.instance.collection(collectionName).doc(userCredential.user!.uid).set(userData);
 
       _showSuccessDialog();
     } on FirebaseAuthException catch (e) {
@@ -113,11 +98,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  // منطق توزيع الأدوار على الـ Collections في Firebase
   String _getCollectionName(String role) {
     switch (role) {
-      case 'free_driver': return 'pendingFreeDrivers';
-      case 'delivery_rep': return 'pendingReps';
-      default: return 'pendingManagers';
+      case 'free_driver': 
+        return 'pendingFreeDrivers';
+      case 'delivery_rep': 
+        return 'pendingReps';
+      case 'delivery_supervisor': // إضافة المشرف لمجموعة الإدارة أو مجموعة خاصة
+        return 'pendingManagers'; 
+      case 'delivery_manager': 
+        return 'pendingManagers';
+      default: 
+        return 'pendingManagers';
     }
   }
 
@@ -129,7 +122,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ? const Center(child: CircularProgressIndicator(color: Colors.orange))
           : Stack(
               children: [
-                // خلفية الهيدر المتدرجة
                 Container(
                   height: 28.h,
                   decoration: BoxDecoration(
@@ -157,9 +149,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           SizedBox(height: 4.h),
                           _buildRoleSelection(),
                           
-                          // حقول إضافية للمندوب الحر فقط
                           if (_selectedRole == 'free_driver') ...[
-                            SizedBox(height: 2.h),
                             _buildVehiclePicker(),
                             SizedBox(height: 2.h),
                             _buildReferralField(),
@@ -195,7 +185,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           shape: BoxShape.circle,
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, spreadRadius: 5)],
         ),
-        child: Icon(Icons.delivery_dining_rounded, size: 50.sp, color: Colors.orange[900]),
+        child: Icon(Icons.delivery_dining_rounded, size: 55.sp, color: Colors.orange[900]),
       ),
     );
   }
@@ -203,10 +193,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget _buildHeaderCard() {
     return Column(
       children: [
-        Text("انضم لعائلة أكسب", 
-          style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Cairo')),
-        Text("سجل بياناتك للبدء في إدارة العهدة", 
-          style: TextStyle(fontSize: 13.sp, color: Colors.white.withOpacity(0.9), fontFamily: 'Cairo')),
+        Text("انضم لعائلة أكسب", style: TextStyle(fontSize: 25.sp, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Cairo')),
+        Text("سجل بياناتك للبدء في إدارة العهدة", style: TextStyle(fontSize: 13.sp, color: Colors.white.withOpacity(0.9), fontFamily: 'Cairo')),
       ],
     );
   }
@@ -237,11 +225,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       children: [
         Padding(
           padding: EdgeInsets.only(right: 2.w, bottom: 1.5.h),
-          child: Text("نوع الحساب المستهدف", 
-            style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.orange[900])),
+          child: Text("حدد نوع الانضمام", style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.orange[900])),
         ),
         _roleCard("مندوب حر (صاحب مركبة)", "free_driver", Icons.moped_rounded),
-        _roleCard("مندوب تحصيل (موظف)", "delivery_rep", Icons.badge_outlined),
+        _roleCard("مندوب تحصيل (موظف شركة)", "delivery_rep", Icons.business_center_outlined),
+        _roleCard("مشرف ميداني (Supervisor)", "delivery_supervisor", Icons.supervised_user_circle_outlined),
+        _roleCard("مدير نظام (Manager)", "delivery_manager", Icons.admin_panel_settings_outlined),
       ],
     );
   }
@@ -253,7 +242,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         margin: EdgeInsets.only(bottom: 1.5.h),
-        padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
+        padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.2.h),
         decoration: BoxDecoration(
           color: isSelected ? Colors.orange[50] : Colors.white,
           borderRadius: BorderRadius.circular(25),
@@ -261,12 +250,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         child: Row(
           children: [
-            Icon(icon, color: isSelected ? Colors.orange[900] : Colors.grey, size: 22.sp),
+            Icon(icon, color: isSelected ? Colors.orange[900] : Colors.grey, size: 24.sp),
             SizedBox(width: 4.w),
-            Text(title, 
-              style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13.sp)),
+            Text(title, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 14.sp)),
             const Spacer(),
-            if (isSelected) Icon(Icons.check_circle, color: Colors.orange[900], size: 25),
+            if (isSelected) Icon(Icons.check_circle, color: Colors.orange[900], size: 28),
           ],
         ),
       ),
@@ -275,46 +263,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Widget _buildVehiclePicker() {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.h),
-      decoration: BoxDecoration(
-        color: Colors.white, 
-        borderRadius: BorderRadius.circular(25), 
-        border: Border.all(color: Colors.grey[300]!, width: 1.5)
-      ),
+      padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.2.h),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25), border: Border.all(color: Colors.grey[300]!, width: 1.5)),
       child: DropdownButtonFormField<String>(
         value: _vehicleConfig,
-        hint: Text("اختر نوع المركبة (إجباري)", 
-          style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, fontWeight: FontWeight.bold)),
-        style: TextStyle(fontFamily: 'Cairo', color: Colors.black, fontSize: 14.sp, fontWeight: FontWeight.bold),
+        hint: Text("نوع المركبة", style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, fontWeight: FontWeight.bold)),
+        style: TextStyle(fontFamily: 'Cairo', color: Colors.black, fontSize: 15.sp, fontWeight: FontWeight.bold),
         decoration: const InputDecoration(border: InputBorder.none),
         items: const [
           DropdownMenuItem(value: 'motorcycleConfig', child: Text("موتوسيكل")),
           DropdownMenuItem(value: 'pickupConfig', child: Text("ربع نقل")),
           DropdownMenuItem(value: 'jumboConfig', child: Text("جامبو / نقل ثقيل")),
         ],
-        onChanged: (val) => setState(() => _vehicleConfig = val),
-        validator: (v) => v == null ? "يجب تحديد نوع المركبة" : null,
+        onChanged: (val) => setState(() => _vehicleConfig = val!),
       ),
     );
   }
 
   Widget _buildReferralField() {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 0.5.h),
-      decoration: BoxDecoration(
-        color: Colors.white, 
-        borderRadius: BorderRadius.circular(25), 
-        border: Border.all(color: Colors.green[200]!, width: 1.5)
-      ),
+      margin: EdgeInsets.only(top: 2.h),
+      padding: EdgeInsets.symmetric(horizontal: 5.w),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25), border: Border.all(color: Colors.green[200]!, width: 1.5)),
       child: TextFormField(
         controller: _referralController,
         keyboardType: TextInputType.phone,
-        style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, fontWeight: FontWeight.bold),
+        style: TextStyle(fontFamily: 'Cairo', fontSize: 15.sp, fontWeight: FontWeight.bold),
         decoration: InputDecoration(
           labelText: "كود الإحالة (اختياري)",
-          labelStyle: TextStyle(color: Colors.green[700], fontSize: 12.sp),
-          hintText: "كود الزميل الذي دعاك",
-          hintStyle: TextStyle(fontSize: 11.sp),
+          labelStyle: TextStyle(color: Colors.green[700], fontSize: 13.sp),
           border: InputBorder.none,
           prefixIcon: const Icon(Icons.card_giftcard, color: Colors.green),
         ),
@@ -329,10 +306,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       activeColor: Colors.orange[900],
       title: InkWell(
         onTap: _launchPrivacyPolicy,
-        child: Text(
-          "أوافق على سياسة الخصوصية وشروط العمل في أكسب",
-          style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, decoration: TextDecoration.underline, fontWeight: FontWeight.bold),
-        ),
+        child: Text("أوافق على سياسة الخصوصية وشروط العمل", style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, decoration: TextDecoration.underline, fontWeight: FontWeight.bold)),
       ),
       controlAffinity: ListTileControlAffinity.leading,
     );
@@ -342,31 +316,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
         backgroundColor: _privacyAccepted ? Colors.black87 : Colors.grey,
-        minimumSize: Size(100.w, 8.h),
+        minimumSize: Size(100.w, 8.5.h),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-        elevation: 5,
+        elevation: 10,
       ),
       onPressed: _handleRegister,
-      child: Text("إرسال طلب الانضمام", 
-        style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+      child: Text("إرسال طلب الانضمام", style: TextStyle(color: Colors.white, fontSize: 17.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
     );
   }
 
   Widget _buildField(TextEditingController ctrl, String label, IconData icon, {bool isPass = false, int passType = 0, TextInputType type = TextInputType.text}) {
     bool obscure = passType == 1 ? _obscurePassword : _obscureConfirmPassword;
-    
     return Padding(
-      padding: EdgeInsets.only(bottom: 1.5.h),
+      padding: EdgeInsets.only(bottom: 2.h),
       child: TextFormField(
         controller: ctrl,
         obscureText: isPass ? obscure : false,
         keyboardType: type,
         textAlign: TextAlign.right,
-        style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+        style: TextStyle(fontSize: 15.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(fontSize: 12.sp, color: Colors.grey[700]),
-          prefixIcon: Icon(icon, color: Colors.orange[900], size: 22.sp),
+          labelStyle: TextStyle(fontSize: 13.sp, color: Colors.grey[700]),
+          prefixIcon: Icon(icon, color: Colors.orange[900], size: 24.sp),
           suffixIcon: isPass ? IconButton(
             icon: Icon(obscure ? Icons.visibility_off : Icons.visibility), 
             onPressed: () => setState(() {
@@ -375,16 +347,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
             })
           ) : null,
           border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey[300]!)),
-          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey[300]!)),
           focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.orange[900]!, width: 2)),
         ),
-        validator: (v) => v!.isEmpty ? "هذا الحقل مطلوب" : null,
+        validator: (v) => v!.isEmpty ? "مطلوب" : null,
       ),
     );
   }
 
-  void _showMsg(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(m, textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp))));
+  void _showMsg(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m, textAlign: TextAlign.right, style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp))));
 
   void _showSuccessDialog() {
     showDialog(
@@ -395,28 +365,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check_circle_outline, color: Colors.green, size: 85),
+            const Icon(Icons.check_circle_outline, color: Colors.green, size: 90),
             SizedBox(height: 2.h),
-            Text("طلبك قيد المراجعة", 
-              style: TextStyle(fontFamily: 'Cairo', fontSize: 18.sp, fontWeight: FontWeight.bold)),
+            Text("طلبك قيد المراجعة", style: TextStyle(fontFamily: 'Cairo', fontSize: 20.sp, fontWeight: FontWeight.bold)),
             SizedBox(height: 1.h),
-            Text("سيتم مراجعة بياناتك وتفعيل حسابك خلال 24 ساعة كحد أقصى.", 
-              textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, color: Colors.grey[700])),
+            Text("سيتم تفعيل حسابك كـ ${_selectedRole == 'delivery_supervisor' ? 'مشرف' : 'شريك'} خلال 24 ساعة.", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.grey[700])),
             SizedBox(height: 4.h),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange[900], 
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  padding: EdgeInsets.symmetric(vertical: 1.5.h)
-                ),
-                onPressed: () { 
-                  Navigator.pop(context); // غلق الديالوج
-                  Navigator.pop(context); // العودة للشاشة السابقة (Login)
-                },
-                child: Text("فهمت ذلك", 
-                  style: TextStyle(color: Colors.white, fontFamily: 'Cairo', fontSize: 14.sp, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), padding: EdgeInsets.symmetric(vertical: 2.h)),
+                onPressed: () { Navigator.pop(context); Navigator.pop(context); },
+                child: Text("تم", style: TextStyle(color: Colors.white, fontFamily: 'Cairo', fontSize: 15.sp, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
