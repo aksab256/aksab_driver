@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
+import 'package:flutter/services.dart'; // للنسخ إلى الحافظة
+import 'package:share_plus/share_plus.dart'; // للمشاركة عبر الواتساب وغيره
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -36,16 +38,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ) ?? false;
 
     if (confirm && _uid != null) {
-      // تنفيذ الحذف الناعم في Firestore
       await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
-        'status': 'deleted_by_user', // تغيير الحالة بدلاً من حذف المستند
+        'status': 'deleted_by_user',
         'lastSeen': FieldValue.serverTimestamp(),
       });
       
-      // تسجيل الخروج والعودة للبداية
       await FirebaseAuth.instance.signOut();
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     }
+  }
+
+  // دالة مشاركة الكود
+  void _shareReferralCode(String code) {
+    String message = """
+انضم إليّ في فريق مناديب أكسب! 🚚
+استخدم كود الإحالة الخاص بي: ($code) عند التسجيل وابدأ في إدارة عهدتك وزيادة أرباحك.
+حمل التطبيق الآن من هنا: https://aksab.shop/
+    """;
+    Share.share(message);
+  }
+
+  // دالة نسخ الكود
+  void _copyToClipboard(String code) {
+    Clipboard.setData(ClipboardData(text: code));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("تم نسخ كود الإحالة بنجاح ✅", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo')),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
@@ -54,7 +76,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new),
-          onPressed: () => Navigator.pop(context), // رجوع خطوة واحدة فقط
+          onPressed: () => Navigator.pop(context),
         ),
         title: const Text("حسابي الشخصي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
         centerTitle: true,
@@ -63,21 +85,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
         stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snapshot.data!.exists) return const Center(child: Text("المستند غير موجود"));
+          
           var data = snapshot.data!.data() as Map<String, dynamic>;
+          String myCode = data['myReferralCode'] ?? "سيظهر قريباً";
 
           return SingleChildScrollView(
             padding: EdgeInsets.all(15.sp),
             child: Column(
               children: [
+                // كارت دعوة الأصدقاء (Referral Card) الجديد
+                _buildReferralCard(myCode),
+                
+                SizedBox(height: 15.sp),
+
                 // كارت المعلومات المالية (الرصيد والعهد)
                 _buildInfoCard(
-                  title: "الوضع المالي",
+                  title: "الوضع اللوجستي (العهدة)",
                   icon: Icons.account_balance_wallet,
                   color: Colors.green[700]!,
                   children: [
-                    _buildDataRow("رصيد المحفظة", "${data['walletBalance'] ?? 0} ج.م"),
-                    _buildDataRow("حد الائتمان", "${data['creditLimit'] ?? 0} ج.م"),
-                    _buildDataRow("الطلبات المكتملة", "${data['totalOrders'] ?? 0}"),
+                    _buildDataRow("نقاط التأمين (الرصيد)", "${data['walletBalance'] ?? 0}"),
+                    _buildDataRow("حد الأمان للعهدة", "${data['creditLimit'] ?? 0}"),
+                    _buildDataRow("إجمالي الإحالات الناجحة", "${data['totalReferralsCount'] ?? 0}"),
                   ],
                 ),
 
@@ -113,7 +143,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ويدجت لبناء الكروت بشكل موحد
+  // ويدجت كارت دعوة الأصدقاء
+  Widget _buildReferralCard(String code) {
+    return Container(
+      padding: EdgeInsets.all(15.sp),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [Colors.orange[800]!, Colors.orange[600]!]),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.orange.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.stars, color: Colors.white),
+              SizedBox(width: 8.sp),
+              Text("أدعو زميلك واكسب نقاط أمان", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 12.sp, color: Colors.white)),
+            ],
+          ),
+          const Divider(color: Colors.white24),
+          SizedBox(height: 5.sp),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 15.sp, vertical: 10.sp),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(code, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.orange[900])),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.copy, color: Colors.grey),
+                      onPressed: () => _copyToClipboard(code),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.share, color: Colors.green),
+                      onPressed: () => _shareReferralCode(code),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 10.sp),
+          const Text("شارك الكود مع زملائك المناديب الجدد للحصول على مكافأة عند أول طلب ناجح لهم.", 
+            textAlign: TextAlign.center, 
+            style: TextStyle(color: Colors.white, fontSize: 9, fontFamily: 'Cairo')
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInfoCard({required String title, required IconData icon, required Color color, required List<Widget> children}) {
     return Container(
       padding: EdgeInsets.all(15.sp),
