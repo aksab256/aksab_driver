@@ -13,11 +13,11 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  
+
   // الأدوار المحدثة لتشمل المشرف والمدير في نفس المسار الإداري
   String _selectedRole = 'free_driver';
   String _vehicleConfig = 'motorcycleConfig';
-  
+
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
@@ -39,7 +39,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     // التحقق من تطابق كلمة المرور
     if (_passwordController.text != _confirmPasswordController.text) {
       _showMsg("❌ كلمات المرور غير متطابقة");
@@ -54,6 +54,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // --- المنطق الذكي لجلب الحملة النشطة من اللوحة الأم ---
+      String currentActiveCampaignId = 'default_launch';
+      try {
+        DocumentSnapshot campaignConfig = await FirebaseFirestore.instance
+            .collection('appSettings')
+            .doc('referralConfig')
+            .get();
+
+        if (campaignConfig.exists) {
+          currentActiveCampaignId = campaignConfig.get('activeCampaignId') ?? 'default_launch';
+        }
+      } catch (e) {
+        print("Error fetching active campaign: $e");
+      }
+      // --------------------------------------------------
+
       // إنشاء البريد الإلكتروني الخاص بالمنظومة
       String smartEmail = "${_phoneController.text.trim()}@aksabship.com";
 
@@ -65,7 +81,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       // 2. تحديد المجموعة بناءً على الدور (المدير والمشرف يروحوا pendingManagers)
       String collectionName = _getCollectionName(_selectedRole);
-      
+
       Map<String, dynamic> userData = {
         'fullname': _nameController.text.trim(),
         'email': smartEmail,
@@ -75,6 +91,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
         'uid': userCredential.user!.uid,
+        'appliedCampaignId': currentActiveCampaignId, // ربط المندوب بالحملة النشطة فوراً
       };
 
       // تخصيص بيانات المندوب الحر ونظام الإحالة
@@ -82,9 +99,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         userData['vehicleConfig'] = _vehicleConfig;
         userData['referredBy'] = _referralController.text.trim(); // كود الشخص الذي دعاه
         userData['myReferralCode'] = ""; // يترك فارغاً للتوليد عند التفعيل
-        userData['walletBalance'] = 0.0;
-        userData['insurance_points'] = 0.0; // نقاط التأمين (لوجستي)
+        userData['walletBalance'] = 0.0; // كاش
+        userData['insurance_points'] = 0.0; // نقاط التأمين (كريدت - لوجستي)
         userData['totalReferralsCount'] = 0;
+        userData['rewardMilestonesReached'] = []; // مصفوفة لتتبع الأهداف المدفوعة لاحقاً
       } else {
         userData['vehicleConfig'] = 'none';
       }
@@ -107,14 +125,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // توزيع الأدوار على المجموعات (Collections)
   String _getCollectionName(String role) {
     switch (role) {
-      case 'free_driver': 
+      case 'free_driver':
         return 'pendingFreeDrivers';
-      case 'delivery_rep': 
+      case 'delivery_rep':
         return 'pendingReps';
-      case 'delivery_supervisor': 
-      case 'delivery_manager': 
+      case 'delivery_supervisor':
+      case 'delivery_manager':
         return 'pendingManagers'; // كلاهما في نفس المجموعة الإدارية
-      default: 
+      default:
         return 'pendingManagers';
     }
   }
@@ -154,14 +172,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           _buildInputSection(),
                           SizedBox(height: 4.h),
                           _buildRoleSelection(),
-                          
                           // حقول المندوب الحر
                           if (_selectedRole == 'free_driver') ...[
                             _buildVehiclePicker(),
                             SizedBox(height: 2.h),
                             _buildReferralField(),
                           ],
-                          
                           SizedBox(height: 3.h),
                           _buildPrivacyCheckbox(),
                           SizedBox(height: 2.h),
@@ -347,12 +363,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
           labelStyle: TextStyle(fontSize: 13.sp, color: Colors.grey[700]),
           prefixIcon: Icon(icon, color: Colors.orange[900], size: 24.sp),
           suffixIcon: isPass ? IconButton(
-            icon: Icon(obscure ? Icons.visibility_off : Icons.visibility), 
-            onPressed: () => setState(() {
-              if (passType == 1) _obscurePassword = !_obscurePassword;
-              else _obscureConfirmPassword = !_obscureConfirmPassword;
-            })
-          ) : null,
+              icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
+              onPressed: () => setState(() {
+                if (passType == 1) _obscurePassword = !_obscurePassword;
+                else _obscureConfirmPassword = !_obscureConfirmPassword;
+              })) : null,
           border: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey[300]!)),
           focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.orange[900]!, width: 2)),
         ),
@@ -382,7 +397,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[900], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), padding: EdgeInsets.symmetric(vertical: 2.h)),
-                onPressed: () { Navigator.pop(context); Navigator.pop(context); },
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
                 child: Text("تم", style: TextStyle(color: Colors.white, fontFamily: 'Cairo', fontSize: 15.sp, fontWeight: FontWeight.bold)),
               ),
             ),
@@ -392,3 +410,4 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 }
+

@@ -18,31 +18,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // دالة الحذف الناعم (Soft Delete)
   Future<void> _handleSoftDelete() async {
     bool confirm = await showDialog(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text("تأكيد حذف الحساب ⚠️", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.red)),
-          content: const Text("هل أنت متأكد من حذف حسابك نهائياً؟ سيتم إيقاف الخدمة وفقدان جميع بياناتك الحالية."),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("تراجع", style: TextStyle(fontFamily: 'Cairo'))),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text("تأكيد الحذف", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+          context: context,
+          builder: (ctx) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text("تأكيد حذف الحساب ⚠️", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, color: Colors.red)),
+              content: const Text("هل أنت متأكد من حذف حسابك نهائياً؟ سيتم إيقاف الخدمة وفقدان جميع بياناتك الحالية."),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("تراجع", style: TextStyle(fontFamily: 'Cairo'))),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text("تأكيد الحذف", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    ) ?? false;
+          ),
+        ) ??
+        false;
 
     if (confirm && _uid != null) {
       await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({
         'status': 'deleted_by_user',
         'lastSeen': FieldValue.serverTimestamp(),
       });
-      
+
       await FirebaseAuth.instance.signOut();
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     }
@@ -86,7 +87,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           if (!snapshot.data!.exists) return const Center(child: Text("المستند غير موجود"));
-          
+
           var data = snapshot.data!.data() as Map<String, dynamic>;
           String myCode = data['myReferralCode'] ?? "سيظهر قريباً";
 
@@ -94,9 +95,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             padding: EdgeInsets.all(15.sp),
             child: Column(
               children: [
-                // كارت دعوة الأصدقاء (Referral Card) الجديد
+                // كارت دعوة الأصدقاء (Referral Card) الجديد مع عرض الحملة
                 _buildReferralCard(myCode),
-                
+
                 SizedBox(height: 15.sp),
 
                 // كارت المعلومات المالية (الرصيد والعهد)
@@ -143,55 +144,92 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ويدجت كارت دعوة الأصدقاء
+  // ويدجت كارت دعوة الأصدقاء - معدل لعرض الحملة النشطة
   Widget _buildReferralCard(String code) {
-    return Container(
-      padding: EdgeInsets.all(15.sp),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [Colors.orange[800]!, Colors.orange[600]!]),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.orange.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.stars, color: Colors.white),
-              SizedBox(width: 8.sp),
-              Text("أدعو زميلك واكسب نقاط أمان", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 12.sp, color: Colors.white)),
-            ],
+    return StreamBuilder<DocumentSnapshot>(
+      // نجلب معرف الحملة النشطة أولاً
+      stream: FirebaseFirestore.instance.collection('appSettings').doc('referralConfig').snapshots(),
+      builder: (context, configSnap) {
+        String activeId = "default_launch";
+        if (configSnap.hasData && configSnap.data!.exists) {
+          activeId = configSnap.data!.get('activeCampaignId') ?? "default_launch";
+        }
+
+        return Container(
+          padding: EdgeInsets.all(15.sp),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [Colors.orange[900]!, Colors.orange[700]!]),
+            borderRadius: BorderRadius.circular(25),
+            boxShadow: [BoxShadow(color: Colors.orange.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
           ),
-          const Divider(color: Colors.white24),
-          SizedBox(height: 5.sp),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 15.sp, vertical: 10.sp),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(code, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.orange[900])),
-                Row(
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.stars, color: Colors.white),
+                  SizedBox(width: 8.sp),
+                  Text("برنامج مكافآت أكسب", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.white)),
+                ],
+              ),
+              const Divider(color: Colors.white24),
+              SizedBox(height: 8.sp),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.copy, color: Colors.grey),
-                      onPressed: () => _copyToClipboard(code),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.share, color: Colors.green),
-                      onPressed: () => _shareReferralCode(code),
+                    Text(code, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, letterSpacing: 2, color: Colors.orange[900])),
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.copy, color: Colors.grey),
+                          onPressed: () => _copyToClipboard(code),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.share, color: Colors.green),
+                          onPressed: () => _shareReferralCode(code),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              SizedBox(height: 12.sp),
+              
+              // --- عرض تفاصيل الحملة النشطة بشكل ملفت ---
+              StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance.collection('referralCampaigns').doc(activeId).snapshots(),
+                builder: (context, campSnap) {
+                  if (!campSnap.hasData || !campSnap.data!.exists) {
+                    return const Text("شارك الكود مع زملائك الجدد واكسب نقاط أمان فورية.", 
+                      textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'Cairo'));
+                  }
+                  
+                  var camp = campSnap.data!.data() as Map<String, dynamic>;
+                  var milestones = camp['milestones'] as Map<String, dynamic>? ?? {};
+
+                  return Container(
+                    padding: EdgeInsets.all(10.sp),
+                    decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(15)),
+                    child: Column(
+                      children: [
+                        Text("مكافآت الحملة الحالية 🎁", style: TextStyle(color: Colors.yellowAccent, fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 10.sp)),
+                        SizedBox(height: 5.sp),
+                        ...milestones.entries.map((e) {
+                          String num = e.key.split('_').last;
+                          return Text("• أوردر رقم $num: مكافأة ${e.value} ج.م", 
+                            style: const TextStyle(color: Colors.white, fontSize: 10, fontFamily: 'Cairo'));
+                        }).toList(),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
-          SizedBox(height: 10.sp),
-          const Text("شارك الكود مع زملائك المناديب الجدد للحصول على مكافأة عند أول طلب ناجح لهم.", 
-            textAlign: TextAlign.center, 
-            style: TextStyle(color: Colors.white, fontSize: 9, fontFamily: 'Cairo')
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -234,10 +272,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   String _getVehicleName(String? config) {
     switch (config) {
-      case 'motorcycleConfig': return "موتوسيكل";
-      case 'pickupConfig': return "بيك أب (دبابة)";
-      case 'jumboConfig': return "جامبو / نقل";
-      default: return "مركبة توصيل";
+      case 'motorcycleConfig':
+        return "موتوسيكل";
+      case 'pickupConfig':
+        return "بيك أب (دبابة)";
+      case 'jumboConfig':
+        return "جامبو / نقل";
+      default:
+        return "مركبة توصيل";
     }
   }
 }
+
