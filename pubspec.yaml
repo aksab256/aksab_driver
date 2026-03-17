@@ -13,40 +13,42 @@ dependencies:
     sdk: flutter
 
   # Core & Firebase
-  firebase_core: ^3.10.1
-  firebase_auth: ^5.4.1
-  cloud_firestore: ^5.6.3
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.7.0
+  cloud_firestore: ^5.6.12
   firebase_messaging: ^15.2.1
   firebase_crashlytics: ^4.3.1
 
   # UI & Design
-  sizer: ^3.0.1
+  sizer: ^3.1.3
   font_awesome_flutter: ^10.8.0
-  geolocator: ^13.0.2
-  geocoding: ^3.0.0
-  flutter_map: ^7.0.2
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
+  flutter_map: ^8.2.2
   latlong2: ^0.9.1
-  url_launcher: ^6.3.1
+  url_launcher: ^6.3.2
 
   # Background Services & Notifications
-  flutter_background_service: ^5.0.10
+  flutter_background_service: ^5.1.0
   flutter_background_service_android: ^6.3.1
   flutter_local_notifications: ^17.2.3
 
   # Utilities & State Management
   provider: ^6.1.2
-  shared_preferences: ^2.3.5
-  permission_handler: ^11.3.1
+  shared_preferences: ^2.5.4
+  permission_handler: ^12.0.1
   app_settings: ^6.1.1
   share_plus: ^10.1.4
   path_provider: ^2.1.5
-  http: ^1.2.2
+  http: ^1.6.0
   fl_chart: ^0.69.2
   lucide_icons: ^0.257.0
   pdf: ^3.11.3
   printing: ^5.14.2
   intl: ^0.20.2
   connectivity_plus: ^7.0.0
+  image_picker: ^1.2.1
+  facebook_app_events: ^0.26.0
   
   # Printing & PDF (الإصدارات دي هي الأكثر استقراراً مع بعض)
 
