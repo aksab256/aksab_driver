@@ -477,40 +477,73 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   }
 
   Widget _buildMap() {
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        var data = snapshot.data!.data() as Map<String, dynamic>;
-        String status = data['status'];
-        GeoPoint pickup = data['pickupLocation'];
-        GeoPoint dropoff = data['dropoffLocation'];
+  return StreamBuilder<DocumentSnapshot>(
+    stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
+    builder: (context, snapshot) {
+      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+      var data = snapshot.data!.data() as Map<String, dynamic>;
+      String status = data['status'];
+      GeoPoint pickup = data['pickupLocation'];
+      GeoPoint dropoff = data['dropoffLocation'];
 
-        return FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: _currentLocation ?? LatLng(pickup.latitude, pickup.longitude),
-            initialZoom: 15,
-            interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+      return FlutterMap(
+        mapController: _mapController,
+        options: MapOptions(
+          // الإصدار 8 يستخدم initialCenter و initialZoom مباشرة هنا
+          initialCenter: _currentLocation ?? LatLng(pickup.latitude, pickup.longitude),
+          initialZoom: 15,
+          // منع التدوير لزيادة السرعة وتقليل عمليات الرندر
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
           ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=$_mapboxToken',
-              additionalOptions: {'accessToken': _mapboxToken},
-              tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 300)),
-              keepBuffer: 6,
+        ),
+        children: [
+          TileLayer(
+            // استخدام الـ 2x tiles والـ fadeIn يجعل البلاطات "تطير" فعلياً
+            urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=$_mapboxToken',
+            additionalOptions: {'accessToken': _mapboxToken},
+            tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 300)),
+            keepBuffer: 6, // سحب البلاطات المجاورة مسبقاً
+          ),
+          if (_routePoints.isNotEmpty)
+            PolylineLayer(
+              polylines: [
+                Polyline(
+                  points: _routePoints,
+                  color: Colors.blueAccent.withOpacity(0.8),
+                  strokeWidth: 6,
+                )
+              ],
             ),
-            if (_routePoints.isNotEmpty) PolylineLayer(polylines: [Polyline(points: _routePoints, color: Colors.blueAccent, strokeWidth: 6, isPolylineBlur: true)]),
-            MarkerLayer(markers: [
-              if (_currentLocation != null) Marker(point: _currentLocation!, width: 40, height: 40, child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 28.sp)),
-              Marker(point: LatLng(pickup.latitude, pickup.longitude), width: 40, height: 40, child: Icon(Icons.location_on, color: status.contains('returning') ? Colors.red : Colors.orange[900], size: 22.sp)),
-              Marker(point: LatLng(dropoff.latitude, dropoff.longitude), width: 40, height: 40, child: Icon(Icons.person_pin_circle, color: Colors.black, size: 22.sp)),
-            ]),
-          ],
-        );
-      },
-    );
-  }
+          MarkerLayer(
+            markers: [
+              if (_currentLocation != null)
+                Marker(
+                  point: _currentLocation!,
+                  width: 45,
+                  height: 45,
+                  child: Icon(Icons.delivery_dining, color: Colors.blue[900], size: 28.sp),
+                ),
+              Marker(
+                point: LatLng(pickup.latitude, pickup.longitude),
+                width: 40,
+                height: 40,
+                child: Icon(Icons.location_on, color: status.contains('returning') ? Colors.red : Colors.orange[900], size: 22.sp),
+              ),
+              Marker(
+                point: LatLng(dropoff.latitude, dropoff.longitude),
+                width: 40,
+                height: 40,
+                child: Icon(Icons.person_pin_circle, color: Colors.black, size: 22.sp),
+              ),
+            ],
+          ),
+        ],
+      );
+    },
+  );
+}
+
 
   Widget _mainButton(String label, Color color, VoidCallback onTap) => SizedBox(width: double.infinity, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: color, padding: EdgeInsets.symmetric(vertical: 2.2.h), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))), onPressed: onTap, child: Text(label, style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))));
 
@@ -566,4 +599,3 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     );
   }
 }
-
