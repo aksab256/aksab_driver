@@ -12,7 +12,6 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
-    // ✅ نكتفي بالتعريف فقط لأن الإصدار محدد في الملف الخارجي (settings.gradle.kts)
     id("com.google.gms.google-services")
     id("com.google.firebase.crashlytics")
 }
@@ -39,9 +38,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    // ✅ التعديل الجديد والمطلوب لنسخة كوتلن 2.3.10 في تطبيق أكسب
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
+    // ✅ الحل "الجوكر" لـ أكسب: استخدام الطريقة التقليدية مع String صريح
+    kotlinOptions {
+        (this as org.jetbrains.kotlin.gradle.tasks.KotlinCompile).kotlinOptions {
+            jvmTarget = "1.8"
+        }
     }
 
     defaultConfig {
