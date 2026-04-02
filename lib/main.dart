@@ -32,7 +32,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
 }
 
-// ✅ تهيئة خدمة الخلفية (إدارة العهدة وتتبع الموقع)
+// ✅ تهيئة خدمة الخلفية (إدارة العهدة وتتبع الموقع) باسم أكسب
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
   await service.configure(
@@ -41,7 +41,7 @@ Future<void> initializeService() async {
       autoStart: false,
       isForegroundMode: true,
       notificationChannelId: 'high_importance_channel',
-      initialNotificationTitle: 'رابية أحلى: إدارة العهدة نشطة 🛡️',
+      initialNotificationTitle: 'أسواق أكسب: إدارة العهدة نشطة 🛡️',
       initialNotificationContent: 'جاري مراقبة المسار لضمان أمان النقل...',
       foregroundServiceNotificationId: 888,
     ),
@@ -58,11 +58,10 @@ Future<bool> onIosBackground(ServiceInstance service) async {
   return true;
 }
 
-// ✅ دالة البداية لخدمة الخلفية (يتم تنفيذها في معزل عن الواجهة)
+// ✅ دالة البداية لخدمة الخلفية
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
-  // هنا يتم استدعاء منطق تتبع الموقع أو تحديثات السيرفر
 }
 
 void main() async {
@@ -79,7 +78,7 @@ void main() async {
     return true;
   };
 
-  // ✅ إعداد الإشعارات المحلية (تم تصحيح الـ initialize للإصدار الجديد)
+  // ✅ إعداد الإشعارات المحلية
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   
   const AndroidInitializationSettings initializationSettingsAndroid =
@@ -88,18 +87,15 @@ void main() async {
   const InitializationSettings initializationSettings =
       InitializationSettings(android: initializationSettingsAndroid);
 
-  // تصحيح: استدعاء الدالة بدون positional arguments لضمان نجاح الـ Build
-  // ✅ التعديل المتوافق مع النسخة الحديثة 2026 لنجاح الـ Build
-await flutterLocalNotificationsPlugin.initialize(
-  initializationSettings, // تأكد إنك كاتبها كدة بالظبط
-  onDidReceiveNotificationResponse: (NotificationResponse details) {
-    // الأكشن عند الضغط على الإشعار
-  },
-);
+  // ✅ الحل النهائي لخطأ (Too many positional arguments) في نسخة 2026
+  await flutterLocalNotificationsPlugin.initialize(
+    initializationSettings,
+    onDidReceiveNotificationResponse: (NotificationResponse details) {
+      // منطق التعامل مع الضغط على الإشعار
+    },
+  );
 
-
-
-  // ✅ القناة الثابتة المتوافقة مع EC2
+  // ✅ القناة الثابتة المتوافقة مع EC2 في أكسب
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'high_importance_channel',
     'إشعارات هامة',
@@ -115,7 +111,7 @@ await flutterLocalNotificationsPlugin.initialize(
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // إيقاف الخدمة عند بداية التشغيل لضمان عدم وجود تكرار
+  // إيقاف الخدمة عند بداية التشغيل لضمان النظافة
   try {
     FlutterBackgroundService().invoke("stopService");
   } catch (e) {}
@@ -133,7 +129,7 @@ class AksabDriverApp extends StatelessWidget {
       builder: (context, orientation, deviceType) {
         return MaterialApp(
           navigatorKey: navigatorKey,
-          title: 'رابية أحلى - كابتن',
+          title: 'أسواق أكسب - كابتن',
           debugShowCheckedModeBanner: false,
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
@@ -164,7 +160,7 @@ class AksabDriverApp extends StatelessWidget {
                 _lastPressedAt = now;
                 ScaffoldMessenger.of(navigator!.context).showSnackBar(
                   const SnackBar(
-                    content: Text('إضغط مرة أخرى للخروج من التطبيق',
+                    content: Text('إضغط مرة أخرى للخروج من تطبيق أكسب',
                         textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')),
                     backgroundColor: Colors.black87,
                   ),
@@ -188,7 +184,7 @@ class AksabDriverApp extends StatelessWidget {
   }
 }
 
-// --- ويدجت مراقبة الإنترنت المطور ---
+// --- ويدجت مراقبة الإنترنت المطور لـ "أكسب" ---
 class ConnectivityWrapper extends StatefulWidget {
   final Widget child;
   const ConnectivityWrapper({super.key, required this.child});
@@ -264,7 +260,7 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
                     Icon(Icons.wifi_off, color: Colors.white, size: 18),
                     SizedBox(width: 10),
                     Text(
-                      "لا يوجد اتصال بالإنترنت - وضع الأوف لاين نشط",
+                      "لا يوجد اتصال بالإنترنت - وضع الأوف لاين نشط في أكسب",
                       style: TextStyle(
                           color: Colors.white, fontSize: 13, fontFamily: 'Tajawal', fontWeight: FontWeight.bold),
                     ),
@@ -278,7 +274,7 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
   }
 }
 
-// --- AuthWrapper (منطق التحقق من الرتبة والحالة) ---
+// --- AuthWrapper (نظام صلاحيات أكسب) ---
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
@@ -328,4 +324,3 @@ class AuthWrapper extends StatelessWidget {
     return null;
   }
 }
-
