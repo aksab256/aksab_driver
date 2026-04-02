@@ -96,9 +96,12 @@ void main() async {
     enableVibration: true,
   );
 
-  await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
+  await flutterLocalNotificationsPlugin.initialize(
+  initializationSettings,
+  onDidReceiveNotificationResponse: (NotificationResponse details) async {
+    // التعامل مع الضغط على الإشعار
+  },
+);
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
