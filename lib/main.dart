@@ -15,7 +15,6 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-// استيراد الشاشات والخدمات الخاصة بك
 import 'screens/location_service_handler.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -23,16 +22,13 @@ import 'screens/free_driver_home_screen.dart';
 import 'screens/CompanyRepHomeScreen.dart';
 import 'screens/delivery_admin_dashboard.dart';
 
-// متغير عالمي لإدارة الخروج من التطبيق بالضغط المزدوج
 DateTime? _lastPressedAt;
 
-// ✅ معالج إشعارات الخلفية لـ Firebase
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
 }
 
-// ✅ تهيئة خدمة الخلفية (إدارة العهدة وتتبع الموقع) باسم أكسب
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
   await service.configure(
@@ -58,7 +54,6 @@ Future<bool> onIosBackground(ServiceInstance service) async {
   return true;
 }
 
-// ✅ دالة البداية لخدمة الخلفية
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
@@ -68,17 +63,14 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   
-  // تهيئة الخدمات
   await initializeService();
 
-  // ضبط Crashlytics لمراقبة الأخطاء
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     return true;
   };
 
-  // ✅ إعداد الإشعارات المحلية
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
   
   const AndroidInitializationSettings initializationSettingsAndroid =
@@ -87,15 +79,14 @@ void main() async {
   const InitializationSettings initializationSettings =
       InitializationSettings(android: initializationSettingsAndroid);
 
-  // ✅ الحل النهائي لخطأ (Too many positional arguments) في نسخة 2026
+  // ✅ الحل النهائي والوحيد لنجاح الـ Build (استخدام Named Arguments صريحة)
   await flutterLocalNotificationsPlugin.initialize(
-    initializationSettings,
+    initializationSettings: initializationSettings, // تم التسمية هنا
     onDidReceiveNotificationResponse: (NotificationResponse details) {
-      // منطق التعامل مع الضغط على الإشعار
+      // الأكشن عند الضغط على الإشعار
     },
   );
 
-  // ✅ القناة الثابتة المتوافقة مع EC2 في أكسب
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'high_importance_channel',
     'إشعارات هامة',
@@ -111,7 +102,6 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // إيقاف الخدمة عند بداية التشغيل لضمان النظافة
   try {
     FlutterBackgroundService().invoke("stopService");
   } catch (e) {}
@@ -184,7 +174,6 @@ class AksabDriverApp extends StatelessWidget {
   }
 }
 
-// --- ويدجت مراقبة الإنترنت المطور لـ "أكسب" ---
 class ConnectivityWrapper extends StatefulWidget {
   final Widget child;
   const ConnectivityWrapper({super.key, required this.child});
@@ -259,10 +248,9 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
                   children: [
                     Icon(Icons.wifi_off, color: Colors.white, size: 18),
                     SizedBox(width: 10),
-                    Text(
-                      "لا يوجد اتصال بالإنترنت - وضع الأوف لاين نشط في أكسب",
-                      style: TextStyle(
-                          color: Colors.white, fontSize: 13, fontFamily: 'Tajawal', fontWeight: FontWeight.bold),
+                    const Text(
+                      "لا يوجد اتصال بالإنترنت في أكسب",
+                      style: TextStyle(color: Colors.white, fontSize: 13, fontFamily: 'Tajawal', fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -274,7 +262,6 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
   }
 }
 
-// --- AuthWrapper (نظام صلاحيات أكسب) ---
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
@@ -312,10 +299,8 @@ class AuthWrapper extends StatelessWidget {
     try {
       var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
-      
       var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
-      
       var managerSnap = await FirebaseFirestore.instance.collection('managers').where('uid', isEqualTo: uid).get();
       if (managerSnap.docs.isNotEmpty) return {...managerSnap.docs.first.data(), 'type': 'manager'};
     } catch (e) {
@@ -324,3 +309,4 @@ class AuthWrapper extends StatelessWidget {
     return null;
   }
 }
+
