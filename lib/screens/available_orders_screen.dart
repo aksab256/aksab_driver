@@ -1,4 +1,3 @@
-// lib/screens/available_orders_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:sizer/sizer.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'active_order_screen.dart';
+import 'orders_heatmap_screen.dart'; // تأكد من استيراد الملف الجديد هنا
 
 class AvailableOrdersScreen extends StatefulWidget {
   final String vehicleType;
@@ -27,6 +27,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     super.initState();
     _updateDriverStatus('browsing_radar');
     _updateLocationSnapshot();
+    // مؤقت لتحديث الوقت المتبقي في الكروت كل ثانية
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -114,8 +115,10 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           context: context,
           barrierDismissible: false,
           builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
+      
       DocumentSnapshot driverProfile = await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).get();
       String driverName = driverProfile.exists ? (driverProfile.get('fullname') ?? "مندوب") : "مندوب";
+      
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
         DocumentReference driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(_uid);
@@ -159,6 +162,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Widget build(BuildContext context) {
     if (_isGettingLocation)
       return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
+    
     String cleanType = widget.vehicleType.replaceAll('Config', '');
 
     return Scaffold(
@@ -170,6 +174,19 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         backgroundColor: Colors.white,
         elevation: 0.5,
         actions: [
+          // ✅ الزر الجديد للانتقال لخريطة الكثافة (الرادار الحراري)
+          IconButton(
+            icon: Icon(Icons.map_rounded, color: Colors.orange, size: 22.sp),
+            tooltip: 'خريطة الكثافة',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => OrdersHeatmapScreen(vehicleType: widget.vehicleType),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.black),
             onPressed: () {
@@ -203,7 +220,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 if (pickup == null || _myCurrentLocation == null) return false;
                 double dist = Geolocator.distanceBetween(
                     _myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pickup.latitude, pickup.longitude);
-                return dist <= 15000;
+                return dist <= 15000; // شرط الـ 15 كيلومتر للظهور والقبول
               }).toList();
 
               if (nearbyOrders.isEmpty) {
@@ -235,11 +252,15 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     if (pickupLoc != null && dropoffLoc != null) {
       fullDistance = _calculateFullTripDistance(pickupLoc, dropoffLoc);
     }
+    
     double driverNet = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
     double orderFinalAmount = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0;
     double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
+    
+    // حساب العهدة المطلوبة (نقاط التأمين)
     double insuranceRequired = (orderFinalAmount > 0) ? (orderFinalAmount - driverNet) : 0.0;
     if (insuranceRequired < 0) insuranceRequired = 0;
+    
     bool canAccept = (walletBalance >= insuranceRequired);
     bool isMerchant = data['requestSource'] == 'retailer';
     String timeLeft = _getTimerText(data['createdAt'] as Timestamp?);
@@ -271,8 +292,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 Row(
                   children: [
-                    // ✅ تم إصلاح الخطأ البرمجي هنا باستخدام casting صريح لضمان التوافق
-                    Icon(isMerchant ? (FontAwesomeIcons.solidStar as IconData) : Icons.delivery_dining,
+                    Icon(isMerchant ? FontAwesomeIcons.solidStar : Icons.delivery_dining,
                         color: isMerchant ? const Color(0xFF5D4037) : Colors.white, size: 18.sp),
                     SizedBox(width: 3.w),
                     Column(
