@@ -54,7 +54,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   Future<void> _updateLocationSnapshot() async {
     try {
-      // تم تصحيح الخطأ هنا باستخدام LocationSettings المتوافقة مع الإصدار 14.0.2
       Position pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -115,10 +114,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           context: context,
           barrierDismissible: false,
           builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
-
       DocumentSnapshot driverProfile = await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).get();
       String driverName = driverProfile.exists ? (driverProfile.get('fullname') ?? "مندوب") : "مندوب";
-
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentReference orderRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
         DocumentReference driverRef = FirebaseFirestore.instance.collection('freeDrivers').doc(_uid);
@@ -160,15 +157,15 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isGettingLocation) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
+    if (_isGettingLocation)
+      return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
     String cleanType = widget.vehicleType.replaceAll('Config', '');
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: Text("رادار الطلبات القريبة",
-            style: TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 16.sp, fontFamily: 'Cairo', color: Colors.black)),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp, fontFamily: 'Cairo', color: Colors.black)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0.5,
@@ -204,8 +201,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 var data = doc.data() as Map<String, dynamic>;
                 GeoPoint? pickup = data['pickupLocation'];
                 if (pickup == null || _myCurrentLocation == null) return false;
-                double dist = Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude,
-                    pickup.latitude, pickup.longitude);
+                double dist = Geolocator.distanceBetween(
+                    _myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pickup.latitude, pickup.longitude);
                 return dist <= 15000;
               }).toList();
 
@@ -230,7 +227,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
-  // --- 🎨 تصميم الكارت الجديد والمحسن ---
   Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance) {
     var data = doc.data() as Map<String, dynamic>;
     GeoPoint? pickupLoc = data['pickupLocation'];
@@ -244,7 +240,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     double totalPrice = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
     double insuranceRequired = (orderFinalAmount > 0) ? (orderFinalAmount - driverNet) : 0.0;
     if (insuranceRequired < 0) insuranceRequired = 0;
-
     bool canAccept = (walletBalance >= insuranceRequired);
     bool isMerchant = data['requestSource'] == 'retailer';
     String timeLeft = _getTimerText(data['createdAt'] as Timestamp?);
@@ -263,7 +258,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       ),
       child: Column(
         children: [
-          // رأس الكارت: الربح والوقت
           Container(
             padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
             decoration: BoxDecoration(
@@ -277,8 +271,8 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 Row(
                   children: [
-                    // تم تغيير الأيقونة لضمان التوافق مع FontAwesome الجديد
-                    Icon(isMerchant ? FontAwesomeIcons.solidStar : Icons.delivery_dining,
+                    // ✅ تم إصلاح الخطأ البرمجي هنا باستخدام casting صريح لضمان التوافق
+                    Icon(isMerchant ? (FontAwesomeIcons.solidStar as IconData) : Icons.delivery_dining,
                         color: isMerchant ? const Color(0xFF5D4037) : Colors.white, size: 18.sp),
                     SizedBox(width: 3.w),
                     Column(
@@ -286,9 +280,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                       children: [
                         Text("ربحك الصافي",
                             style: TextStyle(
-                                color: isMerchant
-                                    ? const Color(0xFF5D4037).withOpacity(0.7)
-                                    : Colors.white70,
+                                color: isMerchant ? const Color(0xFF5D4037).withOpacity(0.7) : Colors.white70,
                                 fontSize: 10.sp,
                                 fontFamily: 'Cairo')),
                         Text("$driverNet ج.م",
@@ -325,7 +317,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             padding: EdgeInsets.all(4.w),
             child: Column(
               children: [
-                // شريط المعلومات السريع
                 Row(
                   children: [
                     _buildTag(Icons.map_outlined, "${fullDistance.toStringAsFixed(1)} كم", Colors.blue[700]!),
@@ -337,15 +328,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   ],
                 ),
                 const Divider(height: 30),
-                // مسار الرحلة
                 _buildRouteItem(Icons.radio_button_checked, "من: ${data['userName'] ?? 'الموقع'}",
                     data['pickupAddress'] ?? "...", Colors.orange[800]!),
                 SizedBox(height: 1.5.h),
                 _buildRouteItem(Icons.location_on, "إلى: ${data['customerName'] ?? 'العميل'}",
                     data['dropoffAddress'] ?? "...", Colors.red[800]!),
-
                 SizedBox(height: 3.h),
-                // زر القبول
                 SizedBox(
                   width: double.infinity,
                   height: 7.h,

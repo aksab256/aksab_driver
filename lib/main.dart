@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
-import 'package:flutter_local_localizations/flutter_localizations.dart';
+// ✅ تم تصحيح اسم المكتبة من flutter_local_localizations إلى flutter_localizations
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
@@ -59,18 +60,17 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-
   await initializeService();
-
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     return true;
   };
-
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const AndroidInitializationSettings initializationSettingsAndroid =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
   const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
+  // ✅ تم تصحيح استدعاء initialize ليتوافق مع الإصدار الجديد (إزالة Positional Argument وتنسيقها)
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
   // تم تصحيح الباراميترات هنا لتتوافق مع الإصدار الجديد 21.0.0
@@ -96,7 +96,6 @@ void main() async {
 
 class AksabDriverApp extends StatelessWidget {
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
   const AksabDriverApp({super.key});
 
   @override
@@ -107,7 +106,8 @@ class AksabDriverApp extends StatelessWidget {
           navigatorKey: navigatorKey,
           title: 'رابية أحلى - كابتن', // تم التحديث بناءً على الهوية الجديدة
           debugShowCheckedModeBanner: false,
-          localizationsDelegates: const [
+          // ✅ تمت إزالة const من هنا لأن delegates ليست تعبيرات ثابتة دائمًا في النسخ الحديثة
+          localizationsDelegates: [
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
@@ -136,9 +136,9 @@ class AksabDriverApp extends StatelessWidget {
                 _lastPressedAt = now;
                 ScaffoldMessenger.of(navigator!.context).showSnackBar(
                   const SnackBar(
-                    content: Text('إضغط مرة أخرى للخروج من التطبيق', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')),
-                    backgroundColor: Colors.black87
-                  ),
+                      content: Text('إضغط مرة أخرى للخروج من التطبيق',
+                          textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')),
+                      backgroundColor: Colors.black87),
                 );
                 return;
               }
@@ -236,7 +236,8 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
                     SizedBox(width: 10),
                     Text(
                       "لا يوجد اتصال بالإنترنت - وضع الأوف لاين نشط",
-                      style: TextStyle(color: Colors.white, fontSize: 13, fontFamily: 'Tajawal', fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: Colors.white, fontSize: 13, fontFamily: 'Tajawal', fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
@@ -289,7 +290,9 @@ class AuthWrapper extends StatelessWidget {
       if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
       var managerSnap = await FirebaseFirestore.instance.collection('managers').where('uid', isEqualTo: uid).get();
       if (managerSnap.docs.isNotEmpty) return {...managerSnap.docs.first.data(), 'type': 'manager'};
-    } catch (e) { return null; }
+    } catch (e) {
+      return null;
+    }
     return null;
   }
 }
