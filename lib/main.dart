@@ -89,7 +89,11 @@ void main() async {
       InitializationSettings(android: initializationSettingsAndroid);
 
   // تصحيح: استدعاء الدالة بدون positional arguments لضمان نجاح الـ Build
-  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  await flutterLocalNotificationsPlugin.initialize(
+  initializationSettings,
+  onDidReceiveNotificationResponse: (NotificationResponse details) {},
+);
+
 
   // ✅ القناة الثابتة المتوافقة مع EC2
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
