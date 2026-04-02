@@ -1,5 +1,7 @@
 import java.util.Properties
 import java.io.FileInputStream
+// ✅ إضافة الـ Import ده هو السر لتعريف jvmTarget في النسخ الجديدة
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget 
 
 // 1. إعداد قراءة ملف الخصائص المحلي
 val keystoreProperties = Properties()
@@ -38,10 +40,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    // ✅ الحل "الجوكر" لـ أكسب: استخدام الطريقة التقليدية مع String صريح
-    kotlinOptions {
-        (this as org.jetbrains.kotlin.gradle.tasks.KotlinCompile).kotlinOptions {
-            jvmTarget = "1.8"
+    // ✅ الطريقة الرسمية والوحيدة المقبولة في Kotlin 2.3.10
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_1_8)
         }
     }
 
