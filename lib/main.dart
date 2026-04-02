@@ -79,13 +79,7 @@ void main() async {
   const InitializationSettings initializationSettings =
       InitializationSettings(android: initializationSettingsAndroid);
 
-  // ✅ الحل النهائي والوحيد لنجاح الـ Build (استخدام Named Arguments صريحة)
-  await flutterLocalNotificationsPlugin.initialize(
-    initializationSettings: initializationSettings, // تم التسمية هنا
-    onDidReceiveNotificationResponse: (NotificationResponse details) {
-      // الأكشن عند الضغط على الإشعار
-    },
-  );
+  
 
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'high_importance_channel',
@@ -102,7 +96,6 @@ void main() async {
     // التعامل مع الضغط على الإشعار
   },
 );
-
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   try {
