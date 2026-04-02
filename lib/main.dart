@@ -89,9 +89,28 @@ void main() async {
       InitializationSettings(android: initializationSettingsAndroid);
 
   // تصحيح: استدعاء الدالة بدون positional arguments لضمان نجاح الـ Build
-  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  // ... نفس الـ imports اللي في كودك بدون تغيير ...
 
-  // ✅ القناة الثابتة المتوافقة مع EC2
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  await initializeService();
+
+  // إعداد الإشعارات المحلية
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  
+  const AndroidInitializationSettings initializationSettingsAndroid =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
+      
+  const InitializationSettings initializationSettings =
+      InitializationSettings(android: initializationSettingsAndroid);
+
+  // ✅ التصحيح النهائي لنجاح الـ Build:
+  await flutterLocalNotificationsPlugin.initialize(
+    initializationSettings,
+  );
+
+  // القناة الثابتة
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'high_importance_channel',
     'إشعارات هامة',
@@ -107,13 +126,11 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // إيقاف الخدمة عند بداية التشغيل لضمان عدم وجود تكرار
-  try {
-    FlutterBackgroundService().invoke("stopService");
-  } catch (e) {}
-
   runApp(const AksabDriverApp());
 }
+
+// ... باقي الكود كما هو ...
+
 
 class AksabDriverApp extends StatelessWidget {
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
