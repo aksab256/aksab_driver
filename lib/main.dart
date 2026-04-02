@@ -26,13 +26,56 @@ import 'screens/delivery_admin_dashboard.dart';
 // متغير عالمي لإدارة الخروج من التطبيق بالضغط المزدوج
 DateTime? _lastPressedAt;
 
+// تهيئة الفلاوتر نوتيفيكيشن عالمياً
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
 // ✅ معالج إشعارات الخلفية لـ Firebase
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
 }
 
-// ✅ تهيئة خدمة الخلفية (إدارة العهدة وتتبع الموقع) باسم أكسب
+// ✅ دالة إعداد الإشعارات (المدمجة حديثاً)
+Future<void> setupNotifications() async {
+  // 1️⃣ إعدادات Android
+  const AndroidInitializationSettings initializationSettingsAndroid =
+      AndroidInitializationSettings('@mipmap/ic_launcher');
+
+  // 2️⃣ إعدادات iOS
+  const DarwinInitializationSettings initializationSettingsIOS =
+      DarwinInitializationSettings();
+
+  // 3️⃣ إعدادات عامة
+  const InitializationSettings initializationSettings = InitializationSettings(
+    android: initializationSettingsAndroid,
+    iOS: initializationSettingsIOS,
+  );
+
+  // 4️⃣ إنشاء قناة إشعارات لأندرويد (القناة الثابتة لأكسب)
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'high_importance_channel', 
+    'إشعارات هامة',           
+    description: 'هذه القناة مخصصة لإشعارات الطلبات والعهدة الهامة.',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  // 5️⃣ إنشاء القناة على جهاز Android
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
+  // 6️⃣ تهيئة الـ plugin (بالـ Positional Argument المطلوب لنجاح البناء)
+  await flutterLocalNotificationsPlugin.initialize(
+    initializationSettings, 
+    onDidReceiveNotificationResponse: (NotificationResponse details) async {
+      debugPrint('User tapped on notification: ${details.payload}');
+    },
+  );
+}
+
+// ✅ تهيئة خدمة الخلفية (إدارة العهدة وتتبع الموقع)
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
   await service.configure(
@@ -58,7 +101,6 @@ Future<bool> onIosBackground(ServiceInstance service) async {
   return true;
 }
 
-// ✅ دالة البداية لخدمة الخلفية
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
@@ -68,7 +110,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   
-  // تهيئة الخدمات
+  // تهيئة الإشعارات (المدمجة)
+  await setupNotifications();
+  
+  // تهيئة خدمة الخلفية
   await initializeService();
 
   // ضبط Crashlytics لمراقبة الأخطاء
@@ -78,43 +123,9 @@ void main() async {
     return true;
   };
 
-  // ✅ إعداد الإشعارات المحلية
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-  
-  const AndroidInitializationSettings initializationSettingsAndroid =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
-      
-  const InitializationSettings initializationSettings =
-      InitializationSettings(android: initializationSettingsAndroid);
-
-  // ✅ القناة الثابتة المتوافقة مع EC2 في أكسب
-  const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'high_importance_channel',
-    'إشعارات هامة',
-    description: 'هذه القناة مخصصة لإشعارات الطلبات والعهدة الهامة.',
-    importance: Importance.max,
-    playSound: true,
-    enableVibration: true,
-  );
-
-  // 1️⃣ أولاً: initialize (تعديل Named Parameter للإصدار 17.2.4)
-  // 1️⃣ أولاً: initialize (تعديل Named Parameter للإصدار 17.2.4)
-await flutterLocalNotificationsPlugin.initialize(
-  initializationSettings: initializationSettings, // ✅ هنا التعديل الجوهري
-  onDidReceiveNotificationResponse: (NotificationResponse details) async {
-    // ...
-  },
-);
-
-
-  // 2️⃣ ثانياً: إنشاء القناة (Android Specific)
-  await flutterLocalNotificationsPlugin
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(channel);
-
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // إيقاف الخدمة عند بداية التشغيل لضمان النظافة وعدم التكرار
+  // إيقاف الخدمة عند بداية التشغيل لضمان النظافة
   try {
     FlutterBackgroundService().invoke("stopService");
   } catch (e) {}
@@ -297,7 +308,6 @@ class AuthWrapper extends StatelessWidget {
               }
               if (roleSnapshot.data != null) {
                 final d = roleSnapshot.data!;
-                // فلترة الرتب والحالات
                 if (d['type'] == 'deliveryRep' && d['status'] == 'approved') return const CompanyRepHomeScreen();
                 if (d['type'] == 'freeDriver' && d['status'] == 'approved') return const FreeDriverHomeScreen();
                 if (d['type'] == 'manager') return const DeliveryAdminDashboard();
@@ -313,15 +323,12 @@ class AuthWrapper extends StatelessWidget {
 
   Future<Map<String, dynamic>?> _getUserRoleAndData(String uid) async {
     try {
-      // البحث في المناديب الموظفين
       var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
       
-      // البحث في المناديب الأحرار
       var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
       
-      // البحث في المديرين
       var managerSnap = await FirebaseFirestore.instance.collection('managers').where('uid', isEqualTo: uid).get();
       if (managerSnap.docs.isNotEmpty) return {...managerSnap.docs.first.data(), 'type': 'manager'};
     } catch (e) {
