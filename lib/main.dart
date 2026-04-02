@@ -89,10 +89,14 @@ void main() async {
       InitializationSettings(android: initializationSettingsAndroid);
 
   // تصحيح: استدعاء الدالة بدون positional arguments لضمان نجاح الـ Build
-  await flutterLocalNotificationsPlugin.initialize(
-  initializationSettings,
-  onDidReceiveNotificationResponse: (NotificationResponse details) {},
+  // ✅ التعديل المتوافق مع النسخة الحديثة 2026 لنجاح الـ Build
+await flutterLocalNotificationsPlugin.initialize(
+  initializationSettings, // تأكد إنك كاتبها كدة بالظبط
+  onDidReceiveNotificationResponse: (NotificationResponse details) {
+    // الأكشن عند الضغط على الإشعار
+  },
 );
+
 
 
   // ✅ القناة الثابتة المتوافقة مع EC2
