@@ -98,12 +98,14 @@ void main() async {
   );
 
   // 1️⃣ أولاً: initialize (تعديل Named Parameter للإصدار 17.2.4)
-  await flutterLocalNotificationsPlugin.initialize(
-    initializationSettings: initializationSettings, // ✅ تم التعديل هنا لنجاح الـ Build
-    onDidReceiveNotificationResponse: (NotificationResponse details) async {
-      // هنا يمكنك كتابة الأكشن عند الضغط على الإشعار
-    },
-  );
+  // 1️⃣ أولاً: initialize (تعديل Named Parameter للإصدار 17.2.4)
+await flutterLocalNotificationsPlugin.initialize(
+  initializationSettings: initializationSettings, // ✅ هنا التعديل الجوهري
+  onDidReceiveNotificationResponse: (NotificationResponse details) async {
+    // ...
+  },
+);
+
 
   // 2️⃣ ثانياً: إنشاء القناة (Android Specific)
   await flutterLocalNotificationsPlugin
