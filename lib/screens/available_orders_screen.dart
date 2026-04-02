@@ -305,7 +305,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(isMerchant ? FontAwesomeIcons.solidStar : Icons.delivery_dining, color: isMerchant ? const Color(0xFF5D4037) : Colors.white, size: 16.sp),
+                    Icon(
+  (isMerchant ? FontAwesomeIcons.solidStar : Icons.delivery_dining) as IconData, 
+  color: isMerchant ? const Color(0xFF5D4037) : Colors.white, 
+  size: 16.sp,
+),
+
                     SizedBox(width: 2.w),
                     Text("$net ج.م صافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo')),
                   ],
