@@ -82,20 +82,25 @@ void main() async {
   
 
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
-    'high_importance_channel',
-    'إشعارات هامة',
-    description: 'هذه القناة مخصصة لإشعارات الطلبات والعهدة الهامة.',
-    importance: Importance.max,
-    playSound: true,
-    enableVibration: true,
-  );
-
-  await flutterLocalNotificationsPlugin.initialize(
-  initializationSettings,
-  onDidReceiveNotificationResponse: (NotificationResponse details) async {
-    // التعامل مع الضغط على الإشعار
-  },
+  'high_importance_channel',
+  'إشعارات هامة',
+  description: 'هذه القناة مخصصة لإشعارات الطلبات والعهدة الهامة.',
+  importance: Importance.max,
+  playSound: true,
+  enableVibration: true,
 );
+
+// ✅ الأول initialize
+await flutterLocalNotificationsPlugin.initialize(
+  initializationSettings,
+  onDidReceiveNotificationResponse: (NotificationResponse details) async {},
+);
+
+// ✅ بعده إنشاء القناة
+await flutterLocalNotificationsPlugin
+    .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+    ?.createNotificationChannel(channel);
+  
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   try {
