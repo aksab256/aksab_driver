@@ -37,7 +37,7 @@ dependencies:
   # Background Services & Notifications
   flutter_background_service: ^5.1.0
   flutter_background_service_android: ^6.3.1
-  flutter_local_notifications: ^21.0.0
+  flutter_local_notifications: 17.0.0
 
   # Utilities & State Management
   provider: ^6.1.2
