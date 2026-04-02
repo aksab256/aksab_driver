@@ -1,23 +1,21 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:sizer/sizer.dart';
-// ✅ تم تصحيح اسم المكتبة من flutter_local_localizations إلى flutter_localizations
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'dart:ui';
-import 'dart:async';
+import 'package:sizer/sizer.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-
-// ✅ استيراد مكتبة جوجل مابس (الأساس الجديد للتطبيق)
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-// ✅ استيراد ملف الخدمة الخاص بك (بدون أي تعديل في منطق التتبع)
+// استيراد الشاشات والخدمات الخاصة بك
 import 'screens/location_service_handler.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -25,13 +23,16 @@ import 'screens/free_driver_home_screen.dart';
 import 'screens/CompanyRepHomeScreen.dart';
 import 'screens/delivery_admin_dashboard.dart';
 
+// متغير عالمي لإدارة الخروج من التطبيق بالضغط المزدوج
 DateTime? _lastPressedAt;
 
+// ✅ معالج إشعارات الخلفية لـ Firebase
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
 }
 
+// ✅ تهيئة خدمة الخلفية (إدارة العهدة وتتبع الموقع)
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
   await service.configure(
@@ -40,7 +41,7 @@ Future<void> initializeService() async {
       autoStart: false,
       isForegroundMode: true,
       notificationChannelId: 'high_importance_channel',
-      initialNotificationTitle: 'أسواق أكسب: إدارة العهدة نشطة 🛡️',
+      initialNotificationTitle: 'رابية أحلى: إدارة العهدة نشطة 🛡️',
       initialNotificationContent: 'جاري مراقبة المسار لضمان أمان النقل...',
       foregroundServiceNotificationId: 888,
     ),
@@ -57,23 +58,40 @@ Future<bool> onIosBackground(ServiceInstance service) async {
   return true;
 }
 
+// ✅ دالة البداية لخدمة الخلفية (يتم تنفيذها في معزل عن الواجهة)
+@pragma('vm:entry-point')
+void onStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+  // هنا يتم استدعاء منطق تتبع الموقع أو تحديثات السيرفر
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  
+  // تهيئة الخدمات
   await initializeService();
+
+  // ضبط Crashlytics لمراقبة الأخطاء
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     return true;
   };
+
+  // ✅ إعداد الإشعارات المحلية (تم تصحيح الـ initialize للإصدار الجديد)
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  
   const AndroidInitializationSettings initializationSettingsAndroid =
       AndroidInitializationSettings('@mipmap/ic_launcher');
-  const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
-  // ✅ تم تصحيح استدعاء initialize ليتوافق مع الإصدار الجديد (إزالة Positional Argument وتنسيقها)
+      
+  const InitializationSettings initializationSettings =
+      InitializationSettings(android: initializationSettingsAndroid);
+
+  // تصحيح: استدعاء الدالة بدون positional arguments لضمان نجاح الـ Build
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-  // تم تصحيح الباراميترات هنا لتتوافق مع الإصدار الجديد 21.0.0
+  // ✅ القناة الثابتة المتوافقة مع EC2
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'high_importance_channel',
     'إشعارات هامة',
@@ -88,9 +106,12 @@ void main() async {
       ?.createNotificationChannel(channel);
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // إيقاف الخدمة عند بداية التشغيل لضمان عدم وجود تكرار
   try {
     FlutterBackgroundService().invoke("stopService");
   } catch (e) {}
+
   runApp(const AksabDriverApp());
 }
 
@@ -104,10 +125,9 @@ class AksabDriverApp extends StatelessWidget {
       builder: (context, orientation, deviceType) {
         return MaterialApp(
           navigatorKey: navigatorKey,
-          title: 'رابية أحلى - كابتن', // تم التحديث بناءً على الهوية الجديدة
+          title: 'رابية أحلى - كابتن',
           debugShowCheckedModeBanner: false,
-          // ✅ تمت إزالة const من هنا لأن delegates ليست تعبيرات ثابتة دائمًا في النسخ الحديثة
-          localizationsDelegates: [
+          localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
@@ -136,9 +156,10 @@ class AksabDriverApp extends StatelessWidget {
                 _lastPressedAt = now;
                 ScaffoldMessenger.of(navigator!.context).showSnackBar(
                   const SnackBar(
-                      content: Text('إضغط مرة أخرى للخروج من التطبيق',
-                          textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')),
-                      backgroundColor: Colors.black87),
+                    content: Text('إضغط مرة أخرى للخروج من التطبيق',
+                        textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')),
+                    backgroundColor: Colors.black87,
+                  ),
                 );
                 return;
               }
@@ -159,7 +180,7 @@ class AksabDriverApp extends StatelessWidget {
   }
 }
 
-// --- ويدجت مراقبة الإنترنت المطور (نظام التنبيه العلوي) ---
+// --- ويدجت مراقبة الإنترنت المطور ---
 class ConnectivityWrapper extends StatefulWidget {
   final Widget child;
   const ConnectivityWrapper({super.key, required this.child});
@@ -249,9 +270,10 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
   }
 }
 
-// --- AuthWrapper (نفس منطقك بدون تغيير) ---
+// --- AuthWrapper (منطق التحقق من الرتبة والحالة) ---
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -286,8 +308,10 @@ class AuthWrapper extends StatelessWidget {
     try {
       var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repDoc.exists) return {...repDoc.data()!, 'type': 'deliveryRep'};
+      
       var freeDoc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeDoc.exists) return {...freeDoc.data()!, 'type': 'freeDriver'};
+      
       var managerSnap = await FirebaseFirestore.instance.collection('managers').where('uid', isEqualTo: uid).get();
       if (managerSnap.docs.isNotEmpty) return {...managerSnap.docs.first.data(), 'type': 'manager'};
     } catch (e) {
