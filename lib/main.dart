@@ -7,12 +7,15 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
-import 'dart:async'; 
-import 'package:connectivity_plus/connectivity_plus.dart'; 
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+
+// ✅ استيراد مكتبة جوجل مابس (الأساس الجديد للتطبيق)
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 // ✅ استيراد ملف الخدمة الخاص بك (بدون أي تعديل في منطق التتبع)
 import 'screens/location_service_handler.dart';
@@ -35,8 +38,8 @@ Future<void> initializeService() async {
 
   await service.configure(
     androidConfiguration: AndroidConfiguration(
-      onStart: onStart, 
-      autoStart: false, 
+      onStart: onStart,
+      autoStart: false,
       isForegroundMode: true,
       notificationChannelId: 'high_importance_channel',
       initialNotificationTitle: 'أسواق أكسب: إدارة العهدة نشطة 🛡️',
@@ -106,7 +109,7 @@ class AksabDriverApp extends StatelessWidget {
       builder: (context, orientation, deviceType) {
         return MaterialApp(
           navigatorKey: navigatorKey,
-          title: 'أسواق أكسب - كابتن',
+          title: 'رابية أحلى - كابتن', // تم التحديث بناءً على الهوية الجديدة
           debugShowCheckedModeBanner: false,
           localizationsDelegates: const [
             GlobalMaterialLocalizations.delegate,
@@ -121,7 +124,6 @@ class AksabDriverApp extends StatelessWidget {
             scaffoldBackgroundColor: Colors.white,
           ),
           builder: (context, child) {
-            // ✅ تغليف التطبيق بمراقب الإنترنت المطور
             return ConnectivityWrapper(child: child!);
           },
           home: PopScope(
@@ -138,7 +140,7 @@ class AksabDriverApp extends StatelessWidget {
                 _lastPressedAt = now;
                 ScaffoldMessenger.of(navigator!.context).showSnackBar(
                   const SnackBar(
-                    content: Text('إضغط مرة أخرى للخروج من التطبيق', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')), 
+                    content: Text('إضغط مرة أخرى للخروج من التطبيق', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')),
                     backgroundColor: Colors.black87
                   ),
                 );
@@ -189,10 +191,9 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
   }
 
   void _updateConnectionStatus(List<ConnectivityResult> result) {
-    // فحص ذكي لجميع أنواع الاتصال المتاحة
-    bool hasConnection = result.any((element) => 
-        element == ConnectivityResult.mobile || 
-        element == ConnectivityResult.wifi || 
+    bool hasConnection = result.any((element) =>
+        element == ConnectivityResult.mobile ||
+        element == ConnectivityResult.wifi ||
         element == ConnectivityResult.ethernet ||
         element == ConnectivityResult.vpn);
 
@@ -202,7 +203,6 @@ class _ConnectivityWrapperState extends State<ConnectivityWrapper> {
         setState(() => _isConnected = true);
       }
     } else {
-      // إعطاء مهلة 6 ثواني للتأكد من انقطاع الشبكة الفعلي (حماية من الـ Micro-drops)
       _connectivityTimer?.cancel();
       _connectivityTimer = Timer(const Duration(seconds: 6), () {
         if (mounted && _isConnected) {
@@ -272,7 +272,6 @@ class AuthWrapper extends StatelessWidget {
               }
               if (roleSnapshot.data != null) {
                 final d = roleSnapshot.data!;
-                // استخدام الحقول التقنية المتفق عليها
                 if (d['type'] == 'deliveryRep' && d['status'] == 'approved') return const CompanyRepHomeScreen();
                 if (d['type'] == 'freeDriver' && d['status'] == 'approved') return const FreeDriverHomeScreen();
                 if (d['type'] == 'manager') return const DeliveryAdminDashboard();
@@ -298,3 +297,4 @@ class AuthWrapper extends StatelessWidget {
     return null;
   }
 }
+

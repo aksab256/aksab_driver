@@ -1,3 +1,4 @@
+// lib/screens/location_service_handler.dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -8,11 +9,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// ✅ إضافة مكتبة جوجل مابس لاستخدام أنواع البيانات المتوافقة مع النظام الجديد
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
-  
+
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp();
@@ -42,9 +46,9 @@ void onStart(ServiceInstance service) async {
   final prefs = await SharedPreferences.getInstance();
   String? uid = prefs.getString('driver_uid');
   // بنجيب رقم الطلب الحالي من التخزين (لازم نكون حفظناه في الصفحة قبل تشغيل الخدمة)
-  String? activeOrderId = prefs.getString('active_order_id'); 
+  String? activeOrderId = prefs.getString('active_order_id');
 
-  // --- الجزء الجديد: مراقبة حالة الطلب من الخلفية ---
+  // --- الجزء الخاص بمراقبة حالة الطلب من الخلفية (بدون أي تغيير في المنطق) ---
   if (uid != null && activeOrderId != null) {
     orderListener = FirebaseFirestore.instance
         .collection('specialRequests')
@@ -53,7 +57,7 @@ void onStart(ServiceInstance service) async {
         .listen((snapshot) async {
       if (snapshot.exists) {
         String status = snapshot.data()?['status'] ?? '';
-        
+
         // الحالات التي تستوجب إيقاف الخدمة فوراً من الخلفية
         List<String> exitStatuses = [
           'delivered',
@@ -75,15 +79,16 @@ void onStart(ServiceInstance service) async {
     });
   }
 
-  // --- تتبع الموقع الحي ---
+  // --- تتبع الموقع الحي المتوافق مع جوجل مابس ---
   positionStream = Geolocator.getPositionStream(
-    locationSettings: AndroidSettings(
+    locationSettings: const AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 10,
-      intervalDuration: const Duration(seconds: 15),
+      intervalDuration: Duration(seconds: 15),
     ),
   ).listen((Position position) async {
     if (service is AndroidServiceInstance) {
+      // استخدام المصطلحات اللوجيستية المتفق عليها (نظام التأمين والعهدة)
       service.setForegroundNotificationInfo(
         title: "أكسب: نظام التأمين نشط 🛡️",
         content: "يتم تحديث المسار لضمان استحقاق النقاط المحجوزة",
@@ -92,6 +97,7 @@ void onStart(ServiceInstance service) async {
 
     if (uid != null) {
       try {
+        // ✅ تحديث البيانات في Firestore لتكون جاهزة للقراءة من أي تطبيق يستخدم جوجل مابس
         await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
           'location': GeoPoint(position.latitude, position.longitude),
           'lat': position.latitude,
@@ -100,9 +106,17 @@ void onStart(ServiceInstance service) async {
           'speed': position.speed,
           'heading': position.heading,
         });
+
+        // ✅ إرسال إشعار لحظي للتطبيق (في حال كان المندوب فاتح الشاشة) بنوع بيانات متوافق
+        service.invoke('updateLocation', {
+          "latitude": position.latitude,
+          "longitude": position.longitude,
+        });
+
       } catch (e) {
         debugPrint("Update Error: $e");
       }
     }
   });
 }
+
