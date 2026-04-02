@@ -20,7 +20,7 @@ class FreeDriverHomeScreen extends StatefulWidget {
 class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   int _selectedIndex = 0;
   String _currentStatus = 'offline';
-  bool _isStatusChanging = false; // متغير جديد للتحكم في حالة التحميل
+  bool _isStatusChanging = false; // قفل التحكم في حالة التحميل
   String? _activeOrderId;
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -30,21 +30,19 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     super.initState();
     _syncStatusInstantly();
     _initListeners();
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (uid.isNotEmpty) {
-        // سيتم تعديل هذه الدالة في ملف الـ Helper لتصبح إجبارية
         DriverSecurityHelper.checkSecurityAndTerms(context, uid);
       }
     });
   }
 
+  // مزامنة الحالة فور الدخول للتطبيق
   void _syncStatusInstantly() async {
     String localStatus = await DriverApiService.getLocalStatus();
     if (mounted) {
       setState(() => _currentStatus = localStatus);
     }
-
     try {
       var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (doc.exists && mounted) {
@@ -59,12 +57,13 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     }
   }
 
+  // مراقبة التغييرات الحية من السيرفر
   void _initListeners() {
     DriverApiService.listenToStatus(uid, (status) {
       if (mounted && status != null && status != _currentStatus) {
         setState(() {
           _currentStatus = status;
-          _isStatusChanging = false; // فك القفل بمجرد وصول التحديث من السيرفر
+          _isStatusChanging = false; // فك القفل عند وصول التحديث
         });
         DriverApiService.saveLocalStatus(status);
       }
@@ -77,43 +76,62 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     });
   }
 
-  // دالة تغيير الحالة المحدثة "القفل الذكي"
+  // ✅ الدالة المحدثة والمؤمنة لتغيير الحالة (حل مشكلة الكراش)
   void _handleStatusChange(bool shouldBeOnline) async {
     if (_currentStatus == 'busy' && !shouldBeOnline) {
       DriverSecurityHelper.showErrorSnackBar(context, "لا يمكن الإغلاق أثناء وجود عهدة نشطة");
       return;
     }
 
-    setState(() => _isStatusChanging = true); // تفعيل حالة التحميل
+    setState(() => _isStatusChanging = true);
 
     if (shouldBeOnline) {
+      // 1. طلب إذن الموقع
       bool permissionGranted = await DriverSecurityHelper.requestLocationPermission(context);
+      
+      // حماية: إذا خرج المستخدم من الشاشة أثناء طلب الإذن، نوقف العملية فوراً
+      if (!mounted) return;
+
       if (permissionGranted) {
         try {
-          // ننتظر السيرفر أولاً قبل تغيير الحالة محلياً
+          // 2. التحديث على السيرفر (Firebase)
           await DriverApiService.updateStatus(uid, 'online');
           await DriverApiService.saveLocalStatus('online');
-          DriverSecurityHelper.showOnlineHint(context);
+          
+          if (mounted) {
+            setState(() {
+              _currentStatus = 'online';
+              _isStatusChanging = false;
+            });
+            DriverSecurityHelper.showOnlineHint(context);
+          }
         } catch (e) {
-          setState(() => _isStatusChanging = false);
+          if (mounted) setState(() => _isStatusChanging = false);
+          debugPrint("Status Update Error: $e");
         }
       } else {
-        setState(() => _isStatusChanging = false);
+        if (mounted) setState(() => _isStatusChanging = false);
       }
     } else {
+      // حالة تسجيل الخروج (Offline)
       try {
         await DriverApiService.updateStatus(uid, 'offline');
         await DriverApiService.saveLocalStatus('offline');
+        if (mounted) {
+          setState(() {
+            _currentStatus = 'offline';
+            _isStatusChanging = false;
+          });
+        }
       } catch (e) {
-        setState(() => _isStatusChanging = false);
+        if (mounted) setState(() => _isStatusChanging = false);
       }
     }
   }
 
-  // التحكم في التنقل (حماية الرادار) - فحص السيرفر المباشر
+  // التحكم في التنقل (حماية الرادار)
   void _onStepTapped(int index) async {
     if (index == 1) {
-      // إظهار مؤشر تحميل بسيط للتأكد من السيرفر
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -122,21 +140,22 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
 
       try {
         var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
-        Navigator.pop(context); // إغلاق مؤشر التحميل
+        if (!mounted) return;
+        Navigator.pop(context);
 
         String serverStatus = doc.data()?['currentStatus'] ?? 'offline';
-        
+
         if (serverStatus != 'online') {
           DriverSecurityHelper.showErrorSnackBar(context, "حالتك على السيرفر 'غير متصل'. برجاء التفعيل أولاً");
           setState(() => _currentStatus = serverStatus);
           return;
         }
       } catch (e) {
-        Navigator.pop(context);
+        if (mounted) Navigator.pop(context);
         return;
       }
     }
-    
+
     setState(() => _selectedIndex = index);
   }
 
@@ -149,9 +168,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       body: Stack(
         children: [
           _buildBody(),
+          // مؤشر التحميل الشفاف لمنع التفاعل المتكرر أثناء تغيير الحالة
           if (_isStatusChanging)
             Container(
-              color: Colors.black12,
+              color: Colors.black26,
               child: const Center(child: CircularProgressIndicator(color: Colors.orange)),
             ),
         ],
@@ -192,8 +212,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       type: BottomNavigationBarType.fixed,
       selectedItemColor: Colors.orange[900],
       unselectedItemColor: Colors.grey,
-      selectedLabelStyle: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
-      unselectedLabelStyle: const TextStyle(fontFamily: 'Cairo'),
+      selectedLabelStyle: const TextStyle(fontFamily: 'Tajawal', fontWeight: FontWeight.bold),
+      unselectedLabelStyle: const TextStyle(fontFamily: 'Tajawal'),
       items: const [
         BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
         BottomNavigationBarItem(icon: Icon(Icons.radar), label: "الرادار"),
