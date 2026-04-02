@@ -12,13 +12,13 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
-    // ✅ نكتفي بالتعريف فقط لأن الإصدار محدد في الملف الخارجي
+    // ✅ نكتفي بالتعريف فقط لأن الإصدار محدد في الملف الخارجي (settings.gradle.kts)
     id("com.google.gms.google-services")
     id("com.google.firebase.crashlytics")
 }
 
 android {
-    namespace = "com.aksab.driver" 
+    namespace = "com.aksab.driver"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -27,7 +27,7 @@ android {
             keyAlias = "upload"
             keyPassword = "1151983aA"
             storePassword = "1151983aA"
-            
+
             val keystorePath = System.getenv("KEY_FILE_NAME") ?: "upload-keystore.jks"
             storeFile = file(keystorePath)
         }
@@ -39,8 +39,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    kotlinOptions {
-        jvmTarget = "1.8"
+    // ✅ التعديل الجديد والمطلوب لنسخة كوتلن 2.3.10 في تطبيق أكسب
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
     }
 
     defaultConfig {
@@ -58,9 +59,8 @@ android {
             isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-
         getByName("debug") {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
@@ -72,3 +72,4 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
+
