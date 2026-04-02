@@ -1,10 +1,11 @@
+// المسار: lib/screens/manager_geo_dist_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:flutter_map/flutter_map.dart';
+// ✅ استبدال المكتبات القديمة بمكتبة جوجل مابس
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:sizer/sizer.dart';
 
 class ManagerGeoDistScreen extends StatefulWidget {
@@ -15,7 +16,8 @@ class ManagerGeoDistScreen extends StatefulWidget {
 }
 
 class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
-  final MapController _mapController = MapController();
+  // ✅ تغيير الـ Controller ليتوافق مع جوجل مابس
+  GoogleMapController? _mapController;
   String? selectedSupervisorId;
   List<String> selectedAreas = [];
   List<Map<String, dynamic>> mySupervisors = [];
@@ -23,12 +25,9 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
   List<String> allAvailableAreaNames = [];
   bool isLoading = true;
 
-  final String mapboxToken = "pk.eyJ1IjoiYW1yc2hpcGwiLCJhIjoiY21lajRweGdjMDB0eDJsczdiemdzdXV6biJ9.E--si9vOB93NGcAq7uVgGw";
-
   @override
   void initState() {
     super.initState();
-    // تأخير التنفيذ لضمان جاهزية الإطار
     WidgetsBinding.instance.addPostFrameCallback((_) => _initializeData());
   }
 
@@ -48,9 +47,8 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
     try {
       final String response = await rootBundle.loadString(
           'assets/OSMB-bc319d822a17aa9ad1089fc05e7d4e752460f877.geojson');
-      
       final data = json.decode(response);
-      
+
       if (data != null && data['features'] != null) {
         geoJsonData = data;
         List<String> names = [];
@@ -59,34 +57,27 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
           if (name != null && name.isNotEmpty) names.add(name);
         }
         names.sort();
-        
+
         setState(() {
           allAvailableAreaNames = names;
         });
         debugPrint("✅ تم تحميل ${names.length} منطقة من ملف GeoJSON");
       }
     } catch (e) {
-      debugPrint("❌ فشل تحميل ملف GeoJSON: $e (تأكد من وجود الملف في assets وتعريفه في pubspec)");
+      debugPrint("❌ فشل تحميل ملف GeoJSON: $e");
     }
   }
 
   Future<void> _loadSupervisors() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        debugPrint("⚠️ لا يوجد مدير مسجل دخول");
-        return;
-      }
-
-      debugPrint("🔍 جاري البحث عن مشرفين للمدير: ${user.uid}");
+      if (user == null) return;
 
       final supervisorsSnap = await FirebaseFirestore.instance
           .collection('managers')
           .where('role', isEqualTo: 'delivery_supervisor')
           .where('managerId', isEqualTo: user.uid)
           .get();
-
-      debugPrint("📊 عدد المستندات المستلمة من فايربيز: ${supervisorsSnap.docs.length}");
 
       if (mounted) {
         setState(() {
@@ -105,7 +96,6 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
     }
   }
 
-  // دالة الحفظ مع رسالة تنبيه احترافية
   Future<void> _saveAreas() async {
     if (selectedSupervisorId == null) return;
     try {
@@ -147,22 +137,22 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("توزيع مناطق المشرفين"),
+        title: const Text("توزيع مناطق المشرفين", style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF2F3542),
         actions: [
           if (selectedSupervisorId != null)
             IconButton(icon: const Icon(Icons.save, color: Colors.greenAccent), onPressed: _saveAreas)
         ],
       ),
-      body: isLoading 
-        ? const Center(child: CircularProgressIndicator()) 
-        : Column(
-            children: [
-              _buildSelector(),
-              _buildMap(),
-              _buildAreaList(),
-            ],
-          ),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                _buildSelector(),
+                _buildMap(),
+                _buildAreaList(),
+              ],
+            ),
     );
   }
 
@@ -177,10 +167,12 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
         ),
         value: selectedSupervisorId,
         hint: const Text("اختر مشرفاً من القائمة"),
-        items: mySupervisors.map((sup) => DropdownMenuItem(
-          value: sup['id'] as String,
-          child: Text(sup['fullname']),
-        )).toList(),
+        items: mySupervisors
+            .map((sup) => DropdownMenuItem(
+                  value: sup['id'] as String,
+                  child: Text(sup['fullname']),
+                ))
+            .toList(),
         onChanged: (val) {
           setState(() {
             selectedSupervisorId = val;
@@ -194,75 +186,81 @@ class _ManagerGeoDistScreenState extends State<ManagerGeoDistScreen> {
   Widget _buildMap() {
     return Expanded(
       flex: 2,
-      child: FlutterMap(
-        mapController: _mapController,
-        options: const MapOptions(initialCenter: LatLng(31.2001, 29.9187), initialZoom: 11),
-        children: [
-          TileLayer(
-            urlTemplate: "https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=$mapboxToken",
-            additionalOptions: {'accessToken': mapboxToken},
-          ),
-          if (selectedAreas.isNotEmpty && geoJsonData != null)
-            PolygonLayer(polygons: _buildPolygons()),
-        ],
+      child: GoogleMap(
+        initialCameraPosition: const CameraPosition(
+          target: LatLng(31.2001, 29.9187),
+          zoom: 11,
+        ),
+        onMapCreated: (controller) => _mapController = controller,
+        // ✅ تحويل الـ Polygons لنظام جوجل مابس
+        polygons: _buildPolygons(),
+        myLocationButtonEnabled: false,
+        zoomControlsEnabled: true,
       ),
     );
   }
 
   Widget _buildAreaList() {
     return Expanded(
-      child: allAvailableAreaNames.isEmpty 
-        ? const Center(child: Text("لم يتم العثور على مناطق في الملف"))
-        : ListView.builder(
-            itemCount: allAvailableAreaNames.length,
-            itemBuilder: (context, index) {
-              final area = allAvailableAreaNames[index];
-              return CheckboxListTile(
-                title: Text(area),
-                value: selectedAreas.contains(area),
-                onChanged: (val) {
-                  setState(() {
-                    val == true ? selectedAreas.add(area) : selectedAreas.remove(area);
-                  });
-                },
-              );
-            },
-          ),
+      child: allAvailableAreaNames.isEmpty
+          ? const Center(child: Text("لم يتم العثور على مناطق في الملف"))
+          : ListView.builder(
+              itemCount: allAvailableAreaNames.length,
+              itemBuilder: (context, index) {
+                final area = allAvailableAreaNames[index];
+                return CheckboxListTile(
+                  title: Text(area),
+                  value: selectedAreas.contains(area),
+                  onChanged: (val) {
+                    setState(() {
+                      val == true ? selectedAreas.add(area) : selectedAreas.remove(area);
+                    });
+                  },
+                );
+              },
+            ),
     );
   }
 
-  List<Polygon> _buildPolygons() {
-    List<Polygon> polygons = [];
+  // ✅ تعديل دالة بناء المضلعات لتتوافق مع Set<Polygon> الخاص بجوجل
+  Set<Polygon> _buildPolygons() {
+    Set<Polygon> polygons = {};
+    if (geoJsonData == null) return polygons;
+
     for (var areaName in selectedAreas) {
       try {
         var feature = geoJsonData!['features'].firstWhere((f) => f['properties']['name'] == areaName);
         var geometry = feature['geometry'];
-        
+
         if (geometry['type'] == 'Polygon') {
-          _processCoords(polygons, geometry['coordinates']);
+          _processCoords(polygons, geometry['coordinates'], areaName);
         } else if (geometry['type'] == 'MultiPolygon') {
+          int i = 0;
           for (var poly in geometry['coordinates']) {
-            _processCoords(polygons, poly);
+            _processCoords(polygons, poly, "${areaName}_$i");
+            i++;
           }
         }
-      } catch (e) { continue; }
+      } catch (e) {
+        continue;
+      }
     }
     return polygons;
   }
 
-  void _processCoords(List<Polygon> polygons, List coords) {
-    // دعم مستويات مختلفة من التعشيش
+  void _processCoords(Set<Polygon> polygons, List coords, String areaId) {
     var targetList = coords[0] is List && coords[0][0] is List ? coords[0] : coords;
-    
+
     List<LatLng> points = (targetList as List).map<LatLng>((c) {
       return LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble());
     }).toList();
 
     polygons.add(Polygon(
+      polygonId: PolygonId(areaId),
       points: points,
-      color: Colors.teal.withOpacity(0.3),
-      borderStrokeWidth: 2,
-      borderColor: Colors.teal,
+      fillColor: Colors.teal.withOpacity(0.3),
+      strokeWidth: 2,
+      strokeColor: Colors.teal,
     ));
   }
 }

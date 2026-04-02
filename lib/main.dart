@@ -3,13 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sizer/sizer.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_local_localizations/flutter_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
-
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -19,7 +18,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 // ✅ استيراد ملف الخدمة الخاص بك (بدون أي تعديل في منطق التتبع)
 import 'screens/location_service_handler.dart';
-
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/free_driver_home_screen.dart';
@@ -35,7 +33,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
-
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
@@ -76,6 +73,7 @@ void main() async {
   const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
+  // تم تصحيح الباراميترات هنا لتتوافق مع الإصدار الجديد 21.0.0
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     'high_importance_channel',
     'إشعارات هامة',
@@ -90,11 +88,9 @@ void main() async {
       ?.createNotificationChannel(channel);
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
   try {
     FlutterBackgroundService().invoke("stopService");
   } catch (e) {}
-
   runApp(const AksabDriverApp());
 }
 

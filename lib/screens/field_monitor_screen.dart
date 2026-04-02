@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:latlong2/latlong.dart'; 
+// ✅ تم استبدال latlong2 بمكتبة جوجل مابس لإصلاح خطأ النوع LatLng
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:sizer/sizer.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -54,24 +55,25 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
   bool _shouldShowOrder(Map<String, dynamic> data) {
     if (userRole == 'delivery_manager') return true;
     if (geoJsonData == null || myAreas.isEmpty) return false;
-    
+
     var loc = data['pickupLocation'];
     if (loc == null) return false;
 
     double lat = 0, lng = 0;
     if (loc is GeoPoint) {
-      lat = loc.latitude; lng = loc.longitude;
+      lat = loc.latitude;
+      lng = loc.longitude;
     } else if (loc is List && loc.length >= 2) {
-      lat = (loc[0] as num).toDouble(); lng = (loc[1] as num).toDouble();
+      lat = (loc[0] as num).toDouble();
+      lng = (loc[1] as num).toDouble();
     }
 
     LatLng point = LatLng(lat, lng);
 
     for (var areaName in myAreas) {
       var feature = geoJsonData!['features'].firstWhere(
-        (f) => f['properties']['name'].toString().trim() == areaName.trim(),
-        orElse: () => null
-      );
+          (f) => f['properties']['name'].toString().trim() == areaName.trim(),
+          orElse: () => null);
       if (feature == null) continue;
 
       var geometry = feature['geometry'];
@@ -87,12 +89,19 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
   }
 
   bool _checkPolygon(LatLng point, List coords) {
-    List<LatLng> polyPoints = coords.map<LatLng>((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble())).toList();
-    var lat = point.latitude; var lng = point.longitude; var inside = false;
+    // تصحيح تحويل الإحداثيات لتتوافق مع نظام Google Maps (Lat أولاً)
+    List<LatLng> polyPoints =
+        coords.map<LatLng>((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble())).toList();
+    var lat = point.latitude;
+    var lng = point.longitude;
+    var inside = false;
     for (var i = 0, j = polyPoints.length - 1; i < polyPoints.length; j = i++) {
-      if (((polyPoints[i].longitude > lng) != (polyPoints[j].longitude > lng)) && 
-          (lat < (polyPoints[j].latitude - polyPoints[i].latitude) * (lng - polyPoints[i].longitude) / 
-          (polyPoints[j].longitude - polyPoints[i].longitude) + polyPoints[i].latitude)) {
+      if (((polyPoints[i].longitude > lng) != (polyPoints[j].longitude > lng)) &&
+          (lat <
+              (polyPoints[j].latitude - polyPoints[i].latitude) *
+                      (lng - polyPoints[i].longitude) /
+                      (polyPoints[j].longitude - polyPoints[i].longitude) +
+                  polyPoints[i].latitude)) {
         inside = !inside;
       }
     }
@@ -107,8 +116,9 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
       backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
         elevation: 0,
-        title: Text(userRole == 'delivery_manager' ? "رقابة العهد (عام)" : "متابعة النطاق الجغرافي", 
-          style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp, color: Colors.white)),
+        title: Text(userRole == 'delivery_manager' ? "رقابة العهد (عام)" : "متابعة النطاق الجغرافي",
+            style: TextStyle(
+                fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 16.sp, color: Colors.white)),
         centerTitle: true,
         backgroundColor: Colors.blueGrey[900],
         bottom: TabBar(
@@ -116,18 +126,19 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
           indicatorColor: Colors.orangeAccent,
           indicatorWeight: 4,
           labelStyle: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11.sp),
-          tabs: const [ Tab(text: "الرحلات النشطة"), Tab(text: "المرتجع 🚨") ],
+          tabs: const [Tab(text: "الرحلات النشطة"), Tab(text: "المرتجع 🚨")],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [ _buildOrdersList(isOnlyReturns: false), _buildOrdersList(isOnlyReturns: true) ],
+        children: [_buildOrdersList(isOnlyReturns: false), _buildOrdersList(isOnlyReturns: true)],
       ),
     );
   }
 
   Widget _buildOrdersList({required bool isOnlyReturns}) {
-    List<String> statuses = isOnlyReturns ? ['returning_to_seller'] : ['pending', 'accepted', 'picked_up', 'returning_to_seller'];
+    List<String> statuses =
+        isOnlyReturns ? ['returning_to_seller'] : ['pending', 'accepted', 'picked_up', 'returning_to_seller'];
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('specialRequests').where('status', whereIn: statuses).snapshots(),
@@ -154,13 +165,13 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
           children: [
             _buildStatsDashboard(pendingCount, totalInsurance, filteredDocs.length),
             Expanded(
-              child: filteredDocs.isEmpty 
-              ? Center(child: Text("لا توجد بيانات حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)))
-              : ListView.builder(
-                  padding: EdgeInsets.fromLTRB(10.sp, 5.sp, 10.sp, 15.sp),
-                  itemCount: filteredDocs.length,
-                  itemBuilder: (context, index) => _buildOrderCard(filteredDocs[index].data() as Map<String, dynamic>),
-                ),
+              child: filteredDocs.isEmpty
+                  ? Center(child: Text("لا توجد بيانات حالياً", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp)))
+                  : ListView.builder(
+                      padding: EdgeInsets.fromLTRB(10.sp, 5.sp, 10.sp, 15.sp),
+                      itemCount: filteredDocs.length,
+                      itemBuilder: (context, index) => _buildOrderCard(filteredDocs[index].data() as Map<String, dynamic>),
+                    ),
             ),
           ],
         );
@@ -200,8 +211,11 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
           children: [
             Icon(icon, color: color, size: 20.sp),
             SizedBox(height: 5.sp),
-            Text(value, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16.sp, height: 1.1)),
-            Text(label, style: TextStyle(color: Colors.white70, fontSize: 9.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+            Text(value,
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16.sp, height: 1.1)),
+            Text(label,
+                style:
+                    TextStyle(color: Colors.white70, fontSize: 9.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -222,17 +236,22 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
           Container(
             padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 10.sp),
             decoration: BoxDecoration(
-              color: status == 'returning_to_seller' ? Colors.red[900] : (isRetailer ? Colors.blue[900] : Colors.orange[900]),
+              color: status == 'returning_to_seller'
+                  ? Colors.red[900]
+                  : (isRetailer ? Colors.blue[900] : Colors.orange[900]),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(data['userName'] ?? '', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5.sp, fontFamily: 'Cairo')),
+                Text(data['userName'] ?? '',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5.sp, fontFamily: 'Cairo')),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(12)),
-                  child: Text(_translateStatus(status), style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.bold)),
+                  child: Text(_translateStatus(status),
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -243,23 +262,27 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
               children: [
                 Row(
                   children: [
-                    CircleAvatar(radius: 22.sp, backgroundColor: Colors.blueGrey[50], child: Icon(Icons.person, size: 22.sp, color: Colors.blueGrey[800])),
+                    CircleAvatar(
+                        radius: 22.sp,
+                        backgroundColor: Colors.blueGrey[50],
+                        child: Icon(Icons.person, size: 22.sp, color: Colors.blueGrey[800])),
                     SizedBox(width: 12.sp),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(data['driverName'] ?? "في انتظار مندوب...", 
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.black87, fontFamily: 'Cairo')),
-                          Text("تأمين العهدة: ${data['insurance_points'] ?? 0} نقطة", 
-                            style: TextStyle(color: Colors.blue[900], fontSize: 11.5.sp, fontWeight: FontWeight.w900)),
+                          Text(data['driverName'] ?? "في انتظار مندوب...",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 13.sp, color: Colors.black87, fontFamily: 'Cairo')),
+                          Text("تأمين العهدة: ${data['insurance_points'] ?? 0} نقطة",
+                              style: TextStyle(color: Colors.blue[900], fontSize: 11.5.sp, fontWeight: FontWeight.w900)),
                         ],
                       ),
                     ),
                     IconButton(
-                      icon: CircleAvatar(radius: 20.sp, backgroundColor: Colors.green[600], child: const Icon(Icons.phone, color: Colors.white)), 
-                      onPressed: () => launchUrl(Uri.parse("tel:${data['userPhone']}"))
-                    ),
+                        icon: CircleAvatar(
+                            radius: 20.sp, backgroundColor: Colors.green[600], child: const Icon(Icons.phone, color: Colors.white)),
+                        onPressed: () => launchUrl(Uri.parse("tel:${data['userPhone']}"))),
                   ],
                 ),
                 const Divider(height: 25, thickness: 1),
@@ -272,15 +295,18 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
                   children: [
                     Row(
                       children: [
-                        Icon(isMoneyLocked ? Icons.verified_user : Icons.security_update_warning, 
-                          color: isMoneyLocked ? Colors.green[700] : Colors.orange[800], size: 16.sp),
+                        Icon(isMoneyLocked ? Icons.verified_user : Icons.security_update_warning,
+                            color: isMoneyLocked ? Colors.green[700] : Colors.orange[800], size: 16.sp),
                         SizedBox(width: 6.sp),
-                        Text(isMoneyLocked ? "عهدة مؤمنة ✅" : "قيد التأمين ⚠️", 
-                          style: TextStyle(color: isMoneyLocked ? Colors.green[700] : Colors.orange[800], fontWeight: FontWeight.bold, fontSize: 11.sp)),
+                        Text(isMoneyLocked ? "عهدة مؤمنة ✅" : "قيد التأمين ⚠️",
+                            style: TextStyle(
+                                color: isMoneyLocked ? Colors.green[700] : Colors.orange[800],
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11.sp)),
                       ],
                     ),
                     Text(data['createdAt'] != null ? DateFormat('hh:mm a').format(data['createdAt'].toDate()) : "",
-                      style: TextStyle(color: Colors.grey[700], fontSize: 10.sp, fontWeight: FontWeight.bold)),
+                        style: TextStyle(color: Colors.grey[700], fontSize: 10.sp, fontWeight: FontWeight.bold)),
                   ],
                 )
               ],
@@ -296,18 +322,28 @@ class _FieldMonitorScreenState extends State<FieldMonitorScreen> with SingleTick
       children: [
         Icon(icon, size: 16.sp, color: Colors.blueGrey[400]),
         SizedBox(width: 10.sp),
-        Expanded(child: Text(text, style: TextStyle(fontSize: 11.sp, color: Colors.black87, fontWeight: FontWeight.w500, fontFamily: 'Cairo'), overflow: TextOverflow.ellipsis)),
+        Expanded(
+            child: Text(text,
+                style: TextStyle(
+                    fontSize: 11.sp, color: Colors.black87, fontWeight: FontWeight.w500, fontFamily: 'Cairo'),
+                overflow: TextOverflow.ellipsis)),
       ],
     );
   }
 
   String _translateStatus(String status) {
     switch (status) {
-      case 'pending': return "إرسال الطلب";
-      case 'accepted': return "تم القبول";
-      case 'picked_up': return "بعهد المندوب";
-      case 'returning_to_seller': return "جاري المرتجع";
-      default: return "غير معروف";
+      case 'pending':
+        return "إرسال الطلب";
+      case 'accepted':
+        return "تم القبول";
+      case 'picked_up':
+        return "بعهد المندوب";
+      case 'returning_to_seller':
+        return "جاري المرتجع";
+      default:
+        return "غير معروف";
     }
   }
 }
+

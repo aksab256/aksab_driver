@@ -8,7 +8,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 // ✅ إضافة مكتبة جوجل مابس لاستخدام أنواع البيانات المتوافقة مع النظام الجديد
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -80,11 +79,12 @@ void onStart(ServiceInstance service) async {
   }
 
   // --- تتبع الموقع الحي المتوافق مع جوجل مابس ---
+  // تم تصحيح الخطأ هنا بإزالة كلمة const لأن AndroidSettings لم تعد ثابتة في الإصدار الجديد
   positionStream = Geolocator.getPositionStream(
-    locationSettings: const AndroidSettings(
+    locationSettings: AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 10,
-      intervalDuration: Duration(seconds: 15),
+      intervalDuration: const Duration(seconds: 15),
     ),
   ).listen((Position position) async {
     if (service is AndroidServiceInstance) {
@@ -112,7 +112,6 @@ void onStart(ServiceInstance service) async {
           "latitude": position.latitude,
           "longitude": position.longitude,
         });
-
       } catch (e) {
         debugPrint("Update Error: $e");
       }
