@@ -17,14 +17,12 @@ class AvailableOrdersScreen extends StatefulWidget {
 }
 
 class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
-  // --- المتغيرات الأساسية ---
   Position? _myCurrentLocation;
   bool _isGettingLocation = true;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   GoogleMapController? _mapController;
   Timer? _uiTimer;
 
-  // تنظيف نوع المركبة للربط مع مستندات الـ EC2
   String get _heatmapDoc => "heatmap_${widget.vehicleType.replaceAll('Config', '')}";
 
   @override
@@ -32,7 +30,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     super.initState();
     _updateDriverStatus('browsing_radar');
     _updateLocationSnapshot();
-    // مؤقت لتحديث عدادات الوقت في الكروت كل ثانية
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
@@ -46,7 +43,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     super.dispose();
   }
 
-  // --- دوال التحكم في الحالة والموقع ---
   Future<void> _updateDriverStatus(String status) async {
     if (_uid != null) {
       try {
@@ -77,7 +73,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             'lastLocationUpdate': FieldValue.serverTimestamp(),
           });
         }
-        // تحريك الكاميرا لموقع المندوب عند التحديث
         _mapController?.animateCamera(CameraUpdate.newLatLng(LatLng(pos.latitude, pos.longitude)));
       }
     } catch (e) {
@@ -85,13 +80,26 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // --- منطق الحسابات والقبول ---
-  double _calculateDistance(GeoPoint pickup, GeoPoint dropoff) {
+  // ✅ تحسين حساب المسافة ليكون أكثر مرونة مع أنواع البيانات
+  double _calculateDistance(dynamic pickup, dynamic dropoff) {
     if (_myCurrentLocation == null) return 0.0;
-    double toPickup = Geolocator.distanceBetween(
-        _myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pickup.latitude, pickup.longitude);
-    double toDropoff = Geolocator.distanceBetween(
-        pickup.latitude, pickup.longitude, dropoff.latitude, dropoff.longitude);
+    
+    double pLat, pLng, dLat, dLng;
+
+    if (pickup is GeoPoint) {
+      pLat = pickup.latitude; pLng = pickup.longitude;
+    } else {
+      pLat = pickup['lat'] ?? 0.0; pLng = pickup['lng'] ?? 0.0;
+    }
+
+    if (dropoff is GeoPoint) {
+      dLat = dropoff.latitude; dLng = dropoff.longitude;
+    } else {
+      dLat = dropoff['lat'] ?? 0.0; dLng = dropoff['lng'] ?? 0.0;
+    }
+
+    double toPickup = Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pLat, pLng);
+    double toDropoff = Geolocator.distanceBetween(pLat, pLng, dLat, dLng);
     return (toPickup + toDropoff) / 1000;
   }
 
@@ -101,6 +109,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           context: context,
           barrierDismissible: false,
           builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
+      
       DocumentSnapshot p = await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).get();
       String name = p.exists ? (p.get('fullname') ?? "مندوب") : "مندوب";
 
@@ -108,7 +117,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         DocumentReference oRef = FirebaseFirestore.instance.collection('specialRequests').doc(orderId);
         DocumentReference dRef = FirebaseFirestore.instance.collection('freeDrivers').doc(_uid);
         DocumentSnapshot oSnap = await tx.get(oRef);
-
         if (oSnap.exists && oSnap.get('status') == 'pending') {
           tx.update(oRef, {
             'status': 'accepted',
@@ -125,33 +133,24 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       });
       if (mounted) {
         Navigator.pop(context);
-        Navigator.pushAndRemoveUntil(
-            context, MaterialPageRoute(builder: (c) => ActiveOrderScreen(orderId: orderId)), (r) => false);
+        Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (c) => ActiveOrderScreen(orderId: orderId)), (r) => false);
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(e.toString(), style: const TextStyle(fontFamily: 'Cairo')),
-            backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString(), style: const TextStyle(fontFamily: 'Cairo')), backgroundColor: Colors.red));
       }
     }
   }
 
-  // --- بناء الواجهة (The Layout) ---
   @override
   Widget build(BuildContext context) {
-    if (_isGettingLocation)
-      return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
-
+    if (_isGettingLocation) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
     return Scaffold(
       body: Stack(
         children: [
-          // 1. الخريطة (الرادار الحراري من EC2)
           _buildHeatmapLayer(),
-          // 2. شريط الأدوات العلوي المخصص
           _buildTopOverlay(),
-          // 3. القائمة القابلة للسحب (الطلبات المتاحة للقبول)
           _buildDraggableSheet(),
         ],
       ),
@@ -165,19 +164,14 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         Set<Marker> markers = {};
         if (snapshot.hasData && snapshot.data!.exists) {
           List points = snapshot.data!['points'] ?? [];
-          markers = points
-              .map((p) => Marker(
-                    markerId: MarkerId("heat_${p['lat']}"),
-                    position: LatLng(p['lat'], p['lng']),
-                    icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-                  ))
-              .toSet();
+          markers = points.map((p) => Marker(
+            markerId: MarkerId("heat_${p['lat']}"),
+            position: LatLng(p['lat'], p['lng']),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+          )).toSet();
         }
-
         return GoogleMap(
-          initialCameraPosition: CameraPosition(
-              target: LatLng(_myCurrentLocation?.latitude ?? 31.2, _myCurrentLocation?.longitude ?? 29.9),
-              zoom: 12),
+          initialCameraPosition: CameraPosition(target: LatLng(_myCurrentLocation?.latitude ?? 31.2, _myCurrentLocation?.longitude ?? 29.9), zoom: 12),
           onMapCreated: (c) => _mapController = c,
           markers: markers,
           myLocationEnabled: true,
@@ -192,36 +186,28 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   Widget _buildTopOverlay() {
     return Positioned(
-      top: 6.h,
-      left: 4.w,
-      right: 4.w,
+      top: 6.h, left: 4.w, right: 4.w,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           GestureDetector(
             onTap: () => Navigator.pop(context),
-            child: const CircleAvatar(
-                backgroundColor: Colors.white, child: Icon(Icons.arrow_back, color: Colors.black)),
+            child: const CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.arrow_back, color: Colors.black)),
           ),
           Container(
             padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.2.h),
-            decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)]),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)]),
             child: Row(
               children: [
                 const Icon(Icons.radar, color: Colors.orange, size: 18),
                 const SizedBox(width: 8),
-                Text("رادار رابية أحلى اللحظي",
-                    style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11.sp)),
+                Text("رادار رابية أحلى اللحظي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11.sp)),
               ],
             ),
           ),
           GestureDetector(
             onTap: _updateLocationSnapshot,
-            child: const CircleAvatar(
-                backgroundColor: Colors.white, child: Icon(Icons.my_location, color: Colors.blue)),
+            child: const CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.my_location, color: Colors.blue)),
           ),
         ],
       ),
@@ -229,19 +215,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   }
 
   Widget _buildDraggableSheet() {
-    // ✅ إضافة SafeArea لضمان حماية الشاشة من الأسفل (أزرار الهاتف)
     return SafeArea(
       bottom: true,
       child: DraggableScrollableSheet(
-        initialChildSize: 0.35,
-        minChildSize: 0.18,
-        maxChildSize: 0.95,
+        initialChildSize: 0.35, minChildSize: 0.18, maxChildSize: 0.95,
         builder: (context, scrollController) {
           return Container(
-            decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-                boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 15)]),
+            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(30)), boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 15)]),
             child: Column(
               children: [
                 _buildSheetHandle(),
@@ -249,8 +229,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   child: StreamBuilder<DocumentSnapshot>(
                     stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
                     builder: (context, dSnap) {
-                      double wallet =
-                          double.tryParse(dSnap.data?['walletBalance']?.toString() ?? '0') ?? 0.0;
+                      double wallet = double.tryParse(dSnap.data?['walletBalance']?.toString() ?? '0') ?? 0.0;
                       return _buildOrdersList(scrollController, wallet);
                     },
                   ),
@@ -267,10 +246,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return Column(
       children: [
         const SizedBox(height: 12),
-        Container(
-            width: 45,
-            height: 5,
-            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+        Container(width: 45, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
         const SizedBox(height: 8),
       ],
     );
@@ -279,34 +255,26 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Widget _buildOrdersList(ScrollController sc, double wallet) {
     String cleanType = widget.vehicleType.replaceAll('Config', '');
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('specialRequests')
-          .where('status', isEqualTo: 'pending')
-          .where('vehicleType', isEqualTo: cleanType)
-          .snapshots(),
+      stream: FirebaseFirestore.instance.collection('specialRequests').where('status', isEqualTo: 'pending').where('vehicleType', isEqualTo: cleanType).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-
         final nearby = snapshot.data!.docs.where((doc) {
-          GeoPoint p = doc['pickupLocation'];
-          return Geolocator.distanceBetween(
-                  _myCurrentLocation!.latitude, _myCurrentLocation!.longitude, p.latitude, p.longitude) <=
-              15000;
+          // ✅ معالجة ذكية للـ GeoPoint لضمان عدم الكراش لو الداتا قديمة
+          dynamic p = doc['pickupLocation'];
+          double lat = (p is GeoPoint) ? p.latitude : p['lat'];
+          double lng = (p is GeoPoint) ? p.longitude : p['lng'];
+          return Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, lat, lng) <= 15000;
         }).toList();
 
         if (nearby.isEmpty) {
           return ListView(controller: sc, children: [
             SizedBox(height: 5.h),
             Icon(Icons.search_off, size: 50.sp, color: Colors.grey[300]),
-            Center(
-                child: Text("لا توجد طلبات في محيط 15 كم",
-                    style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 12.sp))),
+            Center(child: Text("لا توجد طلبات في محيط 15 كم", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 12.sp))),
           ]);
         }
-
         return ListView.builder(
-          controller: sc,
-          padding: EdgeInsets.symmetric(horizontal: 4.w),
+          controller: sc, padding: EdgeInsets.symmetric(horizontal: 4.w),
           itemCount: nearby.length,
           itemBuilder: (context, index) => _buildOrderCard(nearby[index], wallet),
         );
@@ -314,7 +282,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
-  // --- بناء كارت الطلب المحدث (تكبير الخطوط) ---
   Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance) {
     var data = doc.data() as Map<String, dynamic>;
     double net = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
@@ -326,45 +293,28 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
     return Container(
       margin: EdgeInsets.only(bottom: 2.h),
-      decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.grey[100]!),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)]),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey[100]!), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)]),
       child: Column(
         children: [
           Container(
             padding: EdgeInsets.all(3.w),
             decoration: BoxDecoration(
-                gradient: isMerchant
-                    ? const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFA000)])
-                    : LinearGradient(colors: [Colors.blueGrey[800]!, Colors.blueGrey[900]!]),
+                gradient: isMerchant ? const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFA000)]) : LinearGradient(colors: [Colors.blueGrey[800]!, Colors.blueGrey[900]!]),
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    Icon(
-                      (isMerchant ? FontAwesomeIcons.solidStar : Icons.delivery_dining) as IconData,
-                      color: isMerchant ? const Color(0xFF5D4037) : Colors.white,
-                      size: 16.sp,
-                    ),
+                    // ✅ تم حل مشكلة الـ FaIconData هنا باستخدام FaIcon بدلاً من Icon
+                    isMerchant 
+                      ? FaIcon(FontAwesomeIcons.solidStar, color: const Color(0xFF5D4037), size: 16.sp)
+                      : Icon(Icons.delivery_dining, color: Colors.white, size: 16.sp),
                     SizedBox(width: 2.w),
-                    // ✅ تكبير خط الصافي ليكون 14.sp بدلاً من 13
-                    Text("$net ج.م صافي",
-                        style: TextStyle(
-                            color: isMerchant ? const Color(0xFF5D4037) : Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14.sp,
-                            fontFamily: 'Cairo')),
+                    Text("$net ج.م صافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo')),
                   ],
                 ),
-                Text(isMerchant ? "طلب من تاجر" : "طلب مستهلك",
-                    style: TextStyle(
-                        color: isMerchant ? const Color(0xFF5D4037) : Colors.white70,
-                        fontSize: 10.sp,
-                        fontFamily: 'Cairo')),
+                Text(isMerchant ? "طلب من تاجر" : "طلب مستهلك", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white70, fontSize: 10.sp, fontFamily: 'Cairo')),
               ],
             ),
           ),
@@ -375,34 +325,20 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    // ✅ تم تكبير الخطوط داخل الـ tags في دالة _tag بالأسفل
                     _tag(Icons.security, "${insurance.toStringAsFixed(0)} عهدة", Colors.red),
-                    _tag(Icons.map,
-                        "${_calculateDistance(data['pickupLocation'], data['dropoffLocation']).toStringAsFixed(1)} كم",
-                        Colors.blue),
+                    _tag(Icons.map, "${_calculateDistance(data['pickupLocation'], data['dropoffLocation']).toStringAsFixed(1)} كم", Colors.blue),
                   ],
                 ),
                 const Divider(height: 25),
-                // ✅ تم تكبير خطوط العناوين في دالة _route بالأسفل
                 _route(Icons.circle, "من: ${data['pickupAddress'] ?? 'الموقع'}", Colors.orange),
                 _route(Icons.location_on, "إلى: ${data['dropoffAddress'] ?? 'العميل'}", Colors.red),
                 const SizedBox(height: 15),
                 SizedBox(
-                  width: double.infinity,
-                  height: 7.h, // زيادة ارتفاع الزرار قليلاً لسهولة الضغط
+                  width: double.infinity, height: 7.h,
                   child: ElevatedButton(
                     onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: canAccept
-                            ? (isMerchant ? const Color(0xFF5D4037) : Colors.green[700])
-                            : Colors.grey,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    child: Text(canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ",
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13.sp, // تكبير خط الزرار
-                            fontFamily: 'Cairo')),
+                    style: ElevatedButton.styleFrom(backgroundColor: canAccept ? (isMerchant ? const Color(0xFF5D4037) : Colors.green[700]) : Colors.grey, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    child: Text(canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo')),
                   ),
                 )
               ],
@@ -413,29 +349,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
-  // ✅ تحسين خط الـ Tag (العهدة والمسافة)
   Widget _tag(IconData i, String l, Color c) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(color: c.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-      child: Row(children: [
-        Icon(i, size: 16, color: c),
-        const SizedBox(width: 6),
-        Text(l,
-            style: TextStyle(
-                color: c, fontSize: 10.5.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))
-      ]));
+      child: Row(children: [Icon(i, size: 16, color: c), const SizedBox(width: 6), Text(l, style: TextStyle(color: c, fontSize: 10.5.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))]));
 
-  // ✅ تحسين خط العناوين (من وإلى) لتكون أوضح
   Widget _route(IconData i, String t, Color c) => Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Row(children: [
-        Icon(i, size: 18, color: c),
-        const SizedBox(width: 12),
-        Expanded(
-            child: Text(t,
-                style: TextStyle(fontSize: 11.5.sp, color: Colors.black87, fontFamily: 'Cairo'),
-                maxLines: 2, // السماح بسطرين للعنوان لو طويل
-                overflow: TextOverflow.ellipsis))
-      ]));
+      child: Row(children: [Icon(i, size: 18, color: c), const SizedBox(width: 12), Expanded(child: Text(t, style: TextStyle(fontSize: 11.5.sp, color: Colors.black87, fontFamily: 'Cairo'), maxLines: 2, overflow: TextOverflow.ellipsis))]));
 }
 
