@@ -105,6 +105,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     if (_uid != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('driver_uid', _uid!);
+      await prefs.setString('active_order_id', widget.orderId);
       final service = FlutterBackgroundService();
       await service.configure(
         androidConfiguration: AndroidConfiguration(
