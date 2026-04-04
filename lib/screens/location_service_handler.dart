@@ -8,7 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// ✅ إضافة مكتبة جوجل مابس لاستخدام أنواع البيانات المتوافقة مع النظام الجديد
+// ✅ استخدام أنواع البيانات المتوافقة مع النظام الجديد
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 @pragma('vm:entry-point')
@@ -29,11 +29,9 @@ void onStart(ServiceInstance service) async {
     service.on('setAsBackground').listen((event) => service.setAsBackgroundService());
   }
 
-  // مراجع للـ Streams عشان نقفلهم صح
   StreamSubscription<Position>? positionStream;
   StreamSubscription<DocumentSnapshot>? orderListener;
 
-  // دالة الإغلاق النظيف للموارد
   Future<void> stopEverything() async {
     await positionStream?.cancel();
     await orderListener?.cancel();
@@ -44,10 +42,10 @@ void onStart(ServiceInstance service) async {
 
   final prefs = await SharedPreferences.getInstance();
   String? uid = prefs.getString('driver_uid');
-  // بنجيب رقم الطلب الحالي من التخزين (لازم نكون حفظناه في الصفحة قبل تشغيل الخدمة)
+  // ✅ التأكد من جلب رقم الطلب لمراقبته
   String? activeOrderId = prefs.getString('active_order_id');
 
-  // --- الجزء الخاص بمراقبة حالة الطلب من الخلفية (بدون أي تغيير في المنطق) ---
+  // --- مراقبة حالة الطلب لإغلاق الخدمة آلياً ---
   if (uid != null && activeOrderId != null) {
     orderListener = FirebaseFirestore.instance
         .collection('specialRequests')
@@ -56,8 +54,8 @@ void onStart(ServiceInstance service) async {
         .listen((snapshot) async {
       if (snapshot.exists) {
         String status = snapshot.data()?['status'] ?? '';
-
-        // الحالات التي تستوجب إيقاف الخدمة فوراً من الخلفية
+        
+        // الحالات التي تستوجب إخلاء العهدة وإيقاف التتبع
         List<String> exitStatuses = [
           'delivered',
           'cancelled_by_user_after_accept',
@@ -66,7 +64,6 @@ void onStart(ServiceInstance service) async {
         ];
 
         if (exitStatuses.contains(status)) {
-          // تحديث المندوب ليكون متاحاً مرة أخرى قبل قفل الخدمة
           await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
             'currentStatus': 'online',
             'activeOrderId': "",
@@ -78,42 +75,37 @@ void onStart(ServiceInstance service) async {
     });
   }
 
-  // --- تتبع الموقع الحي المتوافق مع جوجل مابس ---
-  // تم تصحيح الخطأ هنا بإزالة كلمة const لأن AndroidSettings لم تعد ثابتة في الإصدار الجديد
+  // --- تتبع الموقع المتوافق مع جوجل مابس ---
   positionStream = Geolocator.getPositionStream(
     locationSettings: AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 10,
-      intervalDuration: const Duration(seconds: 15),
+      intervalDuration: const Duration(seconds: 10), // تحديث كل 10 ثواني في الخلفية كافٍ جداً
+      foregroundNotificationConfig: const ForegroundNotificationConfig(
+        notificationText: "جاري تحديث المسار لضمان استحقاق نقاط التأمين المحجوزة",
+        notificationTitle: "رابية أحلى: نظام التأمين نشط 🛡️",
+        enableWakeLock: true,
+      ),
     ),
   ).listen((Position position) async {
-    if (service is AndroidServiceInstance) {
-      // استخدام المصطلحات اللوجيستية المتفق عليها (نظام التأمين والعهدة)
-      service.setForegroundNotificationInfo(
-        title: "أكسب: نظام التأمين نشط 🛡️",
-        content: "يتم تحديث المسار لضمان استحقاق النقاط المحجوزة",
-      );
-    }
-
     if (uid != null) {
       try {
-        // ✅ تحديث البيانات في Firestore لتكون جاهزة للقراءة من أي تطبيق يستخدم جوجل مابس
         await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
           'location': GeoPoint(position.latitude, position.longitude),
           'lat': position.latitude,
           'lng': position.longitude,
-          'lastSeen': FieldValue.serverTimestamp(),
+          'heading': position.heading, // مهم جداً لدوران الماركر
           'speed': position.speed,
-          'heading': position.heading,
+          'lastSeen': FieldValue.serverTimestamp(),
         });
 
-        // ✅ إرسال إشعار لحظي للتطبيق (في حال كان المندوب فاتح الشاشة) بنوع بيانات متوافق
         service.invoke('updateLocation', {
           "latitude": position.latitude,
           "longitude": position.longitude,
+          "heading": position.heading,
         });
       } catch (e) {
-        debugPrint("Update Error: $e");
+        debugPrint("Background Update Error: $e");
       }
     }
   });
