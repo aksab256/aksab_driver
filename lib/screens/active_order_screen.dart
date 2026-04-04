@@ -305,25 +305,64 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
 
   // ✅ التحديث باستخدام Google Directions API بدلاً من Mapbox
   Future<void> _updateRoute(LatLng dest) async {
-    if (_currentLocation == null) return;
-    
-    // ملاحظة: يجب تفعيل Directions API في الكونسول واستخدام نفس المفتاح
-    // الرابط يستخدم الاحداثيات الحالية للمندوب والوجهة المستهدفة
-    final url = 'https://maps.googleapis.com/maps/api/directions/json?origin=${_currentLocation!.latitude},${_currentLocation!.longitude}&destination=${dest.latitude},${dest.longitude}&key=AIzaSyDkKyX-w0P1SBgOCmqjfZVMOGUiAiCbhLA';
+  if (_currentLocation == null) return;
 
-    try {
-      final res = await http.get(Uri.parse(url));
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
-        if (data['status'] == 'OK' && data['routes'].isNotEmpty) {
-          String encodedPoints = data['routes'][0]['overview_polyline']['points'];
-          if (mounted) setState(() => _routePoints = _decodePolyline(encodedPoints));
+  // 1. العنوان الجديد (Routes API New)
+  final String url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+
+  // 2. تجهيز بيانات الطلب (JSON Body)
+  final Map<String, dynamic> requestBody = {
+    "origin": {
+      "location": {
+        "latLng": {
+          "latitude": _currentLocation!.latitude,
+          "longitude": _currentLocation!.longitude
         }
       }
-    } catch (e) {
-      debugPrint("Google Route Error: $e");
+    },
+    "destination": {
+      "location": {
+        "latLng": {
+          "latitude": dest.latitude,
+          "longitude": dest.longitude
+        }
+      }
+    },
+    "travelMode": "DRIVE",
+    "routingPreference": "TRAFFIC_AWARE",
+  };
+
+  try {
+    // 3. لازم نستخدم http.post مش http.get
+    final res = await http.post(
+      Uri.parse(url),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': 'AIzaSyDkKyX-w0P1SBgOCmqjfZVMOGUiAiCbhLA',
+        // 4. الـ FieldMask ده "إجباري" عشان جوجل ترضى ترد بالمسار
+        'X-Goog-FieldMask': 'routes.polyline.encodedPolyline'
+      },
+      body: json.encode(requestBody),
+    );
+
+    if (res.statusCode == 200) {
+      final data = json.decode(res.body);
+      if (data['routes'] != null && data['routes'].isNotEmpty) {
+        // فك التشفير من المكان الجديد في الـ JSON
+        String encodedPoints = data['routes'][0]['polyline']['encodedPolyline'];
+        if (mounted) {
+          setState(() => _routePoints = _decodePolyline(encodedPoints));
+        }
+      }
+    } else {
+      // لو لسه فيه مشكلة، الرسالة دي هتظهر في الـ Debug
+      debugPrint("Routes API Error: ${res.body}");
     }
+  } catch (e) {
+    debugPrint("Network Error: $e");
   }
+}
+
 
   Widget _buildBottomPanel() {
     return StreamBuilder<DocumentSnapshot>(
