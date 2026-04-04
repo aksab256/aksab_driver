@@ -309,7 +309,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     
     // ملاحظة: يجب تفعيل Directions API في الكونسول واستخدام نفس المفتاح
     // الرابط يستخدم الاحداثيات الحالية للمندوب والوجهة المستهدفة
-    final url = 'https://maps.googleapis.com/maps/api/directions/json?origin=${_currentLocation!.latitude},${_currentLocation!.longitude}&destination=${dest.latitude},${dest.longitude}&key=YOUR_GOOGLE_KEY_FROM_MANIFEST';
+    final url = 'https://maps.googleapis.com/maps/api/directions/json?origin=${_currentLocation!.latitude},${_currentLocation!.longitude}&destination=${dest.latitude},${dest.longitude}&key=AIzaSyDkKyX-w0P1SBgOCmqjfZVMOGUiAiCbhLA';
 
     try {
       final res = await http.get(Uri.parse(url));
