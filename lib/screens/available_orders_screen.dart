@@ -80,22 +80,31 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // ✅ تحسين حساب المسافة ليكون أكثر مرونة مع أنواع البيانات
+  // ✅ تحسين حساب المسافة ليكون مؤمناً ضد كافة أنواع البيانات (GeoPoint, List, Map)
   double _calculateDistance(dynamic pickup, dynamic dropoff) {
     if (_myCurrentLocation == null) return 0.0;
-    
-    double pLat, pLng, dLat, dLng;
+    double pLat = 0.0, pLng = 0.0, dLat = 0.0, dLng = 0.0;
 
-    if (pickup is GeoPoint) {
-      pLat = pickup.latitude; pLng = pickup.longitude;
-    } else {
-      pLat = pickup['lat'] ?? 0.0; pLng = pickup['lng'] ?? 0.0;
-    }
+    try {
+      // معالجة موقع الاستلام
+      if (pickup is GeoPoint) {
+        pLat = pickup.latitude; pLng = pickup.longitude;
+      } else if (pickup is List || pickup is Iterable) {
+        pLat = pickup[0]; pLng = pickup[1];
+      } else {
+        pLat = pickup['lat'] ?? 0.0; pLng = pickup['lng'] ?? 0.0;
+      }
 
-    if (dropoff is GeoPoint) {
-      dLat = dropoff.latitude; dLng = dropoff.longitude;
-    } else {
-      dLat = dropoff['lat'] ?? 0.0; dLng = dropoff['lng'] ?? 0.0;
+      // معالجة موقع التسليم
+      if (dropoff is GeoPoint) {
+        dLat = dropoff.latitude; dLng = dropoff.longitude;
+      } else if (dropoff is List || dropoff is Iterable) {
+        dLat = dropoff[0]; dLng = dropoff[1];
+      } else {
+        dLat = dropoff['lat'] ?? 0.0; dLng = dropoff['lng'] ?? 0.0;
+      }
+    } catch (e) {
+      return 0.0;
     }
 
     double toPickup = Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, pLat, pLng);
@@ -109,7 +118,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           context: context,
           barrierDismissible: false,
           builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
-      
+
       DocumentSnapshot p = await FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).get();
       String name = p.exists ? (p.get('fullname') ?? "مندوب") : "مندوب";
 
@@ -257,13 +266,25 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('specialRequests').where('status', isEqualTo: 'pending').where('vehicleType', isEqualTo: cleanType).snapshots(),
       builder: (context, snapshot) {
+        if (snapshot.hasError) return Center(child: Text("خطأ في الاتصال بالرادار", style: TextStyle(fontFamily: 'Cairo')));
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+
         final nearby = snapshot.data!.docs.where((doc) {
-          // ✅ معالجة ذكية للـ GeoPoint لضمان عدم الكراش لو الداتا قديمة
-          dynamic p = doc['pickupLocation'];
-          double lat = (p is GeoPoint) ? p.latitude : p['lat'];
-          double lng = (p is GeoPoint) ? p.longitude : p['lng'];
-          return Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, lat, lng) <= 15000;
+          try {
+            // ✅ معالجة ذكية ومؤمنة لموقع الاستلام لضمان عدم الكراش مهما اختلف نوع البيانات
+            dynamic p = doc['pickupLocation'];
+            double lat, lng;
+            if (p is GeoPoint) {
+              lat = p.latitude; lng = p.longitude;
+            } else if (p is List || p is Iterable) {
+              lat = p[0]; lng = p[1];
+            } else {
+              lat = p['lat'] ?? 0.0; lng = p['lng'] ?? 0.0;
+            }
+            return Geolocator.distanceBetween(_myCurrentLocation!.latitude, _myCurrentLocation!.longitude, lat, lng) <= 15000;
+          } catch (e) {
+            return false;
+          }
         }).toList();
 
         if (nearby.isEmpty) {
@@ -306,10 +327,9 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 Row(
                   children: [
-                    // ✅ تم حل مشكلة الـ FaIconData هنا باستخدام FaIcon بدلاً من Icon
-                    isMerchant 
-                      ? FaIcon(FontAwesomeIcons.solidStar, color: const Color(0xFF5D4037), size: 16.sp)
-                      : Icon(Icons.delivery_dining, color: Colors.white, size: 16.sp),
+                    isMerchant
+                        ? FaIcon(FontAwesomeIcons.solidStar, color: const Color(0xFF5D4037), size: 16.sp)
+                        : Icon(Icons.delivery_dining, color: Colors.white, size: 16.sp),
                     SizedBox(width: 2.w),
                     Text("$net ج.م صافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo')),
                   ],
