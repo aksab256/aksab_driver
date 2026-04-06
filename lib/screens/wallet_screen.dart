@@ -314,7 +314,11 @@ class WalletScreen extends StatelessWidget {
                 double amount = _toDouble(item['amount']);
                 return Card(
                   elevation: 0, margin: const EdgeInsets.only(bottom: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey[100]!)),
+                  shape: RoundedRectangleBorder(
+  borderRadius: BorderRadius.circular(12),
+  side: BorderSide(color: Colors.grey[100]!, width: 1), // التعديل الصحيح
+),
+
                   child: ListTile(
                     leading: Icon(isInvoice ? Icons.payment : Icons.history, color: isInvoice ? Colors.orange : Colors.blueGrey),
                     title: Text(isInvoice ? "رابط شحن متاح" : _getLogTitle(item['type'], amount), style: const TextStyle(fontFamily: 'Cairo', fontSize: 12, fontWeight: FontWeight.bold)),
