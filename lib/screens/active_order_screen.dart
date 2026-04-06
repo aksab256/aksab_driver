@@ -514,8 +514,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   void _completeOrder(Map<String, dynamic> data) async {
     bool isMerchant = data['requestSource'] == 'retailer';
     
-    // أجرة المندوب من حقل driverNet
-    double deliveryFee = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
+    // أجرة المندوب من حقل totalPrice
+    double deliveryFee = double.tryParse(data['totalPrice']?.toString() ?? '0') ?? 0.0;
     
     // قيمة العهدة للتاجر فقط
     double goodsValue = isMerchant 
@@ -685,4 +685,3 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     );
   }
 }
-
