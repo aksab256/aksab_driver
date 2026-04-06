@@ -7,7 +7,6 @@ import 'package:url_launcher/url_launcher.dart';
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
 
-  // دالة مساعدة لتحويل القيم من Firestore إلى Double بأمان
   double _toDouble(dynamic value) {
     if (value == null) return 0.0;
     if (value is int) return value.toDouble();
@@ -28,30 +27,32 @@ class WalletScreen extends StatelessWidget {
         'createdAt': FieldValue.serverTimestamp(),
       });
       if (context.mounted) Navigator.pop(context);
-      _showInfoSheet(context, "تم استلام طلبك",
-          "جاري تجهيز رابط سداد آمن لتعبئة (نقاط الأمان)، ستظهر في سجل العمليات فور جاهزيتها.");
+      _showInfoSheet(context, "تم استلام طلبك", "جاري تجهيز رابط سداد آمن لتعبئة (نقاط الأمان)، ستظهر في سجل العمليات فور جاهزيتها.");
     } catch (e) {
       if (context.mounted) Navigator.pop(context);
       _showInfoSheet(context, "خطأ", "فشل الاتصال بالخادم، يرجى المحاولة لاحقاً.");
     }
   }
 
-  // --- 💰 2. طلب تسوية أرباح (سحب) ---
-  Future<void> _executeWithdrawal(BuildContext context, double amount) async {
+  // --- 💰 2. طلب تسوية أرباح مطور (إرسال الحقول الجديدة) ---
+  Future<void> _executeWithdrawal(BuildContext context, double amount, String name, String phone, String method, String account) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     _showLoading(context);
     try {
       await FirebaseFirestore.instance.collection('withdrawRequests').add({
         'driverId': uid,
+        'driverName': name,
+        'driverPhone': phone,
         'amount': amount,
+        'methodType': method,
+        'accountNumber': account,
         'status': 'pending',
         'type': 'EARNINGS_SETTLEMENT',
         'createdAt': FieldValue.serverTimestamp(),
       });
       if (context.mounted) {
         Navigator.pop(context);
-        _showInfoSheet(context, "طلب التسوية قيد المراجعة",
-            "سيتم مراجعة سجل العهدة وتحويل المبالغ المتاحة لحسابك خلال 24 ساعة.");
+        _showInfoSheet(context, "طلب التسوية قيد المراجعة", "تم إرسال بيانات التحويل للإدارة. سيتم مراجعة سجل العهدة وتحويل المبلغ خلال 24 ساعة.");
       }
     } catch (e) {
       if (context.mounted) {
@@ -65,85 +66,67 @@ class WalletScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC), // لون خلفية أهدأ للعين
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new),
-          onPressed: () {
-            if (Navigator.of(context).canPop()) {
-              Navigator.of(context).pop();
-            } else {
-              Navigator.of(context).pushReplacementNamed('/free_home');
-            }
-          },
+          onPressed: () => Navigator.of(context).canPop() ? Navigator.of(context).pop() : Navigator.of(context).pushReplacementNamed('/free_home'),
         ),
-        title: const Text("إدارة العهدة ونقاط الأمان",
-            style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 18)),
+        title: const Text("إدارة العهدة ونقاط الأمان", style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo', fontSize: 18)),
         centerTitle: true,
         backgroundColor: Colors.white,
         elevation: 0,
         foregroundColor: Colors.black,
       ),
-      // استخدام SafeArea لحماية المحتوى من الحواف
       body: SafeArea(
         child: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
           builder: (context, driverSnap) {
             if (!driverSnap.hasData) return const Center(child: CircularProgressIndicator(color: Colors.orange));
-            
             var userData = driverSnap.data!.data() as Map<String, dynamic>?;
-
+            
             double walletBalance = _toDouble(userData?['walletBalance']);
             double creditLimit = _toDouble(userData?['creditLimit']);
             double lockedInsurance = _toDouble(userData?['insurance_points']);
+            String driverName = userData?['fullName'] ?? "مندوب اكسب";
+            String driverPhone = userData?['phone'] ?? "";
 
             return SingleChildScrollView(
-              // تم ضبط الـ physics لمنع السحب الزائد (الارتداد)
               physics: const ClampingScrollPhysics(),
               child: Column(
                 children: [
                   _buildMainAssetCard(walletBalance, creditLimit, lockedInsurance),
-
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.blueGrey[50],
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text("إجمالي الأمانات بالذمة: ${(walletBalance + lockedInsurance).toStringAsFixed(2)} ج.م",
-                          style: TextStyle(
-                              fontSize: 11.sp,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Cairo',
-                              color: Colors.blueGrey[800])),
-                    ),
+                  
+                  // شريط إجمالي الأمانات
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(color: Colors.blueGrey[50], borderRadius: BorderRadius.circular(20)),
+                    child: Text("إجمالي الأمانات بالذمة: ${(walletBalance + lockedInsurance).toStringAsFixed(2)} ج.م",
+                        style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.blueGrey[800])),
                   ),
 
+                  // أزرار العمليات
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     child: Row(
                       children: [
                         Expanded(child: _actionBtn(Icons.add_moderator_outlined, "تعبئة نقاط", Colors.green[700]!, () => _showChargePicker(context))),
                         const SizedBox(width: 15),
-                        Expanded(child: _actionBtn(Icons.account_balance_outlined, "طلب تسوية", Colors.blueGrey[800]!, () => _showWithdrawDialog(context, walletBalance))),
+                        Expanded(child: _actionBtn(Icons.account_balance_outlined, "طلب تسوية", Colors.blueGrey[800]!, () => _showWithdrawDialog(context, walletBalance, driverName, driverPhone))),
                       ],
                     ),
                   ),
 
-                  _sectionHeader("سجل تأمين العهدة والعمليات"),
+                  // ✅ جزء جديد: طلبات السحب تحت المراجعة (فلترة داخلية)
+                  _buildPendingWithdrawalsSection(uid),
 
+                  _sectionHeader("سجل تأمين العهدة والعمليات"),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    // تمرير الـ UID للبناء المدمج
                     child: _buildCombinedHistory(uid),
                   ),
-
-                  // تم تحسين تصميم وحجم خط إخلاء المسؤولية
                   _buildLegalDisclaimer(),
-                  
-                  // مسافة أمان سفلية لضمان عدم اختفاء النص تحت أزرار النظام
                   const SizedBox(height: 40),
                 ],
               ),
@@ -154,63 +137,156 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  // --- كارت الأرصدة الرئيسي (تصميم مطور) ---
+  // --- فلترة الطلبات المعلقة يدوياً بدون إندكس ---
+  Widget _buildPendingWithdrawalsSection(String? uid) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('withdrawRequests').snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox();
+        
+        // فلترة الطلبات الخاصة بهذا المندوب وحالتها pending يدوياً
+        final pendingRequests = snapshot.data!.docs.where((doc) {
+          var d = doc.data() as Map<String, dynamic>;
+          return d['driverId'] == uid && d['status'] == 'pending';
+        }).toList();
+
+        if (pendingRequests.isEmpty) return const SizedBox();
+
+        return Column(
+          children: [
+            _sectionHeader("طلبات قيد المراجعة ⏳"),
+            ...pendingRequests.map((doc) {
+              var d = doc.data() as Map<String, dynamic>;
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                padding: const EdgeInsets.all(15),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: Colors.orange.withOpacity(0.3))
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text("طلب سحب أرباح", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 12.sp)),
+                      Text("وسيلة التحويل: ${d['methodType']}", style: const TextStyle(fontFamily: 'Cairo', fontSize: 10, color: Colors.blueGrey)),
+                    ]),
+                    Text("${d['amount']} ج.م", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 14.sp, color: Colors.orange[900])),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        );
+      },
+    );
+  }
+
+  // --- كارت الأرصدة الرئيسي ---
   Widget _buildMainAssetCard(double available, double limit, double locked) => Container(
-    margin: const EdgeInsets.all(20),
-    padding: const EdgeInsets.all(25),
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-          colors: [Color(0xFF1A1C1E), Color(0xFF373B3E)], 
-          begin: Alignment.topLeft, 
-          end: Alignment.bottomRight),
-      borderRadius: BorderRadius.circular(30),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 15, offset: const Offset(0, 8))],
-    ),
-    child: Column(children: [
-      const Text("نقاط الأمان المتاحة", 
-          style: TextStyle(color: Colors.white70, fontFamily: 'Cairo', fontSize: 14)),
-      const SizedBox(height: 10),
-      Text(available.toStringAsFixed(2), 
-          style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900)),
-      const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20),
-        child: Divider(color: Colors.white24, height: 1, thickness: 1),
-      ),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-        _miniInfo("تأمين عهدة", locked.toStringAsFixed(1), Colors.orangeAccent),
-        _miniInfo("سقف المديونية", limit.toStringAsFixed(1), Colors.cyanAccent),
-      ])
-    ]),
-  );
+      margin: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(25),
+      decoration: BoxDecoration(
+          gradient: const LinearGradient(colors: [Color(0xFF1A1C1E), Color(0xFF373B3E)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 15, offset: const Offset(0, 8))]),
+      child: Column(children: [
+        const Text("نقاط الأمان المتاحة", style: TextStyle(color: Colors.white70, fontFamily: 'Cairo', fontSize: 14)),
+        const SizedBox(height: 10),
+        Text(available.toStringAsFixed(2), style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900)),
+        const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Divider(color: Colors.white24, height: 1, thickness: 1)),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          _miniInfo("تأمين عهدة", locked.toStringAsFixed(1), Colors.orangeAccent),
+          _miniInfo("سقف المديونية", limit.toStringAsFixed(1), Colors.cyanAccent),
+        ])
+      ]),
+    );
 
   Widget _miniInfo(String label, String value, Color valColor) => Column(children: [
-    Text(label, style: const TextStyle(color: Colors.white60, fontSize: 11, fontFamily: 'Cairo')),
-    const SizedBox(height: 5),
-    Text(value, style: TextStyle(color: valColor, fontWeight: FontWeight.w900, fontSize: 18)),
-  ]);
+        Text(label, style: const TextStyle(color: Colors.white60, fontSize: 11, fontFamily: 'Cairo')),
+        const SizedBox(height: 5),
+        Text(value, style: TextStyle(color: valColor, fontWeight: FontWeight.w900, fontSize: 18)),
+      ]);
 
-  // بناء السجل المدمج مع حماية الـ 6 ساعات
+  // --- ديالوج سحب الأرباح المطور ---
+  void _showWithdrawDialog(BuildContext context, double current, String name, String phone) {
+    final amountCtrl = TextEditingController();
+    final accountCtrl = TextEditingController();
+    String selectedMethod = 'فودافون كاش';
+
+    showDialog(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+          title: const Text("طلب تسوية رصيد", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text("المتاح: ${current.toStringAsFixed(2)} ج.م", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+              const SizedBox(height: 20),
+              TextField(
+                controller: amountCtrl,
+                keyboardType: TextInputType.number,
+                decoration: _inputStyle("المبلغ المراد سحبه"),
+              ),
+              const SizedBox(height: 15),
+              DropdownButtonFormField<String>(
+                value: selectedMethod,
+                decoration: _inputStyle("وسيلة التحويل"),
+                items: ['فودافون كاش', 'انستا باي', 'تحويل بنكي'].map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontFamily: 'Cairo')))).toList(),
+                onChanged: (val) => setState(() => selectedMethod = val!),
+              ),
+              const SizedBox(height: 15),
+              TextField(
+                controller: accountCtrl,
+                keyboardType: TextInputType.text,
+                decoration: _inputStyle("رقم الحساب / المحفظة / العنوان"),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(color: Colors.red, fontFamily: 'Cairo'))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[800], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              onPressed: () {
+                double? amt = double.tryParse(amountCtrl.text);
+                if (amt != null && amt > 0 && amt <= current && accountCtrl.text.isNotEmpty) {
+                  Navigator.pop(context);
+                  _executeWithdrawal(context, amt, name, phone, selectedMethod, accountCtrl.text);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("برجاء التأكد من المبلغ وصحة البيانات")));
+                }
+              },
+              child: const Text("تأكيد الطلب", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputStyle(String hint) => InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(fontSize: 12, fontFamily: 'Cairo'),
+      filled: true,
+      fillColor: Colors.grey[100],
+      contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none));
+
+  // --- بقية الدوال المساعدة (History, Disclaimer, etc) ---
   Widget _buildCombinedHistory(String? uid) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('pendingInvoices')
-          .where('driverId', isEqualTo: uid)
-          .where('status', isEqualTo: 'ready_for_payment')
-          .snapshots(),
+      stream: FirebaseFirestore.instance.collection('pendingInvoices').where('driverId', isEqualTo: uid).where('status', isEqualTo: 'ready_for_payment').snapshots(),
       builder: (context, pendingSnap) {
         return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance.collection('walletLogs')
-              .where('driverId', isEqualTo: uid)
-              .orderBy('timestamp', descending: true)
-              .limit(15)
-              .snapshots(),
+          stream: FirebaseFirestore.instance.collection('walletLogs').where('driverId', isEqualTo: uid).orderBy('timestamp', descending: true).limit(15).snapshots(),
           builder: (context, logSnap) {
             List<Map<String, dynamic>> allItems = [];
             DateTime now = DateTime.now();
-
             if (pendingSnap.hasData) {
               for (var doc in pendingSnap.data!.docs) {
                 var d = doc.data() as Map<String, dynamic>;
-                // فلترة الروابط (تختفي بعد 6 ساعات من الإنشاء)
                 if (d['createdAt'] != null) {
                   DateTime createdAt = (d['createdAt'] as Timestamp).toDate();
                   if (now.difference(createdAt).inHours < 6) {
@@ -227,57 +303,23 @@ class WalletScreen extends StatelessWidget {
                 allItems.add(d);
               }
             }
-
-            if (allItems.isEmpty) {
-              return Container(
-                height: 150, 
-                alignment: Alignment.center, 
-                child: Text("سجل العهدة فارغ حالياً", 
-                    style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[400], fontSize: 12.sp)));
-            }
-
+            if (allItems.isEmpty) return Container(height: 100, alignment: Alignment.center, child: Text("السجل فارغ", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[400])));
             return ListView.builder(
               shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(), // لمنع تداخل السكرول
+              physics: const NeverScrollableScrollPhysics(),
               itemCount: allItems.length,
               itemBuilder: (context, index) {
                 var item = allItems[index];
                 bool isInvoice = item['isInvoice'] ?? false;
                 double amount = _toDouble(item['amount']);
-                
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(15),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 5)],
-                    border: Border.all(color: isInvoice ? Colors.orange.shade200 : Colors.transparent)
-                  ),
+                return Card(
+                  elevation: 0, margin: const EdgeInsets.only(bottom: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey[100]!)),
                   child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: isInvoice ? Colors.orange[50] : Colors.blueGrey[50],
-                      child: Icon(isInvoice ? Icons.qr_code_scanner : Icons.swap_vert, 
-                          color: isInvoice ? Colors.orange : Colors.blueGrey, size: 20),
-                    ),
-                    title: Text(isInvoice ? "رابط شحن نقاط الأمان" : _getLogTitle(item['type'], amount),
-                        style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13)),
-                    subtitle: Text(isInvoice ? "اضغط لإتمام عملية السداد" : "تحديث تلقائي من النظام", 
-                        style: const TextStyle(fontFamily: 'Cairo', fontSize: 10)),
-                    trailing: isInvoice
-                      ? ElevatedButton(
-                          onPressed: () => _launchPaymentUrl(item['paymentUrl']),
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange[800], 
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                          child: const Text("دفع", style: TextStyle(color: Colors.white, fontFamily: 'Cairo', fontSize: 11)),
-                        )
-                      : Text("${amount > 0 ? '+' : ''}${amount.toStringAsFixed(1)}",
-                          style: TextStyle(
-                              fontFamily: 'Cairo', 
-                              fontWeight: FontWeight.w900, 
-                              fontSize: 14,
-                              color: amount > 0 ? Colors.green : Colors.red)),
+                    leading: Icon(isInvoice ? Icons.payment : Icons.history, color: isInvoice ? Colors.orange : Colors.blueGrey),
+                    title: Text(isInvoice ? "رابط شحن متاح" : _getLogTitle(item['type'], amount), style: const TextStyle(fontFamily: 'Cairo', fontSize: 12, fontWeight: FontWeight.bold)),
+                    trailing: Text("${amount > 0 ? '+' : ''}$amount", style: TextStyle(color: amount > 0 ? Colors.green : Colors.red, fontWeight: FontWeight.bold)),
+                    onTap: isInvoice ? () => _launchPaymentUrl(item['paymentUrl']) : null,
                   ),
                 );
               },
@@ -295,114 +337,28 @@ class WalletScreen extends StatelessWidget {
     return amount > 0 ? "إيداع نقاط" : "تخصيص عهدة";
   }
 
-  Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        decoration: BoxDecoration(
-            color: Colors.white, 
-            borderRadius: BorderRadius.circular(20), 
-            border: Border.all(color: Colors.grey[200]!),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]
+  Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey[200]!), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)]),
+          child: Column(children: [Icon(icon, color: color, size: 24.sp), const SizedBox(height: 8), Text(label, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 12))]),
         ),
-        child: Column(children: [
-            Icon(icon, color: color, size: 24.sp),
-            const SizedBox(height: 8),
-            Text(label, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 12)),
-        ]),
-      ),
-    );
-  }
+      );
 
-  Widget _sectionHeader(String title) => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 25, 20, 15),
-    child: Align(
-      alignment: Alignment.centerRight, 
-      child: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 16, color: Colors.black87)))
-  );
+  Widget _sectionHeader(String title) => Padding(padding: const EdgeInsets.fromLTRB(20, 25, 20, 15), child: Align(alignment: Alignment.centerRight, child: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 16))));
 
-  Widget _buildLegalDisclaimer() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
-    child: Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.orange.withOpacity(0.05), borderRadius: BorderRadius.circular(15)),
-      child: Text(
-        "إدارة العهدة: يتم تخصيص نقاط أمان تعادل قيمة الشحنة لضمان النقل الآمن، وتُعاد لرصيدك المتاح فور تأكيد استلام الأمانات من قبل التاجر أو العميل.",
-        textAlign: TextAlign.center, 
-        style: TextStyle(fontFamily: 'Cairo', fontSize: 10.sp, color: Colors.blueGrey[700], height: 1.6, fontWeight: FontWeight.w600)
-      ),
-    ),
-  );
+  Widget _buildLegalDisclaimer() => Padding(padding: const EdgeInsets.all(20), child: Text("إدارة العهدة: يتم تخصيص نقاط أمان تعادل قيمة الشحنة لضمان النقل الآمن، وتُعاد فور تأكيد الاستلام.", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 9.sp, color: Colors.grey)));
 
   void _showLoading(BuildContext context) => showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
 
-  void _showInfoSheet(BuildContext context, String t, String m) => showModalBottomSheet(
-    context: context, 
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-    builder: (c) => SafeArea(child: Padding(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Text(t, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, fontFamily: 'Cairo')),
-      const SizedBox(height: 12),
-      Text(m, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 14)),
-      const SizedBox(height: 30),
-      SizedBox(width: double.infinity, height: 50, child: ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.black87, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-          onPressed: () => Navigator.pop(context), 
-          child: const Text("حسناً، فهمت", style: TextStyle(fontFamily: 'Cairo', color: Colors.white))))
-    ])))
-  );
+  void _showInfoSheet(BuildContext context, String t, String m) => showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))), builder: (c) => Padding(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [Text(t, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, fontFamily: 'Cairo')), const SizedBox(height: 10), Text(m, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', color: Colors.grey)), const SizedBox(height: 20), SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("فهمت")))])));
 
-  void _launchPaymentUrl(String? url) async {
-    if (url == null || url.isEmpty) return;
-    final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) debugPrint("Could not launch $url");
-  }
+  void _launchPaymentUrl(String? url) async { if (url != null) await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); }
 
   void _showChargePicker(BuildContext context) {
-    showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-      builder: (c) => SafeArea(child: Container(padding: const EdgeInsets.all(25),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text("تعبئة نقاط الأمان", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18)),
-          const SizedBox(height: 10),
-          const Text("اختر القيمة لتفعيل حسابك واستلام الشحنات", style: TextStyle(fontFamily: 'Cairo', fontSize: 13, color: Colors.grey)),
-          const SizedBox(height: 25),
-          Wrap(spacing: 15, runSpacing: 15, alignment: WrapAlignment.center, children: [100, 200, 500, 1000].map((a) => ActionChip(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-            backgroundColor: Colors.orange[50],
-            label: Text("$a نقطة", style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.orange)),
-            onPressed: () { Navigator.pop(context); _processCharge(context, a.toDouble()); }
-          )).toList()),
-          const SizedBox(height: 25),
-        ]))));
-  }
-
-  void _showWithdrawDialog(BuildContext context, double current) {
-    final ctrl = TextEditingController();
-    showDialog(context: context, builder: (c) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-      title: const Text("تسوية رصيد الأمانات", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 18), textAlign: TextAlign.center),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text("الرصيد المتاح حالياً: ${current.toStringAsFixed(2)} ج.م", style: const TextStyle(fontSize: 14, color: Colors.blueGrey, fontFamily: 'Cairo')),
-        const SizedBox(height: 20),
-        TextField(controller: ctrl, keyboardType: TextInputType.number, textAlign: TextAlign.center,
-          decoration: InputDecoration(
-            hintText: "المبلغ المطلوب تسويته", 
-            hintStyle: const TextStyle(fontSize: 13, fontFamily: 'Cairo'),
-            filled: true, fillColor: Colors.grey[100],
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none))),
-      ]),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo', color: Colors.red))),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[800], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-          onPressed: () {
-            double? amount = double.tryParse(ctrl.text);
-            if (amount != null && amount > 0 && amount <= current) { Navigator.pop(context); _executeWithdrawal(context, amount); }
-            else { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("القيمة المدخلة غير صحيحة أو تتجاوز الرصيد"))); }
-          }, child: const Text("تأكيد التسوية", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)))
-      ],
-    ));
+    showModalBottomSheet(context: context, builder: (c) => Container(padding: const EdgeInsets.all(25), child: Column(mainAxisSize: MainAxisSize.min, children: [const Text("تعبئة نقاط الأمان", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), const SizedBox(height: 20), Wrap(spacing: 10, children: [100, 200, 500].map((a) => ActionChip(label: Text("$a"), onPressed: () { Navigator.pop(context); _processCharge(context, a.toDouble()); })).toList())])));
   }
 }
 
