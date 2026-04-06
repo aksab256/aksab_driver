@@ -343,6 +343,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
         GeoPoint targetLoc = isAtPickup ? data['pickupLocation'] : data['dropoffLocation'];
         double dist = _getSmartDistance(data, status);
 
+        // ✅ معالجة أرقام التليفونات لضمان عدم وجود قيم فارغة
+        String phone1 = data['userPhone'] ?? "";
+        String phone2 = data['customerPhone'] ?? phone1; // لو مفيش طرف تاني استخدم الأول
+
         return SafeArea(
           bottom: true,
           child: Container(
@@ -364,7 +368,6 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
                           Text(status.contains('returning') ? "🚨 العودة لنقطة العهدة" : (isAtPickup ? "نقطة حيازة العهدة" : "جهة تسليم الأمانات"),
                               style: TextStyle(color: status.contains('returning') ? Colors.red : Colors.grey[700], fontSize: 12.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
                           Text(isAtPickup ? (data['pickupAddress'] ?? "الموقع") : (data['dropoffAddress'] ?? "العميل"), style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.w900, fontFamily: 'Cairo', height: 1.2), maxLines: 2, overflow: TextOverflow.ellipsis),
-                          // ✅ إضافة رقم الهاتف هنا في الكارت
                           if (!isAtPickup)
                             Padding(
                               padding: const EdgeInsets.only(top: 4),
@@ -381,10 +384,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    Expanded(child: _phoneButton(phone: data['userPhone'], label: "اتصال بالطرف الأول", color: Colors.orange[900]!)),
-                    if (!isAtPickup || isMerchant) ...[
+                    Expanded(child: _phoneButton(phone: phone1, label: isMerchant ? "اتصال بالتاجر" : "اتصال بالعميل", color: Colors.orange[900]!)),
+                    if (isMerchant || data['customerPhone'] != null) ...[
                       SizedBox(width: 10),
-                      Expanded(child: _phoneButton(phone: data['customerPhone'], label: "اتصال بالطرف الثاني", color: Colors.green[800]!)),
+                      Expanded(child: _phoneButton(phone: phone2, label: "اتصال بالمستلم", color: Colors.green[800]!)),
                     ]
                   ],
                 ),
@@ -507,11 +510,22 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     }
   }
 
-  // ✅ الدالة المحدثة مع رسالة التأكيد والمبالغ
+  // ✅ الدالة المحدثة للتحصيل بناءً على لقطات الشاشة (Firebase)
   void _completeOrder(Map<String, dynamic> data) async {
-    double goodsValue = double.tryParse(data['insurance_points']?.toString() ?? data['order_value_points']?.toString() ?? '0') ?? 0.0;
-    double deliveryFee = double.tryParse(data['deliveryFee']?.toString() ?? '0') ?? 0.0;
-    double total = goodsValue + deliveryFee;
+    bool isMerchant = data['requestSource'] == 'retailer';
+    
+    // أجرة المندوب من حقل driverNet
+    double deliveryFee = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
+    
+    // قيمة العهدة للتاجر فقط
+    double goodsValue = isMerchant 
+        ? (double.tryParse(data['insurance_points']?.toString() ?? '0') ?? 0.0) 
+        : 0.0;
+        
+    // الإجمالي المطلوب كاش (orderFinalAmount)
+    double totalToCollect = isMerchant 
+        ? (double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? (goodsValue + deliveryFee))
+        : deliveryFee;
 
     bool? confirm = await showDialog(
       context: context,
@@ -520,24 +534,25 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text("تأكيد التسليم والتحصيل 💰", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+          title: Text(isMerchant ? "تأكيد العهدة والتحصيل 💰" : "تأكيد تسليم الأمانات ✅", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("هل تأكدت من استلام المبالغ التالية؟", style: TextStyle(fontFamily: 'Cairo')),
+              Text(isMerchant ? "إخلاء طرف من عهدة بقيمة:" : "تحصيل أجرة النقل:", style: TextStyle(fontFamily: 'Cairo')),
               const SizedBox(height: 15),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("قيمة البضاعة:"), Text("$goodsValue ج.م", style: const TextStyle(fontWeight: FontWeight.bold))]),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("تكلفة الطلب:"), Text("$deliveryFee ج.م", style: const TextStyle(fontWeight: FontWeight.bold))]),
+              if (isMerchant && goodsValue > 0)
+                _amountRow("قيمة البضاعة:", "$goodsValue ج.م"),
+              _amountRow("أجرة المندوب:", "$deliveryFee ج.م"),
               const Divider(),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("إجمالي المطلوب:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green)), Text("$total ج.م", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 16.sp))]),
+              _amountRow("المطلوب كاش:", "$totalToCollect ج.م", isTotal: true),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("إلغاء", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey))),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("إلغاء")),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green[800]),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text("تأكيد الاستلام", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
+              child: const Text("تم التحصيل ✅", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
             ),
           ],
         ),
@@ -559,6 +574,19 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     } catch (e) {
       if (mounted) Navigator.pop(context);
     }
+  }
+
+  Widget _amountRow(String label, String value, {bool isTotal = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(fontFamily: 'Cairo', fontSize: isTotal ? 13.sp : 11.sp, fontWeight: isTotal ? FontWeight.w900 : FontWeight.normal)),
+          Text(value, style: TextStyle(fontFamily: 'Cairo', fontSize: isTotal ? 14.sp : 12.sp, fontWeight: FontWeight.w900, color: isTotal ? Colors.green[900] : Colors.black87)),
+        ],
+      ),
+    );
   }
 
   Widget _phoneButton({required String? phone, required String label, required Color color}) {
