@@ -210,7 +210,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 const Icon(Icons.radar, color: Colors.orange, size: 18),
                 const SizedBox(width: 8),
-                Text("رادار رابية أحلى اللحظي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11.sp)),
+                Text("رادار رابية أحلى اللحظي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 12.sp)),
               ],
             ),
           ),
@@ -291,7 +291,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           return ListView(controller: sc, children: [
             SizedBox(height: 5.h),
             Icon(Icons.search_off, size: 50.sp, color: Colors.grey[300]),
-            Center(child: Text("لا توجد طلبات في محيط 15 كم", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 12.sp))),
+            Center(child: Text("لا توجد طلبات في محيط 15 كم", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 13.sp))),
           ]);
         }
         return ListView.builder(
@@ -329,12 +329,12 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   children: [
                     isMerchant
                         ? FaIcon(FontAwesomeIcons.solidStar, color: const Color(0xFF5D4037), size: 16.sp)
-                        : Icon(Icons.delivery_dining, color: Colors.white, size: 16.sp),
+                        : Icon(Icons.delivery_dining, color: Colors.white, size: 17.sp),
                     SizedBox(width: 2.w),
                     Text("$net ج.م صافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo')),
                   ],
                 ),
-                Text(isMerchant ? "طلب من تاجر" : "طلب مستهلك", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white70, fontSize: 10.sp, fontFamily: 'Cairo')),
+                Text(isMerchant ? "طلب من تاجر" : "طلب مستهلك", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white70, fontSize: 11.sp, fontFamily: 'Cairo')),
               ],
             ),
           ),
@@ -358,7 +358,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   child: ElevatedButton(
                     onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
                     style: ElevatedButton.styleFrom(backgroundColor: canAccept ? (isMerchant ? const Color(0xFF5D4037) : Colors.green[700]) : Colors.grey, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    child: Text(canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.sp, fontFamily: 'Cairo')),
+                    child: Text(canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo')),
                   ),
                 )
               ],
@@ -372,10 +372,10 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Widget _tag(IconData i, String l, Color c) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(color: c.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-      child: Row(children: [Icon(i, size: 16, color: c), const SizedBox(width: 6), Text(l, style: TextStyle(color: c, fontSize: 10.5.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))]));
+      child: Row(children: [Icon(i, size: 16, color: c), const SizedBox(width: 6), Text(l, style: TextStyle(color: c, fontSize: 11.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))]));
 
   Widget _route(IconData i, String t, Color c) => Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Row(children: [Icon(i, size: 18, color: c), const SizedBox(width: 12), Expanded(child: Text(t, style: TextStyle(fontSize: 11.5.sp, color: Colors.black87, fontFamily: 'Cairo'), maxLines: 2, overflow: TextOverflow.ellipsis))]));
+      child: Row(children: [Icon(i, size: 18, color: c), const SizedBox(width: 12), Expanded(child: Text(t, style: TextStyle(fontSize: 12.sp, color: Colors.black87, fontFamily: 'Cairo'), maxLines: 2, overflow: TextOverflow.ellipsis))]));
 }
 
