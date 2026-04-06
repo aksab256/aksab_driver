@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 
-// المسارات الخاصة بك
+// المسارات الخاصة بك (كما هي)
 import 'free_driver_home_screen.dart';
 import 'CompanyRepHomeScreen.dart';
 import 'delivery_admin_dashboard.dart';
@@ -26,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
+  // --- المنطق البرمجي (دون أي تعديل) ---
   Future<void> _launchPrivacyPolicy() async {
     final Uri url = Uri.parse('https://aksab.shop/');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
@@ -33,27 +34,19 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // --- الربط مع AWS للإشعارات ---
   Future<void> _sendNotificationDataToAWS(String role) async {
     try {
       String? token = await FirebaseMessaging.instance.getToken();
       String? uid = FirebaseAuth.instance.currentUser?.uid;
-
       if (token != null && uid != null) {
         const String apiUrl = "https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction";
         await http.post(
           Uri.parse(apiUrl),
           headers: {"Content-Type": "application/json"},
-          body: jsonEncode({
-            "userId": uid,
-            "fcmToken": token,
-            "role": role
-          }),
+          body: jsonEncode({"userId": uid, "fcmToken": token, "role": role}),
         ).timeout(const Duration(seconds: 8));
       }
-    } catch (e) {
-      debugPrint("❌ AWS Notification Error: $e");
-    }
+    } catch (e) { debugPrint("❌ AWS Notification Error: $e"); }
   }
 
   Future<void> _saveVehicleInfo(String config) async {
@@ -66,19 +59,14 @@ class _LoginScreenState extends State<LoginScreen> {
       _showError("من فضلك أدخل رقم الهاتف وكلمة المرور");
       return;
     }
-
     setState(() => _isLoading = true);
-
     try {
       String smartEmail = "${_phoneController.text.trim()}@aksabship.com";
       UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: smartEmail,
-        password: _passwordController.text,
+        email: smartEmail, password: _passwordController.text,
       );
-
       String uid = userCredential.user!.uid;
 
-      // 1. فحص مناديب الشركات
       var repSnap = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repSnap.exists) {
         var userData = repSnap.data()!;
@@ -93,7 +81,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 2. فحص المناديب الأحرار
       var freeSnap = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeSnap.exists) {
         var userData = freeSnap.data()!;
@@ -110,7 +97,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 3. فحص المديرين والمشرفين
       var managerSnap = await FirebaseFirestore.instance.collection('managers').doc(uid).get();
       if (managerSnap.exists) {
         var managerData = managerSnap.data()!;
@@ -121,20 +107,13 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         }
       }
-
       _showError("عذراً، هذا الحساب لا يملك صلاحيات دخول");
       await FirebaseAuth.instance.signOut();
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'user-not-found') {
-        _showError("رقم الهاتف غير مسجل في نظام المناديب");
-      } else if (e.code == 'wrong-password') {
-        _showError("كلمة المرور غير صحيحة");
-      } else {
-        _showError("فشل الدخول: تأكد من بياناتك");
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+      if (e.code == 'user-not-found') { _showError("رقم الهاتف غير مسجل في نظام المناديب"); }
+      else if (e.code == 'wrong-password') { _showError("كلمة المرور غير صحيحة"); }
+      else { _showError("فشل الدخول: تأكد من بياناتك"); }
+    } finally { if (mounted) setState(() => _isLoading = false); }
   }
 
   void _showError(String msg) {
@@ -146,133 +125,156 @@ class _LoginScreenState extends State<LoginScreen> {
     ));
   }
 
+  // --- بداية واجهة المستخدم الجديدة ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: Colors.white,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.orange))
-          : Stack(
-              children: [
-                // خلفية علوية بتدرج لوني مطابق لشاشة التسجيل
-                Container(
-                  height: 35.h,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.orange[900]!, Colors.orange[700]!],
-                      begin: Alignment.topRight,
-                      end: Alignment.bottomLeft,
-                    ),
-                    borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(100)),
-                  ),
-                ),
-                SafeArea(
-                  child: SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(horizontal: 8.w),
-                    child: Column(
-                      children: [
-                        SizedBox(height: 6.h),
-                        _buildHeroIcon(),
-                        SizedBox(height: 3.h),
-                        Text("أكسب لوجستيك",
-                            style: TextStyle(fontSize: 22.sp, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Cairo')),
-                        Text("مرحباً بك في منصة إدارة العهدة",
-                            style: TextStyle(fontSize: 11.sp, color: Colors.white.withOpacity(0.9), fontFamily: 'Cairo')),
-                        SizedBox(height: 5.h),
-                        
-                        _buildLoginCard(),
-
-                        SizedBox(height: 3.h),
-                        TextButton(
-                          onPressed: () => Navigator.pushNamed(context, '/register'),
-                          child: RichText(
-                            text: TextSpan(
-                              style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, color: Colors.grey[800]),
-                              children: [
-                                const TextSpan(text: "ليس لديك حساب؟ "),
-                                TextSpan(text: "قدم طلب انضمام", style: TextStyle(color: Colors.orange[900], fontWeight: FontWeight.bold)),
-                              ],
-                            ),
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF5722)))
+          : SingleChildScrollView(
+              child: Column(
+                children: [
+                  // Header المميز بتموج لوني
+                  Stack(
+                    children: [
+                      Container(
+                        height: 40.h,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF1A1A1A), Color(0xFF333333)],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
+                          borderRadius: BorderRadius.only(
+                            bottomLeft: Radius.circular(50),
+                            bottomRight: Radius.circular(50),
                           ),
                         ),
-
-                        SizedBox(height: 2.h),
-                        _buildPrivacyButton(),
-                        SizedBox(height: 3.h),
-                      ],
+                      ),
+                      Positioned(
+                        top: 10.h,
+                        left: 0,
+                        right: 0,
+                        child: Column(
+                          children: [
+                            _buildHeroLogo(),
+                            SizedBox(height: 2.h),
+                            Text("أكسب لوجستيك",
+                                style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Cairo')),
+                            Text("منصة إدارة العهدة واللوجستيات",
+                                style: TextStyle(fontSize: 10.sp, color: Colors.white70, fontFamily: 'Cairo')),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  // كارت تسجيل الدخول
+                  Transform.translate(
+                    offset: Offset(0, -5.h),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6.w),
+                      child: Container(
+                        padding: EdgeInsets.all(8.w),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(30),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 30, offset: const Offset(0, 10))
+                          ],
+                        ),
+                        child: Column(
+                          children: [
+                            _buildCustomField(_phoneController, "رقم الهاتف", Icons.phone_iphone, type: TextInputType.phone),
+                            SizedBox(height: 2.h),
+                            _buildCustomField(_passwordController, "كلمة المرور", Icons.lock_open_rounded, isPass: true),
+                            SizedBox(height: 4.h),
+                            _buildLoginButton(),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
+
+                  // الروابط السفلية
+                  TextButton(
+                    onPressed: () => Navigator.pushNamed(context, '/register'),
+                    child: RichText(
+                      text: TextSpan(
+                        style: TextStyle(fontFamily: 'Cairo', fontSize: 11.sp, color: Colors.black87),
+                        children: [
+                          const TextSpan(text: "ليس لديك حساب؟ "),
+                          TextSpan(text: "قدم طلب انضمام الآن", 
+                            style: TextStyle(color: const Color(0xFFFF5722), fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 2.h),
+                  _buildPrivacyButton(),
+                  SizedBox(height: 4.h),
+                ],
+              ),
             ),
     );
   }
 
-  Widget _buildHeroIcon() {
+  Widget _buildHeroLogo() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(15),
       decoration: BoxDecoration(
         color: Colors.white,
         shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20)],
+        boxShadow: [BoxShadow(color: Colors.orange.withOpacity(0.3), blurRadius: 20, spreadRadius: 5)],
       ),
-      child: Icon(Icons.moped_rounded, size: 50.sp, color: Colors.orange[900]),
+      child: Icon(Icons.delivery_dining_rounded, size: 55.sp, color: const Color(0xFFFF5722)),
     );
   }
 
-  Widget _buildLoginCard() {
-    return Container(
-      padding: EdgeInsets.all(6.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
-      ),
-      child: Column(
-        children: [
-          _buildInputField(_phoneController, "رقم الهاتف", Icons.phone_android, type: TextInputType.phone),
-          _buildInputField(_passwordController, "كلمة المرور", Icons.lock_outline, isPass: true),
-          SizedBox(height: 3.h),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black87,
-              minimumSize: Size(100.w, 7.h),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              elevation: 5,
-            ),
-            onPressed: _handleLogin,
-            child: Text("دخول للنظام",
-                style: TextStyle(color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInputField(TextEditingController controller, String label, IconData icon,
-      {bool isPass = false, TextInputType type = TextInputType.text}) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 1.h),
-      child: TextField(
-        controller: controller,
-        obscureText: isPass ? _obscurePassword : false,
-        keyboardType: type,
-        textAlign: TextAlign.right,
-        style: TextStyle(fontSize: 13.sp, fontFamily: 'Cairo'),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: TextStyle(fontSize: 11.sp, fontFamily: 'Cairo', color: Colors.grey[600]),
-          prefixIcon: Icon(icon, color: Colors.orange[900], size: 18.sp),
-          suffixIcon: isPass
+  Widget _buildCustomField(TextEditingController controller, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(label, style: TextStyle(fontFamily: 'Cairo', fontSize: 10.sp, color: Colors.grey[700], fontWeight: FontWeight.bold)),
+        SizedBox(height: 1.h),
+        TextField(
+          controller: controller,
+          obscureText: isPass ? _obscurePassword : false,
+          keyboardType: type,
+          textAlign: TextAlign.right,
+          style: TextStyle(fontSize: 12.sp, fontFamily: 'Cairo'),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.grey[50],
+            prefixIcon: Icon(icon, color: const Color(0xFFFF5722)),
+            suffixIcon: isPass 
               ? IconButton(
-                  icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, size: 16.sp, color: Colors.grey),
-                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                )
+                  icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword))
               : null,
-          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey[200]!)),
-          focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.orange[800]!)),
+            contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide(color: Colors.grey[200]!)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: const BorderSide(color: Color(0xFFFF5722), width: 1.5)),
+          ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildLoginButton() {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF1A1A1A),
+        foregroundColor: Colors.white,
+        minimumSize: Size(100.w, 7.h),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        elevation: 8,
+        shadowColor: Colors.black45,
       ),
+      onPressed: _handleLogin,
+      child: Text("دخول للنظام",
+          style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
     );
   }
 
@@ -282,17 +284,10 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.security, size: 14.sp, color: Colors.blueGrey[300]),
+          Icon(Icons.shield_outlined, size: 12.sp, color: Colors.grey),
           SizedBox(width: 2.w),
-          Text(
-            "سياسة الخصوصية وشروط الاستخدام",
-            style: TextStyle(
-              color: Colors.blueGrey[400],
-              fontSize: 10.sp,
-              decoration: TextDecoration.underline,
-              fontFamily: 'Cairo',
-            ),
-          ),
+          Text("سياسة الخصوصية وشروط الاستخدام",
+            style: TextStyle(color: Colors.grey[600], fontSize: 9.sp, fontFamily: 'Cairo')),
         ],
       ),
     );
