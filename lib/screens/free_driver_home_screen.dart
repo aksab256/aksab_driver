@@ -238,11 +238,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           fontSize: 10.sp
         ),
 
-        unselectedLabelStyle: TextStyle(
-          fontFamily: 'Cairo', 
-          fontWeight: FontWeight.bold, // جعل غير النشط أيضاً واضحاً
-          fontSize: 10.sp
-        ),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: "رحلاتي"),
