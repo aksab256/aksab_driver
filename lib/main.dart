@@ -45,8 +45,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   
-  // 3. تهيئة فيسبوك
-  await facebookAppEvents.setAdvertiserTracking(true);
+  // 3. تهيئة 
+  await facebookAppEvents.setAdvertiserTracking(enabled: true);
 
   await setupNotifications();
   await initializeService();
