@@ -18,7 +18,8 @@ class FreeDriverHomeScreen extends StatefulWidget {
   State<FreeDriverHomeScreen> createState() => _FreeDriverHomeScreenState();
 }
 
-class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
+// ✅ إضافة SingleTickerProviderStateMixin لدعم الأنيميشن
+class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
   String _currentStatus = 'offline';
   bool _isStatusChanging = false;
@@ -27,9 +28,19 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  // ✅ تعريف متحكم الأنيميشن للهالة
+  late AnimationController _pulseController;
+
   @override
   void initState() {
     super.initState();
+    
+    // ✅ إعداد متحكم الأنيميشن (هالة هادئة كل ثانيتين لتوفير البطارية)
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+
     _syncStatusInstantly();
     _initListeners();
     _fetchUserName(); // جلب اسم المستخدم عند التشغيل
@@ -38,6 +49,12 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         DriverSecurityHelper.checkSecurityAndTerms(context, uid);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose(); // ✅ تنظيف الذاكرة عند إغلاق الصفحة
+    super.dispose();
   }
 
   // جلب اسم المستخدم من السجل الخاص به في Firestore
@@ -129,7 +146,6 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   }
 
   void _onStepTapped(int index) async {
-    // index 2 الآن هو الرادار بسبب إضافة الدعم الفني وتغيير الترتيب
     if (index == 2) {
       showDialog(
           context: context,
@@ -157,7 +173,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
-      drawer: SafeArea(child: DriverSideDrawer(currentStatus: _currentStatus)), // ✅ حل مشكلة المساحة الآمنة
+      drawer: SafeArea(child: DriverSideDrawer(currentStatus: _currentStatus)), 
       backgroundColor: const Color(0xFFF8FAFF),
       body: Stack(
         children: [
@@ -167,26 +183,44 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      floatingActionButton: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: (_selectedIndex == 2 ? Colors.orange : Colors.grey).withOpacity(0.3),
-              spreadRadius: 8,
-              blurRadius: 15,
-            ),
-          ],
-        ),
-        child: FloatingActionButton(
-          onPressed: () => _onStepTapped(2), // الرادار الآن في المنتصف index 2
-          backgroundColor: _selectedIndex == 2 ? Colors.orange[900] : Colors.black87,
-          elevation: 8,
-          shape: const CircleBorder(),
-          child: Icon(Icons.radar, color: Colors.white, size: 24.sp),
-        ),
-      ),
+      floatingActionButton: _buildAnimatedRadarButton(), // ✅ استدعاء الزر بحلته الجديدة
       bottomNavigationBar: _buildBottomNav(),
+    );
+  }
+
+  // ✅ دالة بناء زر الرادار مع الهالة (بدون حذف الكود الأصلي)
+  Widget _buildAnimatedRadarButton() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        // حساب مدى انتشار الهالة بناءً على حالة الـ Online فقط
+        double pulseValue = (_currentStatus == 'online') ? _pulseController.value : 0.0;
+        
+        return Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.orange.withOpacity(0.2 * (1 - pulseValue)),
+                spreadRadius: 4 + (12 * pulseValue), // الهالة بتكبر وتصغر
+                blurRadius: 10,
+              ),
+              BoxShadow(
+                color: (_selectedIndex == 2 ? Colors.orange : Colors.grey).withOpacity(0.3),
+                spreadRadius: 8,
+                blurRadius: 15,
+              ),
+            ],
+          ),
+          child: FloatingActionButton(
+            onPressed: () => _onStepTapped(2),
+            backgroundColor: _selectedIndex == 2 ? Colors.orange[900] : Colors.black87,
+            elevation: 8,
+            shape: const CircleBorder(),
+            child: Icon(Icons.radar, color: Colors.white, size: 24.sp),
+          ),
+        );
+      },
     );
   }
 
@@ -195,22 +229,21 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       index: _selectedIndex,
       children: [
         CustomScrollView(slivers: [
-          // تم تمرير اسم المستخدم للـ DashboardHeader ليظهر "أهلاً بك يا فلان" بدلاً من النص الثابت
           DashboardHeader(
             scaffoldKey: _scaffoldKey, 
             currentStatus: _currentStatus, 
             onStatusToggle: _handleStatusChange,
-            userName: _userName, // تأكد من تحديث DashboardHeader ليدعم هذا الحقل
+            userName: _userName, 
           ),
           if (_activeOrderId != null) ActiveOrderBanner(onTap: () => setState(() => _selectedIndex = 2)),
           LiveStatsGrid(uid: uid),
         ]),
         _activeOrderId != null 
             ? ActiveOrderScreen(orderId: _activeOrderId!) 
-            : const AvailableOrdersScreen(vehicleType: 'motorcycleConfig'), // هذا يمثل شاشة الرادار
+            : const AvailableOrdersScreen(vehicleType: 'motorcycleConfig'),
         const OrdersHistoryScreen(),
         const WalletScreen(),
-        const Center(child: Text("صفحة الدعم الفني")), // مكان مؤقت لصفحة الدعم
+        const Center(child: Text("صفحة الدعم الفني")), 
       ],
     );
   }
@@ -227,17 +260,16 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         unselectedItemColor: Colors.grey[700],
         backgroundColor: Colors.transparent,
         elevation: 0,
-                selectedLabelStyle: TextStyle(
+        selectedLabelStyle: TextStyle(
           fontFamily: 'Cairo', 
-          fontWeight: FontWeight.bold, // ✅ تم التعديل إلى bold لضمان النجاح والوضوح
+          fontWeight: FontWeight.bold, 
           fontSize: 11.sp
         ),
         unselectedLabelStyle: TextStyle(
           fontFamily: 'Cairo', 
-          fontWeight: FontWeight.bold, // ✅ متناسق مع النمط أعلاه
+          fontWeight: FontWeight.bold, 
           fontSize: 10.sp
         ),
-
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: "رحلاتي"),
