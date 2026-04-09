@@ -84,7 +84,7 @@ class WalletScreen extends StatelessWidget {
           builder: (context, driverSnap) {
             if (!driverSnap.hasData) return const Center(child: CircularProgressIndicator(color: Colors.orange));
             var userData = driverSnap.data!.data() as Map<String, dynamic>?;
-            
+
             double walletBalance = _toDouble(userData?['walletBalance']);
             double creditLimit = _toDouble(userData?['creditLimit']);
             double lockedInsurance = _toDouble(userData?['insurance_points']);
@@ -96,7 +96,7 @@ class WalletScreen extends StatelessWidget {
               child: Column(
                 children: [
                   _buildMainAssetCard(walletBalance, creditLimit, lockedInsurance),
-                  
+
                   // شريط إجمالي الأمانات
                   Container(
                     margin: const EdgeInsets.symmetric(vertical: 10),
@@ -143,7 +143,7 @@ class WalletScreen extends StatelessWidget {
       stream: FirebaseFirestore.instance.collection('withdrawRequests').snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox();
-        
+
         // فلترة الطلبات الخاصة بهذا المندوب وحالتها pending يدوياً
         final pendingRequests = snapshot.data!.docs.where((doc) {
           var d = doc.data() as Map<String, dynamic>;
@@ -223,17 +223,13 @@ class WalletScreen extends StatelessWidget {
           title: const Text("طلب تسوية رصيد", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
           content: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text("المتاح: ${current.toStringAsFixed(2)} ج.م", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
-              const SizedBox(height: 20),
+              Text("المتاح: ${current.toStringAsFixed(2)} ج.م", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),              const SizedBox(height: 20),
               TextField(
                 controller: amountCtrl,
-                keyboardType: TextInputType.number,
-                decoration: _inputStyle("المبلغ المراد سحبه"),
-              ),
+                keyboardType: TextInputType.number,                  decoration: _inputStyle("المبلغ المراد سحبه"),                                                          ),
               const SizedBox(height: 15),
               DropdownButtonFormField<String>(
-                value: selectedMethod,
-                decoration: _inputStyle("وسيلة التحويل"),
+                value: selectedMethod,                               decoration: _inputStyle("وسيلة التحويل"),
                 items: ['فودافون كاش', 'انستا باي', 'تحويل بنكي'].map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontFamily: 'Cairo')))).toList(),
                 onChanged: (val) => setState(() => selectedMethod = val!),
               ),
@@ -248,16 +244,13 @@ class WalletScreen extends StatelessWidget {
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text("إلغاء", style: TextStyle(color: Colors.red, fontFamily: 'Cairo'))),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[800], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              onPressed: () {
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[800], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),                onPressed: () {
                 double? amt = double.tryParse(amountCtrl.text);
                 if (amt != null && amt > 0 && amt <= current && accountCtrl.text.isNotEmpty) {
-                  Navigator.pop(context);
-                  _executeWithdrawal(context, amt, name, phone, selectedMethod, accountCtrl.text);
+                  Navigator.pop(context);                              _executeWithdrawal(context, amt, name, phone, selectedMethod, accountCtrl.text);
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("برجاء التأكد من المبلغ وصحة البيانات")));
-                }
-              },
+                }                                                  },
               child: const Text("تأكيد الطلب", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
             )
           ],
@@ -267,38 +260,22 @@ class WalletScreen extends StatelessWidget {
   }
 
   InputDecoration _inputStyle(String hint) => InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(fontSize: 12, fontFamily: 'Cairo'),
-      filled: true,
-      fillColor: Colors.grey[100],
-      contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none));
-
+      hintText: hint,                                      hintStyle: const TextStyle(fontSize: 12, fontFamily: 'Cairo'),                                            filled: true,
+      fillColor: Colors.grey[100],                         contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none));  
   // --- بقية الدوال المساعدة (History, Disclaimer, etc) ---
-  Widget _buildCombinedHistory(String? uid) {
-    return StreamBuilder<QuerySnapshot>(
+  Widget _buildCombinedHistory(String? uid) {            return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('pendingInvoices').where('driverId', isEqualTo: uid).where('status', isEqualTo: 'ready_for_payment').snapshots(),
-      builder: (context, pendingSnap) {
-        return StreamBuilder<QuerySnapshot>(
+      builder: (context, pendingSnap) {                      return StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance.collection('walletLogs').where('driverId', isEqualTo: uid).orderBy('timestamp', descending: true).limit(15).snapshots(),
-          builder: (context, logSnap) {
-            List<Map<String, dynamic>> allItems = [];
-            DateTime now = DateTime.now();
-            if (pendingSnap.hasData) {
+          builder: (context, logSnap) {                          List<Map<String, dynamic>> allItems = [];
+            DateTime now = DateTime.now();                       if (pendingSnap.hasData) {
               for (var doc in pendingSnap.data!.docs) {
                 var d = doc.data() as Map<String, dynamic>;
-                if (d['createdAt'] != null) {
-                  DateTime createdAt = (d['createdAt'] as Timestamp).toDate();
-                  if (now.difference(createdAt).inHours < 6) {
-                    d['isInvoice'] = true;
-                    allItems.add(d);
-                  }
-                }
-              }
-            }
-            if (logSnap.hasData) {
-              for (var doc in logSnap.data!.docs) {
-                var d = doc.data() as Map<String, dynamic>;
+                if (d['createdAt'] != null) {                          DateTime createdAt = (d['createdAt'] as Timestamp).toDate();                                              if (now.difference(createdAt).inHours < 6) {                                                                d['isInvoice'] = true;
+                    allItems.add(d);                                   }
+                }                                                  }
+            }                                                    if (logSnap.hasData) {
+              for (var doc in logSnap.data!.docs) {                  var d = doc.data() as Map<String, dynamic>;
                 d['isInvoice'] = false;
                 allItems.add(d);
               }
@@ -311,58 +288,75 @@ class WalletScreen extends StatelessWidget {
               itemBuilder: (context, index) {
                 var item = allItems[index];
                 bool isInvoice = item['isInvoice'] ?? false;
-                double amount = _toDouble(item['amount']);
-                return Card(
-                  elevation: 0, margin: const EdgeInsets.only(bottom: 8),
-                  shape: RoundedRectangleBorder(
+                double amount = _toDouble(item['amount']);                                                                return Card(
+                  elevation: 0, margin: const EdgeInsets.only(bottom: 8),                                                   shape: RoundedRectangleBorder(
   borderRadius: BorderRadius.circular(12),
   side: BorderSide(color: Colors.grey[100]!, width: 1), // التعديل الصحيح
-),
-
+),                                                   
                   child: ListTile(
                     leading: Icon(isInvoice ? Icons.payment : Icons.history, color: isInvoice ? Colors.orange : Colors.blueGrey),
                     title: Text(isInvoice ? "رابط شحن متاح" : _getLogTitle(item['type'], amount), style: const TextStyle(fontFamily: 'Cairo', fontSize: 12, fontWeight: FontWeight.bold)),
                     trailing: Text("${amount > 0 ? '+' : ''}$amount", style: TextStyle(color: amount > 0 ? Colors.green : Colors.red, fontWeight: FontWeight.bold)),
                     onTap: isInvoice ? () => _launchPaymentUrl(item['paymentUrl']) : null,
                   ),
-                );
-              },
-            );
-          },
-        );
-      },
+                );                                                 },
+            );                                                 },
+        );                                                 },
     );
-  }
-
+  }                                                  
   String _getLogTitle(String? type, double amount) {
-    if (type == 'ORDER_REVENUE') return "تسوية أرباح شحنة";
-    if (type == 'insurance_lock') return "حجز تأمين عهدة";
-    if (type == 'operational_fee') return "شحن نقاط أمان";
-    return amount > 0 ? "إيداع نقاط" : "تخصيص عهدة";
+    if (type == 'ORDER_REVENUE') return "تسوية أرباح شحنة";                                                   if (type == 'insurance_lock') return "حجز تأمين عهدة";
+    if (type == 'operational_fee') return "شحن نقاط أمان";                                                    return amount > 0 ? "إيداع نقاط" : "تخصيص عهدة";
   }
 
   Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 20),
+        onTap: onTap,                                        borderRadius: BorderRadius.circular(20),
+        child: Container(                                      padding: const EdgeInsets.symmetric(vertical: 20),
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey[200]!), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)]),
           child: Column(children: [Icon(icon, color: color, size: 24.sp), const SizedBox(height: 8), Text(label, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 12))]),
-        ),
-      );
-
-  Widget _sectionHeader(String title) => Padding(padding: const EdgeInsets.fromLTRB(20, 25, 20, 15), child: Align(alignment: Alignment.centerRight, child: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 16))));
-
+        ),                                                 );
+                                                       Widget _sectionHeader(String title) => Padding(padding: const EdgeInsets.fromLTRB(20, 25, 20, 15), child: Align(alignment: Alignment.centerRight, child: Text(title, style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 16))));        
   Widget _buildLegalDisclaimer() => Padding(padding: const EdgeInsets.all(20), child: Text("إدارة العهدة: يتم تخصيص نقاط أمان تعادل قيمة الشحنة لضمان النقل الآمن، وتُعاد فور تأكيد الاستلام.", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 9.sp, color: Colors.grey)));
 
-  void _showLoading(BuildContext context) => showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
-
-  void _showInfoSheet(BuildContext context, String t, String m) => showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))), builder: (c) => Padding(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [Text(t, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, fontFamily: 'Cairo')), const SizedBox(height: 10), Text(m, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', color: Colors.grey)), const SizedBox(height: 20), SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("فهمت")))])));
-
-  void _launchPaymentUrl(String? url) async { if (url != null) await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); }
-
+  void _showLoading(BuildContext context) => showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.orange)));                                                                                void _showInfoSheet(BuildContext context, String t, String m) => showModalBottomSheet(context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))), builder: (c) => Padding(padding: const EdgeInsets.all(30), child: Column(mainAxisSize: MainAxisSize.min, children: [Text(t, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, fontFamily: 'Cairo')), const SizedBox(height: 10), Text(m, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Cairo', color: Colors.grey)), const SizedBox(height: 20), SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text("فهمت")))])));
+                                                       void _launchPaymentUrl(String? url) async { if (url != null) await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication); }
+  
+  // ✅ التعديل المطلوب: تم تغيير الـ Modal ليكون Dialog في منتصف الشاشة
   void _showChargePicker(BuildContext context) {
-    showModalBottomSheet(context: context, builder: (c) => Container(padding: const EdgeInsets.all(25), child: Column(mainAxisSize: MainAxisSize.min, children: [const Text("تعبئة نقاط الأمان", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), const SizedBox(height: 20), Wrap(spacing: 10, children: [100, 200, 500].map((a) => ActionChip(label: Text("$a"), onPressed: () { Navigator.pop(context); _processCharge(context, a.toDouble()); })).toList())])));
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        title: const Text("تعبئة نقاط الأمان", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("اختر فئة الشحن المطلوبة", style: TextStyle(fontFamily: 'Cairo', fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 15,
+              runSpacing: 15,
+              alignment: WrapAlignment.center,
+              children: [100, 200, 500].map((a) => ActionChip(
+                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                label: Text("$a ج.م", style: const TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                backgroundColor: Colors.grey[100],
+                onPressed: () {
+                  Navigator.pop(context);
+                  _processCharge(context, a.toDouble());
+                },
+              )).toList(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("إلغاء", style: TextStyle(color: Colors.red, fontFamily: 'Cairo')),
+          )
+        ],
+      ),
+    );
   }
 }
 

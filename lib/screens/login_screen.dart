@@ -128,68 +128,71 @@ class _LoginScreenState extends State<LoginScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF5722)))
           : SingleChildScrollView(
-              child: Column(
-                children: [
-                  Stack(
-                    children: [
-                      Container(
-                        height: 42.h,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(colors: [Color(0xFF1A1A1A), Color(0xFF333333)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-                          borderRadius: BorderRadius.only(bottomLeft: Radius.circular(60), bottomRight: Radius.circular(60)),
+              child: SafeArea( // ✅ تم إضافة المساحة الآمنة هنا لحماية أسفل الشاشة
+                top: false, // لضمان بقاء خلفية الهيدر السوداء ممتدة للأعلى
+                child: Column(
+                  children: [
+                    Stack(
+                      children: [
+                        Container(
+                          height: 42.h,
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(colors: [Color(0xFF1A1A1A), Color(0xFF333333)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+                            borderRadius: BorderRadius.only(bottomLeft: Radius.circular(60), bottomRight: Radius.circular(60)),
+                          ),
+                        ),
+                        Positioned(
+                          top: 10.h, left: 0, right: 0,
+                          child: Column(
+                            children: [
+                              _buildHeroLogo(),
+                              SizedBox(height: 2.h),
+                              Text("رابية أحلى - كابتن", style: TextStyle(fontSize: 26.sp, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Cairo')),
+                              Text("منصة إدارة العهدة واللوجستيات", style: TextStyle(fontSize: 12.sp, color: Colors.white70, fontFamily: 'Cairo')),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    Transform.translate(
+                      offset: Offset(0, -6.h),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6.w),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 5.h),
+                          decoration: BoxDecoration(
+                            color: Colors.white, borderRadius: BorderRadius.circular(35),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 40, offset: const Offset(0, 15))],
+                          ),
+                          child: Column(
+                            children: [
+                              _buildCustomField(_phoneController, "رقم الهاتف", Icons.phone_iphone, type: TextInputType.phone),
+                              SizedBox(height: 3.h),
+                              _buildCustomField(_passwordController, "كلمة المرور", Icons.lock_open_rounded, isPass: true),
+                              SizedBox(height: 5.h),
+                              _buildLoginButton(),
+                            ],
+                          ),
                         ),
                       ),
-                      Positioned(
-                        top: 10.h, left: 0, right: 0,
-                        child: Column(
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pushNamed(context, '/register'),
+                      child: RichText(
+                        text: TextSpan(
+                          style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.black87),
                           children: [
-                            _buildHeroLogo(),
-                            SizedBox(height: 2.h),
-                            Text("رابية أحلى - كابتن", style: TextStyle(fontSize: 26.sp, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Cairo')),
-                            Text("منصة إدارة العهدة واللوجستيات", style: TextStyle(fontSize: 12.sp, color: Colors.white70, fontFamily: 'Cairo')),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  Transform.translate(
-                    offset: Offset(0, -6.h),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 6.w),
-                      child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 5.h),
-                        decoration: BoxDecoration(
-                          color: Colors.white, borderRadius: BorderRadius.circular(35),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 40, offset: const Offset(0, 15))],
-                        ),
-                        child: Column(
-                          children: [
-                            _buildCustomField(_phoneController, "رقم الهاتف", Icons.phone_iphone, type: TextInputType.phone),
-                            SizedBox(height: 3.h),
-                            _buildCustomField(_passwordController, "كلمة المرور", Icons.lock_open_rounded, isPass: true),
-                            SizedBox(height: 5.h),
-                            _buildLoginButton(),
+                            const TextSpan(text: "ليس لديك حساب؟ "),
+                            TextSpan(text: "قدم طلب انضمام الآن", style: TextStyle(color: const Color(0xFFFF5722), fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
                           ],
                         ),
                       ),
                     ),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pushNamed(context, '/register'),
-                    child: RichText(
-                      text: TextSpan(
-                        style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.black87),
-                        children: [
-                          const TextSpan(text: "ليس لديك حساب؟ "),
-                          TextSpan(text: "قدم طلب انضمام الآن", style: TextStyle(color: const Color(0xFFFF5722), fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 3.h),
-                  _buildPrivacyButton(),
-                  SizedBox(height: 5.h),
-                ],
+                    SizedBox(height: 3.h),
+                    _buildPrivacyButton(),
+                    SizedBox(height: 2.h), // مساحة إضافية بسيطة للراحة البصرية
+                  ],
+                ),
               ),
             ),
     );
