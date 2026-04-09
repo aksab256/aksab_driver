@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">أكسب كابتن</string>
+
+    <string name="facebook_app_id">916787307520186</string>
+    <string name="fb_login_protocol_scheme">fb916787307520186</string>
+    <string name="facebook_client_token">f245313cb07cab4453723c8c05174bf0</string>
+</resources>
+
