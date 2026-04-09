@@ -227,11 +227,17 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         unselectedItemColor: Colors.grey[700],
         backgroundColor: Colors.transparent,
         elevation: 0,
-        selectedLabelStyle: TextStyle(
+                selectedLabelStyle: TextStyle(
           fontFamily: 'Cairo', 
-          fontWeight: FontWeight.black, // تكبير سماكة الخط (B)
+          fontWeight: FontWeight.bold, // ✅ تم التعديل إلى bold لضمان النجاح والوضوح
           fontSize: 11.sp
         ),
+        unselectedLabelStyle: TextStyle(
+          fontFamily: 'Cairo', 
+          fontWeight: FontWeight.bold, // ✅ متناسق مع النمط أعلاه
+          fontSize: 10.sp
+        ),
+
         unselectedLabelStyle: TextStyle(
           fontFamily: 'Cairo', 
           fontWeight: FontWeight.bold, // جعل غير النشط أيضاً واضحاً
