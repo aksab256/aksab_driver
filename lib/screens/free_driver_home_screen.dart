@@ -13,6 +13,7 @@ import 'wallet_screen.dart';
 
 class FreeDriverHomeScreen extends StatefulWidget {
   const FreeDriverHomeScreen({super.key});
+
   @override
   State<FreeDriverHomeScreen> createState() => _FreeDriverHomeScreenState();
 }
@@ -22,6 +23,7 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
   String _currentStatus = 'offline';
   bool _isStatusChanging = false;
   String? _activeOrderId;
+  String _userName = "كابتن أكسب"; // القيمة الافتراضية
   final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -30,9 +32,26 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
     super.initState();
     _syncStatusInstantly();
     _initListeners();
+    _fetchUserName(); // جلب اسم المستخدم عند التشغيل
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (uid.isNotEmpty) { DriverSecurityHelper.checkSecurityAndTerms(context, uid); }
+      if (uid.isNotEmpty) {
+        DriverSecurityHelper.checkSecurityAndTerms(context, uid);
+      }
     });
+  }
+
+  // جلب اسم المستخدم من السجل الخاص به في Firestore
+  void _fetchUserName() async {
+    try {
+      var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
+      if (doc.exists && doc.data()?['fullname'] != null) {
+        setState(() {
+          _userName = doc.data()?['fullname'];
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching username: $e");
+    }
   }
 
   void _syncStatusInstantly() async {
@@ -47,13 +66,18 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           await DriverApiService.saveLocalStatus(serverStatus);
         }
       }
-    } catch (e) { debugPrint("Initial Sync Error: $e"); }
+    } catch (e) {
+      debugPrint("Initial Sync Error: $e");
+    }
   }
 
   void _initListeners() {
     DriverApiService.listenToStatus(uid, (status) {
       if (mounted && status != null && status != _currentStatus) {
-        setState(() { _currentStatus = status; _isStatusChanging = false; });
+        setState(() {
+          _currentStatus = status;
+          _isStatusChanging = false;
+        });
         DriverApiService.saveLocalStatus(status);
       }
     });
@@ -75,21 +99,42 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         try {
           await DriverApiService.updateStatus(uid, 'online');
           await DriverApiService.saveLocalStatus('online');
-          if (mounted) { setState(() { _currentStatus = 'online'; _isStatusChanging = false; }); DriverSecurityHelper.showOnlineHint(context); }
-        } catch (e) { if (mounted) setState(() => _isStatusChanging = false); }
-      } else { if (mounted) setState(() => _isStatusChanging = false); }
+          if (mounted) {
+            setState(() {
+              _currentStatus = 'online';
+              _isStatusChanging = false;
+            });
+            DriverSecurityHelper.showOnlineHint(context);
+          }
+        } catch (e) {
+          if (mounted) setState(() => _isStatusChanging = false);
+        }
+      } else {
+        if (mounted) setState(() => _isStatusChanging = false);
+      }
     } else {
       try {
         await DriverApiService.updateStatus(uid, 'offline');
         await DriverApiService.saveLocalStatus('offline');
-        if (mounted) { setState(() { _currentStatus = 'offline'; _isStatusChanging = false; }); }
-      } catch (e) { if (mounted) setState(() => _isStatusChanging = false); }
+        if (mounted) {
+          setState(() {
+            _currentStatus = 'offline';
+            _isStatusChanging = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) setState(() => _isStatusChanging = false);
+      }
     }
   }
 
   void _onStepTapped(int index) async {
-    if (index == 1) {
-      showDialog(context: context, barrierDismissible: false, builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
+    // index 2 الآن هو الرادار بسبب إضافة الدعم الفني وتغيير الترتيب
+    if (index == 2) {
+      showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.orange)));
       try {
         var doc = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
         if (!mounted) return;
@@ -100,7 +145,10 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
           setState(() => _currentStatus = serverStatus);
           return;
         }
-      } catch (e) { if (mounted) Navigator.pop(context); return; }
+      } catch (e) {
+        if (mounted) Navigator.pop(context);
+        return;
+      }
     }
     setState(() => _selectedIndex = index);
   }
@@ -114,16 +162,29 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       body: Stack(
         children: [
           _buildBody(),
-          if (_isStatusChanging) Container(color: Colors.black26, child: const Center(child: CircularProgressIndicator(color: Colors.orange))),
+          if (_isStatusChanging)
+            Container(color: Colors.black26, child: const Center(child: CircularProgressIndicator(color: Colors.orange))),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _onStepTapped(1),
-        backgroundColor: _selectedIndex == 1 ? Colors.orange[900] : Colors.black87,
-        elevation: 8,
-        shape: const CircleBorder(),
-        child: Icon(Icons.radar, color: Colors.white, size: 24.sp), // ✅ الآن سيعمل بعد إضافة sizer
+      floatingActionButton: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: (_selectedIndex == 2 ? Colors.orange : Colors.grey).withOpacity(0.3),
+              spreadRadius: 8,
+              blurRadius: 15,
+            ),
+          ],
+        ),
+        child: FloatingActionButton(
+          onPressed: () => _onStepTapped(2), // الرادار الآن في المنتصف index 2
+          backgroundColor: _selectedIndex == 2 ? Colors.orange[900] : Colors.black87,
+          elevation: 8,
+          shape: const CircleBorder(),
+          child: Icon(Icons.radar, color: Colors.white, size: 24.sp),
+        ),
       ),
       bottomNavigationBar: _buildBottomNav(),
     );
@@ -134,13 +195,22 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
       index: _selectedIndex,
       children: [
         CustomScrollView(slivers: [
-          DashboardHeader(scaffoldKey: _scaffoldKey, currentStatus: _currentStatus, onStatusToggle: _handleStatusChange),
-          if (_activeOrderId != null) ActiveOrderBanner(onTap: () => setState(() => _selectedIndex = 1)),
+          // تم تمرير اسم المستخدم للـ DashboardHeader ليظهر "أهلاً بك يا فلان" بدلاً من النص الثابت
+          DashboardHeader(
+            scaffoldKey: _scaffoldKey, 
+            currentStatus: _currentStatus, 
+            onStatusToggle: _handleStatusChange,
+            userName: _userName, // تأكد من تحديث DashboardHeader ليدعم هذا الحقل
+          ),
+          if (_activeOrderId != null) ActiveOrderBanner(onTap: () => setState(() => _selectedIndex = 2)),
           LiveStatsGrid(uid: uid),
         ]),
-        _activeOrderId != null ? ActiveOrderScreen(orderId: _activeOrderId!) : const AvailableOrdersScreen(vehicleType: 'motorcycleConfig'),
+        _activeOrderId != null 
+            ? ActiveOrderScreen(orderId: _activeOrderId!) 
+            : const AvailableOrdersScreen(vehicleType: 'motorcycleConfig'), // هذا يمثل شاشة الرادار
         const OrdersHistoryScreen(),
         const WalletScreen(),
+        const Center(child: Text("صفحة الدعم الفني")), // مكان مؤقت لصفحة الدعم
       ],
     );
   }
@@ -154,16 +224,25 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> {
         onTap: _onStepTapped,
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Colors.orange[900],
-        unselectedItemColor: Colors.grey,
+        unselectedItemColor: Colors.grey[700],
         backgroundColor: Colors.transparent,
         elevation: 0,
-        selectedLabelStyle: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11.sp),
-        unselectedLabelStyle: TextStyle(fontFamily: 'Cairo', fontSize: 10.sp),
+        selectedLabelStyle: TextStyle(
+          fontFamily: 'Cairo', 
+          fontWeight: FontWeight.black, // تكبير سماكة الخط (B)
+          fontSize: 11.sp
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontFamily: 'Cairo', 
+          fontWeight: FontWeight.bold, // جعل غير النشط أيضاً واضحاً
+          fontSize: 10.sp
+        ),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: "الرئيسية"),
-          BottomNavigationBarItem(icon: Icon(Icons.radar, color: Colors.transparent), label: "الرادار"),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: "رحلاتي"),
+          BottomNavigationBarItem(icon: Icon(Icons.radar, color: Colors.transparent), label: "الرادار"),
           BottomNavigationBarItem(icon: Icon(Icons.wallet), label: "المحفظة"),
+          BottomNavigationBarItem(icon: Icon(Icons.support_agent), label: "الدعم"),
         ],
       ),
     );

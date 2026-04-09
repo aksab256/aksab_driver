@@ -7,12 +7,14 @@ class DashboardHeader extends StatelessWidget {
   final GlobalKey<ScaffoldState> scaffoldKey;
   final String currentStatus;
   final Function(bool) onStatusToggle;
+  final String userName; // ✅ تم إضافة حقل اسم المستخدم
 
   const DashboardHeader({
     super.key,
     required this.scaffoldKey,
     required this.currentStatus,
     required this.onStatusToggle,
+    required this.userName, // ✅ مطلوب لاستلام الاسم من الشاشة الرئيسية
   });
 
   @override
@@ -30,11 +32,18 @@ class DashboardHeader extends StatelessWidget {
                 icon: const Icon(Icons.menu_rounded, size: 32),
                 onPressed: () => scaffoldKey.currentState?.openDrawer(),
               ),
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("أهلاً بك 👋", style: TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'Cairo')),
-                  Text("كابتن أكسب", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))
+                  const Text("أهلاً بك 👋",
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.grey, fontFamily: 'Cairo')),
+                  // ✅ تم استبدال النص الثابت بالمتغير مع الحفاظ على "كابتن" كبادئة إذا أردت أو الاسم مباشرة
+                  Text(userName,
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Cairo'))
                 ],
               )
             ]),
@@ -43,17 +52,22 @@ class DashboardHeader extends StatelessWidget {
               onTap: () => onStatusToggle(!isActive),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
                 decoration: BoxDecoration(
                   color: isActive ? Colors.green[600] : Colors.red[600],
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(children: [
-                  Icon(isActive ? Icons.flash_on : Icons.flash_off, color: Colors.white, size: 16),
+                  Icon(isActive ? Icons.flash_on : Icons.flash_off,
+                      color: Colors.white, size: 16),
                   const SizedBox(width: 6),
                   Text(
                     isActive ? "متصل" : "أوفلاين",
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Cairo'),
                   )
                 ]),
               ),
@@ -88,7 +102,10 @@ class ActiveOrderBanner extends StatelessWidget {
             Expanded(
               child: Text(
                 "لديك عهدة نشطة، اضغط للمتابعة",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Cairo'),
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Cairo'),
               ),
             ),
             Icon(Icons.arrow_forward_ios, color: Colors.white, size: 14)
@@ -110,7 +127,8 @@ class LiveStatsGrid extends StatelessWidget {
       stream: FirebaseFirestore.instance.collection('freeDrivers').doc(uid).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData || !snapshot.data!.exists) {
-          return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
+          return const SliverToBoxAdapter(
+              child: Center(child: CircularProgressIndicator()));
         }
         var data = snapshot.data!.data() as Map<String, dynamic>;
 
@@ -124,10 +142,17 @@ class LiveStatsGrid extends StatelessWidget {
               childAspectRatio: 1.1,
             ),
             delegate: SliverChildListDelegate([
-              _StatCard("نقاط التأمين", "${data['insurance_points'] ?? 0}", Icons.security, Colors.blue),
-              _StatCard("أمانات مُسلمة اليوم", "${data['completed_today'] ?? 0}", Icons.task_alt, Colors.orange),
-              _StatCard("التقييم المهني", _calculateRating(data), Icons.star_border_rounded, Colors.amber),
-              _StatCard("المحفظة (ج.م)", "${(data['walletBalance'] ?? 0.0).toStringAsFixed(2)}", Icons.account_balance_wallet_outlined, Colors.green),
+              _StatCard("نقاط التأمين", "${data['insurance_points'] ?? 0}",
+                  Icons.security, Colors.blue),
+              _StatCard("أمانات مُسلمة اليوم", "${data['completed_today'] ?? 0}",
+                  Icons.task_alt, Colors.orange),
+              _StatCard("التقييم المهني", _calculateRating(data),
+                  Icons.star_border_rounded, Colors.amber),
+              _StatCard(
+                  "المحفظة (ج.م)",
+                  "${(data['walletBalance'] ?? 0.0).toStringAsFixed(2)}",
+                  Icons.account_balance_wallet_outlined,
+                  Colors.green),
             ]),
           ),
         );
@@ -158,19 +183,27 @@ class _StatCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10)),
             child: Icon(icon, color: color, size: 24),
           ),
           const Spacer(),
-          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          Text(title, style: const TextStyle(color: Colors.grey, fontFamily: 'Cairo', fontSize: 10)),
+          Text(value,
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(title,
+              style: const TextStyle(
+                  color: Colors.grey, fontFamily: 'Cairo', fontSize: 10)),
         ],
       ),
     );
