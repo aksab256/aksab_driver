@@ -209,7 +209,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 const Icon(Icons.radar, color: Colors.orange, size: 18),
                 const SizedBox(width: 8),
-                Text("رادار رابية أحلى اللحظي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13.sp)),
+                Text("رادار اكسب اللحظى", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13.sp)),
               ],
             ),
           ),
