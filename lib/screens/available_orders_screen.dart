@@ -23,7 +23,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   GoogleMapController? _mapController;
   Timer? _uiTimer;
 
-  String get _heatmapDoc => "heatmap_${widget.vehicleType.replaceAll('Config', '')}";
+  String get _heatmapDoc => widget.vehicleType;
 
   @override
   void initState() {
@@ -378,4 +378,3 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(children: [Icon(i, size: 18, color: c), const SizedBox(width: 12), Expanded(child: Text(t, style: TextStyle(fontSize: 12.sp, color: Colors.black87, fontFamily: 'Cairo'), maxLines: 2, overflow: TextOverflow.ellipsis))]));
 }
-
