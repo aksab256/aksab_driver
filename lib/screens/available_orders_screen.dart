@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:sizer/sizer.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart'; // يحتاج إضافة في pubspec.yaml
 import 'active_order_screen.dart';
 
 class AvailableOrdersScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   GoogleMapController? _mapController;
   Timer? _uiTimer;
 
+  // المصدر الأساسي للإعدادات (تم تعديله ليطابق الفايربيز مباشرة)
   String get _heatmapDoc => widget.vehicleType;
 
   @override
@@ -80,13 +82,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
-  // ✅ تحسين حساب المسافة ليكون مؤمناً ضد كافة أنواع البيانات (GeoPoint, List, Map)
   double _calculateDistance(dynamic pickup, dynamic dropoff) {
     if (_myCurrentLocation == null) return 0.0;
     double pLat = 0.0, pLng = 0.0, dLat = 0.0, dLng = 0.0;
 
     try {
-      // معالجة موقع الاستلام
       if (pickup is GeoPoint) {
         pLat = pickup.latitude; pLng = pickup.longitude;
       } else if (pickup is List || pickup is Iterable) {
@@ -95,7 +95,6 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         pLat = pickup['lat'] ?? 0.0; pLng = pickup['lng'] ?? 0.0;
       }
 
-      // معالجة موقع التسليم
       if (dropoff is GeoPoint) {
         dLat = dropoff.latitude; dLng = dropoff.longitude;
       } else if (dropoff is List || dropoff is Iterable) {
@@ -210,7 +209,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
               children: [
                 const Icon(Icons.radar, color: Colors.orange, size: 18),
                 const SizedBox(width: 8),
-                Text("رادار رابية أحلى اللحظي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 12.sp)),
+                Text("رادار رابية أحلى اللحظي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 13.sp)),
               ],
             ),
           ),
@@ -238,8 +237,10 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                   child: StreamBuilder<DocumentSnapshot>(
                     stream: FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).snapshots(),
                     builder: (context, dSnap) {
+                      if (!dSnap.hasData) return const Center(child: CircularProgressIndicator());
                       double wallet = double.tryParse(dSnap.data?['walletBalance']?.toString() ?? '0') ?? 0.0;
-                      return _buildOrdersList(scrollController, wallet);
+                      // نمرر البيانات الحية للمندوب لضمان الفلترة الصحيحة
+                      return _buildOrdersList(scrollController, wallet, dSnap.data!);
                     },
                   ),
                 ),
@@ -261,17 +262,36 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
-  Widget _buildOrdersList(ScrollController sc, double wallet) {
-    String cleanType = widget.vehicleType.replaceAll('Config', '');
+  Widget _buildOrdersList(ScrollController sc, double wallet, DocumentSnapshot driverData) {
+    // التحقق من نوع المركبة من فايربيز مباشرة وليس من الذاكرة
+    String liveConfig = driverData['vehicleConfig'] ?? widget.vehicleType;
+    String cleanType = liveConfig.replaceAll('Config', '').trim();
+
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('specialRequests').where('status', isEqualTo: 'pending').where('vehicleType', isEqualTo: cleanType).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('specialRequests')
+          .where('status', isEqualTo: 'pending')
+          .where('vehicleType', isEqualTo: cleanType) 
+          .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Center(child: Text("خطأ في الاتصال بالرادار", style: TextStyle(fontFamily: 'Cairo')));
+        if (snapshot.hasError) {
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text("خطأ في جلب البيانات (يحتمل نقص Index)", style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp)),
+              SizedBox(height: 2.h),
+              ElevatedButton.icon(
+                onPressed: () => launchUrl(Uri.parse("https://console.firebase.google.com/")),
+                icon: const Icon(Icons.link),
+                label: const Text("فتح رابط الـ Index يدوياً"),
+              )
+            ],
+          );
+        }
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
         final nearby = snapshot.data!.docs.where((doc) {
           try {
-            // ✅ معالجة ذكية ومؤمنة لموقع الاستلام لضمان عدم الكراش مهما اختلف نوع البيانات
             dynamic p = doc['pickupLocation'];
             double lat, lng;
             if (p is GeoPoint) {
@@ -291,7 +311,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           return ListView(controller: sc, children: [
             SizedBox(height: 5.h),
             Icon(Icons.search_off, size: 50.sp, color: Colors.grey[300]),
-            Center(child: Text("لا توجد طلبات في محيط 15 كم", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 13.sp))),
+            Center(child: Text("لا توجد طلبات في محيط 15 كم", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 14.sp))),
           ]);
         }
         return ListView.builder(
@@ -328,13 +348,14 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 Row(
                   children: [
                     isMerchant
-                        ? FaIcon(FontAwesomeIcons.solidStar, color: const Color(0xFF5D4037), size: 16.sp)
-                        : Icon(Icons.delivery_dining, color: Colors.white, size: 17.sp),
+                        ? FaIcon(FontAwesomeIcons.solidStar, color: const Color(0xFF5D4037), size: 18.sp)
+                        : Icon(Icons.delivery_dining, color: Colors.white, size: 19.sp),
                     SizedBox(width: 2.w),
-                    Text("$net ج.م صافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo')),
+                    // تكبير خط الصافي
+                    Text("$net ج.م صافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.bold, fontSize: 16.sp, fontFamily: 'Cairo')),
                   ],
                 ),
-                Text(isMerchant ? "طلب من تاجر" : "طلب مستهلك", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white70, fontSize: 11.sp, fontFamily: 'Cairo')),
+                Text(isMerchant ? "طلب من تاجر" : "طلب مستهلك", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white70, fontSize: 12.sp, fontFamily: 'Cairo')),
               ],
             ),
           ),
@@ -345,20 +366,26 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
+                    // تكبير خط العهدة والمسافة
                     _tag(Icons.security, "${insurance.toStringAsFixed(0)} عهدة", Colors.red),
                     _tag(Icons.map, "${_calculateDistance(data['pickupLocation'], data['dropoffLocation']).toStringAsFixed(1)} كم", Colors.blue),
                   ],
                 ),
                 const Divider(height: 25),
+                // تكبير خط العناوين
                 _route(Icons.circle, "من: ${data['pickupAddress'] ?? 'الموقع'}", Colors.orange),
                 _route(Icons.location_on, "إلى: ${data['dropoffAddress'] ?? 'العميل'}", Colors.red),
                 const SizedBox(height: 15),
                 SizedBox(
-                  width: double.infinity, height: 7.h,
+                  width: double.infinity, height: 8.h,
                   child: ElevatedButton(
                     onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
-                    style: ElevatedButton.styleFrom(backgroundColor: canAccept ? (isMerchant ? const Color(0xFF5D4037) : Colors.green[700]) : Colors.grey, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    child: Text(canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo')),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: canAccept ? (isMerchant ? const Color(0xFF5D4037) : Colors.green[700]) : Colors.grey, 
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+                    ),
+                    // تكبير خط زر القبول
+                    child: Text(canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15.sp, fontFamily: 'Cairo')),
                   ),
                 )
               ],
@@ -370,11 +397,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   }
 
   Widget _tag(IconData i, String l, Color c) => Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(color: c.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-      child: Row(children: [Icon(i, size: 16, color: c), const SizedBox(width: 6), Text(l, style: TextStyle(color: c, fontSize: 11.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))]));
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(color: c.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+      child: Row(children: [Icon(i, size: 18, color: c), const SizedBox(width: 6), Text(l, style: TextStyle(color: c, fontSize: 13.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))]));
 
   Widget _route(IconData i, String t, Color c) => Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(children: [Icon(i, size: 18, color: c), const SizedBox(width: 12), Expanded(child: Text(t, style: TextStyle(fontSize: 12.sp, color: Colors.black87, fontFamily: 'Cairo'), maxLines: 2, overflow: TextOverflow.ellipsis))]));
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(children: [Icon(i, size: 20, color: c), const SizedBox(width: 12), Expanded(child: Text(t, style: TextStyle(fontSize: 13.sp, color: Colors.black87, fontFamily: 'Cairo', fontWeight: FontWeight.w500), maxLines: 2, overflow: TextOverflow.ellipsis))]));
 }
