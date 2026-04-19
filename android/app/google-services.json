@@ -1,35 +1,45 @@
 {
   "project_info": {
-    "project_number": "32660558108",
-    "firebase_url": "https://aksabeg-b6571-default-rtdb.firebaseio.com",
-    "project_id": "aksabeg-b6571",
-    "storage_bucket": "aksabeg-b6571.firebasestorage.app"
+    "project_number": "549455573441",
+    "firebase_url": "https://aksab-erp-default-rtdb.firebaseio.com",
+    "project_id": "aksab-erp",
+    "storage_bucket": "aksab-erp.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:32660558108:android:a6e0460d66579eea53ead9",
+        "mobilesdk_app_id": "1:549455573441:android:1798013b9dc98ac6c4ff40",
         "android_client_info": {
           "package_name": "com.aksab.driver"
         }
       },
       "oauth_client": [
         {
-          "client_id": "32660558108-46dpch45vfppikkvo34j81906k767v16.apps.googleusercontent.com",
+          "client_id": "549455573441-6rc17cs9n0kh7nriliojog9hj7ej1h9d.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyCczxrmzYiFRZuDHOqhgqcH-DGvV1z8WZ0"
+          "current_key": "AIzaSyD1eholuDAnsQTI-fcTqVVM4A9o7a02FUU"
+        },
+        {
+          "current_key": "AIzaSyB4Nu0SHkkoSQi9gMjxNK5pfnqbKSrS5fg"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "32660558108-46dpch45vfppikkvo34j81906k767v16.apps.googleusercontent.com",
+              "client_id": "549455573441-6rc17cs9n0kh7nriliojog9hj7ej1h9d.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "549455573441-e0nk2nbqd9jq6jprmodaf1sosl48jvsk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.myTestApp"
+              }
             }
           ]
         }
@@ -37,57 +47,93 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:32660558108:android:102632793b65058953ead9",
+        "mobilesdk_app_id": "1:549455573441:android:91296315e1783769c4ff40",
+        "android_client_info": {
+          "package_name": "com.aksab.logistics_v2"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "549455573441-6rc17cs9n0kh7nriliojog9hj7ej1h9d.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1eholuDAnsQTI-fcTqVVM4A9o7a02FUU"
+        },
+        {
+          "current_key": "AIzaSyB4Nu0SHkkoSQi9gMjxNK5pfnqbKSrS5fg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "549455573441-6rc17cs9n0kh7nriliojog9hj7ej1h9d.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "549455573441-e0nk2nbqd9jq6jprmodaf1sosl48jvsk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.myTestApp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:549455573441:android:e74e7453b56482c1c4ff40",
         "android_client_info": {
           "package_name": "com.aksabeg500"
         }
       },
       "oauth_client": [
         {
-          "client_id": "32660558108-46dpch45vfppikkvo34j81906k767v16.apps.googleusercontent.com",
+          "client_id": "549455573441-iiok4jf8tvf9o5c4ge82bpa6cnq9i3g1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aksabeg500",
+            "certificate_hash": "5eb23720b9e069cc09cd6677d9efc4b3cbd4566e"
+          }
+        },
+        {
+          "client_id": "549455573441-u9g7t671480a1dvug8uh72gl87bn8tk0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aksabeg500",
+            "certificate_hash": "fb8e549c84c43182117e6a496c1a6a5e1e0179e9"
+          }
+        },
+        {
+          "client_id": "549455573441-6rc17cs9n0kh7nriliojog9hj7ej1h9d.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyCczxrmzYiFRZuDHOqhgqcH-DGvV1z8WZ0"
+          "current_key": "AIzaSyD1eholuDAnsQTI-fcTqVVM4A9o7a02FUU"
+        },
+        {
+          "current_key": "AIzaSyB4Nu0SHkkoSQi9gMjxNK5pfnqbKSrS5fg"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "32660558108-46dpch45vfppikkvo34j81906k767v16.apps.googleusercontent.com",
+              "client_id": "549455573441-6rc17cs9n0kh7nriliojog9hj7ej1h9d.apps.googleusercontent.com",
               "client_type": 3
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:32660558108:android:0646a3e54a8b1d9e53ead9",
-        "android_client_info": {
-          "package_name": "com.example.aksabsales"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "32660558108-46dpch45vfppikkvo34j81906k767v16.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCczxrmzYiFRZuDHOqhgqcH-DGvV1z8WZ0"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
+            },
             {
-              "client_id": "32660558108-46dpch45vfppikkvo34j81906k767v16.apps.googleusercontent.com",
-              "client_type": 3
+              "client_id": "549455573441-e0nk2nbqd9jq6jprmodaf1sosl48jvsk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.myTestApp"
+              }
             }
           ]
         }
