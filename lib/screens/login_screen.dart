@@ -14,6 +14,7 @@ import 'delivery_admin_dashboard.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
   @override
   _LoginScreenState createState() => _LoginScreenState();
 }
@@ -21,6 +22,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -43,7 +45,9 @@ class _LoginScreenState extends State<LoginScreen> {
           body: jsonEncode({"userId": uid, "fcmToken": token, "role": role}),
         ).timeout(const Duration(seconds: 8));
       }
-    } catch (e) { debugPrint("❌ AWS Notification Error: $e"); }
+    } catch (e) {
+      debugPrint("❌ AWS Notification Error: $e");
+    }
   }
 
   Future<void> _saveVehicleInfo(String config) async {
@@ -56,20 +60,29 @@ class _LoginScreenState extends State<LoginScreen> {
       _showError("من فضلك أدخل رقم الهاتف وكلمة المرور");
       return;
     }
+
     setState(() => _isLoading = true);
+
     try {
+      // استخدام النطاق الجديد المرتبط بقاعدة البيانات الجديدة
       String smartEmail = "${_phoneController.text.trim()}@aksabship.com";
+      
       UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: smartEmail, password: _passwordController.text,
+        email: smartEmail,
+        password: _passwordController.text,
       );
+
       String uid = userCredential.user!.uid;
 
+      // 1. التحقق من مناديب الشركات
       var repSnap = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();
       if (repSnap.exists) {
         var userData = repSnap.data()!;
         if (userData['status'] == 'approved') {
           _sendNotificationDataToAWS('delivery_rep');
-          if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const CompanyRepHomeScreen()));
+          if (mounted) {
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const CompanyRepHomeScreen()));
+          }
           return;
         } else {
           await FirebaseAuth.instance.signOut();
@@ -78,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
+      // 2. التحقق من المناديب الأحرار
       var freeSnap = await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).get();
       if (freeSnap.exists) {
         var userData = freeSnap.data()!;
@@ -85,7 +99,9 @@ class _LoginScreenState extends State<LoginScreen> {
           String config = userData['vehicleConfig'] ?? 'motorcycleConfig';
           await _saveVehicleInfo(config);
           _sendNotificationDataToAWS('free_driver');
-          if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const FreeDriverHomeScreen()));
+          if (mounted) {
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const FreeDriverHomeScreen()));
+          }
           return;
         } else {
           await FirebaseAuth.instance.signOut();
@@ -94,31 +110,60 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
+      // 3. التحقق من المدراء والمشرفين
       var managerSnap = await FirebaseFirestore.instance.collection('managers').doc(uid).get();
       if (managerSnap.exists) {
         var managerData = managerSnap.data()!;
         String role = managerData['role'] ?? '';
         if (role == 'delivery_manager' || role == 'delivery_supervisor') {
           _sendNotificationDataToAWS(role);
-          if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const DeliveryAdminDashboard()));
+          if (mounted) {
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const DeliveryAdminDashboard()));
+          }
           return;
         }
       }
+
       _showError("عذراً، هذا الحساب لا يملك صلاحيات دخول");
       await FirebaseAuth.instance.signOut();
+
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'user-not-found') { _showError("رقم الهاتف غير مسجل في نظام المناديب"); }
-      else if (e.code == 'wrong-password') { _showError("كلمة المرور غير صحيحة"); }
-      else { _showError("فشل الدخول: تأكد من بياناتك"); }
-    } finally { if (mounted) setState(() => _isLoading = false); }
+      if (e.code == 'user-not-found') {
+        _showError("رقم الهاتف غير مسجل في نظام المناديب");
+      } else if (e.code == 'wrong-password') {
+        _showError("كلمة المرور غير صحيحة");
+      } else {
+        _showError("فشل الدخول: تأكد من بياناتك واتصالك بالإنترنت");
+      }
+    } catch (e) {
+      _showError("حدث خطأ غير متوقع، يرجى المحاولة لاحقاً");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
+  // الدالة المعدلة للحماية من كراش الـ Null والـ Context
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 13.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
-      backgroundColor: Colors.redAccent, behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-    ));
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          msg,
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            fontSize: 13.sp,
+            fontFamily: 'Cairo',
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   @override
@@ -128,8 +173,8 @@ class _LoginScreenState extends State<LoginScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF5722)))
           : SingleChildScrollView(
-              child: SafeArea( // ✅ تم إضافة المساحة الآمنة هنا لحماية أسفل الشاشة
-                top: false, // لضمان بقاء خلفية الهيدر السوداء ممتدة للأعلى
+              child: SafeArea(
+                top: false,
                 child: Column(
                   children: [
                     Stack(
@@ -137,18 +182,42 @@ class _LoginScreenState extends State<LoginScreen> {
                         Container(
                           height: 42.h,
                           decoration: const BoxDecoration(
-                            gradient: LinearGradient(colors: [Color(0xFF1A1A1A), Color(0xFF333333)], begin: Alignment.topCenter, end: Alignment.bottomCenter),
-                            borderRadius: BorderRadius.only(bottomLeft: Radius.circular(60), bottomRight: Radius.circular(60)),
+                            gradient: LinearGradient(
+                              colors: [Color(0xFF1A1A1A), Color(0xFF333333)],
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                            ),
+                            borderRadius: BorderRadius.only(
+                              bottomLeft: Radius.circular(60),
+                              bottomRight: Radius.circular(60),
+                            ),
                           ),
                         ),
                         Positioned(
-                          top: 10.h, left: 0, right: 0,
+                          top: 10.h,
+                          left: 0,
+                          right: 0,
                           child: Column(
                             children: [
                               _buildHeroLogo(),
                               SizedBox(height: 2.h),
-                              Text("رابية أحلى - كابتن", style: TextStyle(fontSize: 26.sp, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Cairo')),
-                              Text("منصة إدارة العهدة واللوجستيات", style: TextStyle(fontSize: 12.sp, color: Colors.white70, fontFamily: 'Cairo')),
+                              Text(
+                                "أسواق اكسب - كابتن",
+                                style: TextStyle(
+                                  fontSize: 26.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  fontFamily: 'Cairo',
+                                ),
+                              ),
+                              Text(
+                                "منصة إدارة العهدة واللوجستيات",
+                                style: TextStyle(
+                                  fontSize: 12.sp,
+                                  color: Colors.white70,
+                                  fontFamily: 'Cairo',
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -161,8 +230,15 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: Container(
                           padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 5.h),
                           decoration: BoxDecoration(
-                            color: Colors.white, borderRadius: BorderRadius.circular(35),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 40, offset: const Offset(0, 15))],
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(35),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.12),
+                                blurRadius: 40,
+                                offset: const Offset(0, 15),
+                              )
+                            ],
                           ),
                           child: Column(
                             children: [
@@ -183,14 +259,21 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.black87),
                           children: [
                             const TextSpan(text: "ليس لديك حساب؟ "),
-                            TextSpan(text: "قدم طلب انضمام الآن", style: TextStyle(color: const Color(0xFFFF5722), fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
+                            TextSpan(
+                              text: "قدم طلب انضمام الآن",
+                              style: TextStyle(
+                                color: const Color(0xFFFF5722),
+                                fontWeight: FontWeight.bold,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
                     SizedBox(height: 3.h),
                     _buildPrivacyButton(),
-                    SizedBox(height: 2.h), // مساحة إضافية بسيطة للراحة البصرية
+                    SizedBox(height: 2.h),
                   ],
                 ),
               ),
@@ -201,7 +284,17 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildHeroLogo() {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.orange.withOpacity(0.4), blurRadius: 25, spreadRadius: 8)]),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.4),
+            blurRadius: 25,
+            spreadRadius: 8,
+          )
+        ],
+      ),
       child: Icon(Icons.delivery_dining_rounded, size: 55.sp, color: const Color(0xFFFF5722)),
     );
   }
@@ -213,15 +306,30 @@ class _LoginScreenState extends State<LoginScreen> {
         Text(label, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, color: Colors.grey[800], fontWeight: FontWeight.bold)),
         SizedBox(height: 1.5.h),
         TextField(
-          controller: controller, obscureText: isPass ? _obscurePassword : false, keyboardType: type, textAlign: TextAlign.right,
+          controller: controller,
+          obscureText: isPass ? _obscurePassword : false,
+          keyboardType: type,
+          textAlign: TextAlign.right,
           style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold),
           decoration: InputDecoration(
-            filled: true, fillColor: Colors.grey[50],
+            filled: true,
+            fillColor: Colors.grey[50],
             prefixIcon: Icon(icon, color: const Color(0xFFFF5722), size: 22.sp),
-            suffixIcon: isPass ? IconButton(icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey, size: 20.sp), onPressed: () => setState(() => _obscurePassword = !_obscurePassword)) : null,
+            suffixIcon: isPass
+                ? IconButton(
+                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey, size: 20.sp),
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  )
+                : null,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey[200]!)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: Color(0xFFFF5722), width: 2)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide(color: Colors.grey[200]!),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: const BorderSide(color: Color(0xFFFF5722), width: 2),
+            ),
           ),
         ),
       ],
@@ -230,7 +338,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildLoginButton() {
     return ElevatedButton(
-      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A1A1A), foregroundColor: Colors.white, minimumSize: Size(100.w, 8.5.h), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), elevation: 10),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF1A1A1A),
+        foregroundColor: Colors.white,
+        minimumSize: Size(100.w, 8.5.h),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 10,
+      ),
       onPressed: _handleLogin,
       child: Text("دخول للنظام", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
     );
@@ -244,7 +358,15 @@ class _LoginScreenState extends State<LoginScreen> {
         children: [
           Icon(Icons.shield_outlined, size: 14.sp, color: Colors.grey),
           SizedBox(width: 2.w),
-          Text("سياسة الخصوصية وشروط الاستخدام", style: TextStyle(color: Colors.grey[600], fontSize: 11.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+          Text(
+            "سياسة الخصوصية وشروط الاستخدام",
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 11.sp,
+              fontFamily: 'Cairo',
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
