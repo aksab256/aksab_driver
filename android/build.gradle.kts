@@ -7,8 +7,8 @@ buildscript {
         // ✅ إضافة تعريف مكتبة خدمات جوجل
         classpath("com.google.gms:google-services:4.4.1")
         
-         ✅ إضافة تعريف مكتبة كراشليتكس (ضروري جداً هنا)
-       // classpath("com.google.firebase:firebase-crashlytics-gradle:3.0.2")
+        // ✅ إضافة تعريف مكتبة كراشليتكس (ضروري جداً هنا)
+        classpath("com.google.firebase:firebase-crashlytics-gradle:3.0.2")
     }
 }
 
