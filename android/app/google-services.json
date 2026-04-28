@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "549455573441-ofhouk9h4vo1t4hf347u9250c205tum4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aksab.driver",
+            "certificate_hash": "366ac4882b192c24cef083a48354e0a1c359c15c"
+          }
+        },
+        {
           "client_id": "549455573441-6rc17cs9n0kh7nriliojog9hj7ej1h9d.apps.googleusercontent.com",
           "client_type": 3
         }
