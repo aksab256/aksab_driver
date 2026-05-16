@@ -19,7 +19,7 @@ dependencies:
   firebase_messaging: ^16.1.3
   firebase_crashlytics: ^5.1.0
 
-  # ✅ Google Maps & Location (نظام الخرائط الجديد لـ أكسب)
+  # ✅ Google Maps & Location (نظام الخرائط الجديد لـ رابية أحلى)
   google_maps_flutter: ^2.5.3
   geolocator: ^14.0.2
   geocoding: ^4.0.0
@@ -45,6 +45,7 @@ dependencies:
   share_plus: ^12.0.2
   path_provider: ^2.1.2
   http: ^1.2.0
+  crypto: ^3.0.3  # 👈 مضافة هنا بمحاذاة صحيحة تماماً لحل تحدي أكيدلي
   intl: any
   connectivity_plus: ^7.1.0
   image_picker: ^1.1.2
@@ -85,4 +86,3 @@ flutter:
     - assets/
     - assets/icon/
     - assets/OSMB-bc319d822a17aa9ad1089fc05e7d4e752460f877.geojson
-
