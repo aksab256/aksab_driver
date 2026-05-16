@@ -4,9 +4,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
+
+// استدعاء ملف خدمة أكيدلي الموحد
+import 'services/akedly_auth_service.dart';
+
 import 'free_driver_home_screen.dart';
 import 'CompanyRepHomeScreen.dart';
 import 'delivery_admin_dashboard.dart';
@@ -20,10 +23,10 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final AkedlyAuthService _akedlyService = AkedlyAuthService();
+  
   bool _isLoading = false;
-  bool _obscurePassword = true;
-  String? _verificationId;
+  String? _transactionReqID; // لتخزين معرف عملية التحقق المستلم من أكيدلي
 
   Future<void> _launchPrivacyPolicy() async {
     final Uri url = Uri.parse('https://aksab.shop/');
@@ -32,20 +35,27 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _sendNotificationDataToAWS(String role) async {
+  // إرسال توكن الإشعارات الموحد للفيس بوك والفايرستور بدلاً من الـ AWS الملغاة
+  Future<void> _sendNotificationDataToFCM(String role) async {
     try {
       String? token = await FirebaseMessaging.instance.getToken();
       String? uid = FirebaseAuth.instance.currentUser?.uid;
       if (token != null && uid != null) {
-        const String apiUrl = "https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction";
-        await http.post(
-          Uri.parse(apiUrl),
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode({"userId": uid, "fcmToken": token, "role": role}),
-        ).timeout(const Duration(seconds: 8));
+        final collections = ['deliveryReps', 'freeDrivers', 'managers'];
+        for (var col in collections) {
+          var docRef = FirebaseFirestore.instance.collection(col).doc(uid);
+          var docSnap = await docRef.get();
+          if (docSnap.exists) {
+            await docRef.update({
+              'insurance_points_token': token, // متوافق مع المسميات اللوجستية المعتمدة لمتطلبات مراجعة جوجل
+              'last_login': FieldValue.serverTimestamp(),
+            });
+            break;
+          }
+        }
       }
     } catch (e) {
-      debugPrint("❌ AWS Notification Error: $e");
+      debugPrint("❌ FCM Notification Update Error: $e");
     }
   }
 
@@ -54,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await prefs.setString('user_vehicle_config', config);
   }
 
-  // دالة الدخول الجديدة عبر الـ OTP
+  // دالة المعالجة الأساسية المعتمدة على أكيدلي
   Future<void> _handlePhoneLogin() async {
     if (_phoneController.text.isEmpty) {
       _showError("من فضلك أدخل رقم الهاتف أولاً");
@@ -64,98 +74,170 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // تنظيف رقم الهاتف وإضافة كود الدولة
       String phone = _phoneController.text.trim();
-      if (!phone.startsWith('+')) {
-        phone = "+2$phone"; 
+      
+      // التجهيز للفحص الذكي لجميع صيغ إدخال رقم الهاتف في قواعد البيانات
+      bool userExists = false;
+      final collections = ['deliveryReps', 'freeDrivers', 'managers'];
+
+      final String phoneWithZero = phone.startsWith('0') ? phone : '0$phone';
+      final String phoneWithoutZero = phone.startsWith('0') ? phone.substring(1) : phone;
+      final String formattedPhone = phone.startsWith('0') ? '20${phone.substring(1)}' : (phone.startsWith('20') ? phone : '20$phone');
+      final List<String> searchVariations = [phoneWithZero, phoneWithoutZero, formattedPhone];
+
+      // التأكد من وجود الكابتن مسجلاً في إحدى المجموعات قبل إرسال كود التفعيل لتقنين التكلفة والأمان
+      for (var col in collections) {
+        var query = await FirebaseFirestore.instance
+            .collection(col)
+            .where('phone', whereIn: searchVariations)
+            .limit(1)
+            .get();
+        if (query.docs.isNotEmpty) {
+          userExists = true;
+          break;
+        }
       }
 
-      await FirebaseAuth.instance.verifyPhoneNumber(
-        phoneNumber: phone,
-        verificationCompleted: (PhoneAuthCredential credential) async {
-          await FirebaseAuth.instance.signInWithCredential(credential);
-          _checkUserAccess();
-        },
-        verificationFailed: (FirebaseAuthException e) {
-          setState(() => _isLoading = false);
-          _showError("فشل إرسال الكود: ${e.message}");
-        },
-        codeSent: (String verificationId, int? resendToken) {
-          setState(() {
-            _isLoading = false;
-            _verificationId = verificationId;
-          });
-          _showOTPDialog();
-        },
-        codeAutoRetrievalTimeout: (String verificationId) {
-          _verificationId = verificationId;
-        },
-      );
+      if (!userExists) {
+        setState(() => _isLoading = false);
+        _showError("❌ عذراً، هذا الرقم غير مسجل كمناديب أو مشرفين بالنظام.");
+        return;
+      }
+
+      // رقم الهاتف بصيغة أكيدلي الدولية المطلوبة (مثال: +2010xxxxxxxx)
+      String akedlyFormattedPhone = phone.startsWith('+') 
+          ? phone 
+          : (phone.startsWith('0') ? '+2${phone}' : '+20$phone');
+
+      // استدعاء محرك أكيدلي وحل التحدي محلياً بشكل صامت
+      final authResult = await _akedlyService.sendOtpDetailed(akedlyFormattedPhone);
+
+      setState(() => _isLoading = false);
+
+      if (authResult.isSuccess && authResult.data != null) {
+        _transactionReqID = authResult.data;
+        _showOTPDialog(akedlyFormattedPhone);
+      } else {
+        _showError(authResult.message ?? "فشل إرسال كود التحقق من أكيدلي");
+      }
+      
     } catch (e) {
       setState(() => _isLoading = false);
-      _showError("حدث خطأ غير متوقع");
+      _showError("حدث خطأ تقني أثناء محاولة الدخول");
     }
   }
 
-  // نافذة إدخال كود التحقق
-  void _showOTPDialog() {
+  // نافذة إدخال كود التحقق مع تكبير الخطوط والتحقق المباشر
+  void _showOTPDialog(String formattedPhone) {
     final otpController = TextEditingController();
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("تأكيد الهوية", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 16.sp)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        title: Text(
+          "تأكيد الهوية", 
+          textAlign: TextAlign.center, 
+          style: TextStyle(fontFamily: 'Cairo', fontSize: 18.sp, fontWeight: FontWeight.bold)
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text("أدخل الكود المرسل لرقمك", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp)),
-            SizedBox(height: 2.h),
+            Text(
+              "أدخل كود التحقق المرسل إلى الرقم\n$formattedPhone", 
+              textAlign: TextAlign.center, 
+              style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.grey[700])
+            ),
+            SizedBox(height: 3.h),
             TextField(
               controller: otpController,
               keyboardType: TextInputType.number,
               textAlign: TextAlign.center,
-              style: TextStyle(letterSpacing: 5, fontSize: 18.sp, fontWeight: FontWeight.bold),
+              // تم تكبير خط الأرقام لتسهيل الرؤية
+              style: TextStyle(letterSpacing: 6, fontSize: 22.sp, fontWeight: FontWeight.bold, color: const Color(0xFFFF5722)),
               decoration: InputDecoration(
                 hintText: "------",
                 filled: true,
                 fillColor: Colors.grey[100],
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                contentPadding: const EdgeInsets.symmetric(vertical: 15),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: BorderSide.none
+                ),
               ),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("إلغاء", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF5722)),
-            onPressed: () async {
-              if (otpController.text.length < 6) return;
-              try {
-                PhoneAuthCredential credential = PhoneAuthProvider.credential(
-                  verificationId: _verificationId!,
-                  smsCode: otpController.text.trim(),
-                );
-                await FirebaseAuth.instance.signInWithCredential(credential);
-                Navigator.pop(context);
-                _checkUserAccess();
-              } catch (e) {
-                _showError("كود التحقق غير صحيح");
-              }
-            },
-            child: Text("تأكيد", style: TextStyle(fontFamily: 'Cairo', color: Colors.white)),
-          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 2.w, vertical: 1.h),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text("إلغاء", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey, fontSize: 14.sp, fontWeight: FontWeight.bold)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF5722),
+                    padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 1.5.h),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                  ),
+                  onPressed: () async {
+                    if (otpController.text.trim().length < 6) return;
+                    
+                    Navigator.pop(context); // إغلاق الديالوج
+                    setState(() => _isLoading = true);
+
+                    try {
+                      // التحقق من صحة الكود عبر خادم أكيدلي
+                      bool isVerified = await _akedlyService.verifyOtp(_transactionReqID!, otpController.text.trim());
+
+                      if (isVerified) {
+                        // تطبيق المعادلة الذكية للدخول الصامت على الفايربيز بدون كلمات مرور معقدة للمندوب
+                        String cleanPhone = _phoneController.text.trim();
+                        String standardPhone = cleanPhone.startsWith('0') ? cleanPhone : '0$cleanPhone';
+                        String generatedEmail = "${standardPhone}@aksab.com";
+                        String generatedPassword = "Rabia_${standardPhone}";
+
+                        try {
+                          // محاولة الدخول المباشر بالحساب الصامت الصادر من الفايربيز
+                          await FirebaseAuth.instance.signInWithEmailAndPassword(
+                            email: generatedEmail, 
+                            password: generatedPassword
+                          );
+                        } catch (firebaseError) {
+                          // في حال كان الكابتن تم الموافقة عليه وتوثيقه حديثاً ولم ينشأ له الحساب على الـ Auth نقوم بإنشائه فوراً
+                          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+                            email: generatedEmail, 
+                            password: generatedPassword
+                          );
+                        }
+
+                        // فحص الأذونات والتوجه للشاشة الصحيحة طبقاً لدوره البرمجي المعتمد
+                        _checkUserAccess();
+                      } else {
+                        setState(() => _isLoading = false);
+                        _showError("رمز التحقق غير صحيح، يرجى المحاولة مرة أخرى");
+                      }
+                    } catch (e) {
+                      setState(() => _isLoading = false);
+                      _showError("حدث خطأ أثناء تأكيد رمز التحقق");
+                    }
+                  },
+                  child: Text("تأكيد", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 14.sp, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          )
         ],
       ),
     );
   }
 
-  // فحص صلاحيات المستخدم (اللوجيك الأصلي بتاعك)
+  // دالة فحص الصلاحيات الأصلية والتوجه إلى شاشات التطبيق المتعددة (مندوب حر، مندوب شركة، مشرف/مدير)
   Future<void> _checkUserAccess() async {
-    setState(() => _isLoading = true);
     try {
       String uid = FirebaseAuth.instance.currentUser!.uid;
 
@@ -164,7 +246,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (repSnap.exists) {
         var userData = repSnap.data()!;
         if (userData['status'] == 'approved') {
-          _sendNotificationDataToAWS('delivery_rep');
+          await _sendNotificationDataToFCM('delivery_rep');
           if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const CompanyRepHomeScreen()));
           return;
         } else {
@@ -181,7 +263,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (userData['status'] == 'approved') {
           String config = userData['vehicleConfig'] ?? 'motorcycleConfig';
           await _saveVehicleInfo(config);
-          _sendNotificationDataToAWS('free_driver');
+          await _sendNotificationDataToFCM('free_driver');
           if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const FreeDriverHomeScreen()));
           return;
         } else {
@@ -191,23 +273,23 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      // 3. التحقق من المدراء والمشرفين
+      // 3. التحقق من المدراء والمشرفين للمنظومة اللوجستية
       var managerSnap = await FirebaseFirestore.instance.collection('managers').doc(uid).get();
       if (managerSnap.exists) {
         var managerData = managerSnap.data()!;
         String role = managerData['role'] ?? '';
         if (role == 'delivery_manager' || role == 'delivery_supervisor') {
-          _sendNotificationDataToAWS(role);
+          await _sendNotificationDataToFCM(role);
           if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const DeliveryAdminDashboard()));
           return;
         }
       }
 
-      _showError("عذراً، هذا الحساب لا يملك صلاحيات دخول");
+      _showError("عذراً، هذا الحساب لا يملك صلاحيات دخول على منظومة الكابتن");
       await FirebaseAuth.instance.signOut();
 
     } catch (e) {
-      _showError("خطأ في جلب بيانات الحساب");
+      _showError("خطأ في جلب بيانات الحساب وتأكيد الصلاحيات");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -218,7 +300,7 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 13.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        content: Text(msg, textAlign: TextAlign.right, style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
         backgroundColor: Colors.redAccent,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -259,8 +341,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               _buildHeroLogo(),
                               SizedBox(height: 2.h),
-                              Text("أسواق اكسب - كابتن", style: TextStyle(fontSize: 26.sp, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Cairo')),
-                              Text("منصة إدارة العهدة واللوجستيات", style: TextStyle(fontSize: 12.sp, color: Colors.white70, fontFamily: 'Cairo')),
+                              Text("رابية أحلى - كابتن", style: TextStyle(fontSize: 28.sp, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Cairo')),
+                              Text("منصة إدارة العهدة واللوجستيات", style: TextStyle(fontSize: 14.sp, color: Colors.white70, fontFamily: 'Cairo')),
                             ],
                           ),
                         ),
@@ -280,9 +362,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Column(
                             children: [
                               _buildCustomField(_phoneController, "رقم الهاتف", Icons.phone_iphone, type: TextInputType.phone),
-                              SizedBox(height: 3.h),
-                              _buildCustomField(_passwordController, "كلمة المرور (اختياري)", Icons.lock_open_rounded, isPass: true),
-                              SizedBox(height: 5.h),
+                              SizedBox(height: 4.h),
                               _buildLoginButton(),
                             ],
                           ),
@@ -293,7 +373,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: () => Navigator.pushNamed(context, '/register'),
                       child: RichText(
                         text: TextSpan(
-                          style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.black87),
+                          style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, color: Colors.black87),
                           children: [
                             const TextSpan(text: "ليس لديك حساب؟ "),
                             TextSpan(text: "قدم طلب انضمام الآن", style: TextStyle(color: const Color(0xFFFF5722), fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
@@ -319,26 +399,23 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildCustomField(TextEditingController controller, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text}) {
+  Widget _buildCustomField(TextEditingController controller, String label, IconData icon, {TextInputType type = TextInputType.text}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Text(label, style: TextStyle(fontFamily: 'Cairo', fontSize: 12.sp, color: Colors.grey[800], fontWeight: FontWeight.bold)),
+        Text(label, style: TextStyle(fontFamily: 'Cairo', fontSize: 14.sp, color: Colors.grey[800], fontWeight: FontWeight.bold)),
         SizedBox(height: 1.5.h),
         TextField(
           controller: controller,
-          obscureText: isPass ? _obscurePassword : false,
           keyboardType: type,
           textAlign: TextAlign.right,
-          style: TextStyle(fontSize: 14.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold),
+          // تم تكبير حجم نص الإدخال
+          style: TextStyle(fontSize: 16.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold, letterSpacing: 1),
           decoration: InputDecoration(
             filled: true,
             fillColor: Colors.grey[50],
-            prefixIcon: Icon(icon, color: const Color(0xFFFF5722), size: 22.sp),
-            suffixIcon: isPass
-                ? IconButton(icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey, size: 20.sp), onPressed: () => setState(() => _obscurePassword = !_obscurePassword))
-                : null,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            prefixIcon: Icon(icon, color: const Color(0xFFFF5722), size: 24.sp),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey[200]!)),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: Color(0xFFFF5722), width: 2)),
           ),
@@ -352,12 +429,12 @@ class _LoginScreenState extends State<LoginScreen> {
       style: ElevatedButton.styleFrom(
         backgroundColor: const Color(0xFF1A1A1A),
         foregroundColor: Colors.white,
-        minimumSize: Size(100.w, 8.5.h),
+        minimumSize: Size(100.w, 9.h), // زيادة الارتفاع ليتناسب مع الخط الكبير
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         elevation: 10,
       ),
-      onPressed: _handlePhoneLogin, // تم تغيير الوظيفة لتعمل بالـ OTP
-      child: Text("دخول للنظام", style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+      onPressed: _handlePhoneLogin,
+      child: Text("دخول للنظام", style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
     );
   }
 
@@ -367,12 +444,11 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.shield_outlined, size: 14.sp, color: Colors.grey),
+          Icon(Icons.shield_outlined, size: 15.sp, color: Colors.grey),
           SizedBox(width: 2.w),
-          Text("سياسة الخصوصية وشروط الاستخدام", style: TextStyle(color: Colors.grey[600], fontSize: 11.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
+          Text("سياسة الخصوصية وشروط الاستخدام", style: TextStyle(color: Colors.grey[600], fontSize: 12.sp, fontFamily: 'Cairo', fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
 }
-
