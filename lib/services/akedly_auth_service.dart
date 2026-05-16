@@ -2,11 +2,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:crypto/crypto.dart'; // للعمليات الحسابية وحل التحدي محلياً
+import 'package:firebase_auth/firebase_auth.dart'; // 👈 تم إضافتها لربط جلسة الدخول بنجاح
 
 class AkedlyAuthService {
   // المفاتيح والمعرفات الثابتة الخاصة بخط الإنتاج لمنظومة رابية أحلى
   final String _apiKey = "f032dc4687c452cb7c340a91df69ed419e6a5330c3bb9b2f826828bf381e3624";
   final String _pipelineId = "6a02edb9dc826dd83e860ad1";
+  final FirebaseAuth _auth = FirebaseAuth.instance; // 👈 مثيل الفايربيز لتوثيق الجلسة الحالية
 
   // دالة حل التحدي يدوياً (Proof of Work) لمنع السبام والـ Bots
   int _solveChallenge(String challenge, int difficulty) {
@@ -69,7 +71,7 @@ class AkedlyAuthService {
     }
   }
 
-  // دالة مطابقة الكود المدخل بواسطة المندوب مع السيرفر
+  // دالة مطابقة الكود المدخل بواسطة المندوب مع السيرفر وربطها بالفايربيز
   Future<bool> verifyOtp(String transactionReqID, String otp) async {
     try {
       final response = await http.post(
@@ -80,7 +82,13 @@ class AkedlyAuthService {
           'otp': otp
         }),
       );
-      return response.statusCode == 200;
+      
+      if (response.statusCode == 200) {
+        // 👈 الخطوة السحرية: نقوم بتسجيل الدخول في الفايربيز لإنشاء سيكتور وجلسة حية للمندوب تمنعه من الارتداد لصفحة اللوجن
+        UserCredential userCredential = await _auth.signInAnonymously();
+        return userCredential.user != null;
+      }
+      return false;
     } catch (e) {
       return false;
     }
