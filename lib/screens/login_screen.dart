@@ -8,7 +8,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 
 // استدعاء ملف خدمة أكيدلي الموحد
-import 'services/akedly_auth_service.dart';
+//  السطر الجديد الصحيح
+import 'package:aksab_driver/services/akedly_auth_service.dart';
 
 import 'free_driver_home_screen.dart';
 import 'CompanyRepHomeScreen.dart';
