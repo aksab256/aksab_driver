@@ -196,11 +196,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       bool isVerified = await _akedlyService.verifyOtp(_transactionReqID!, otpController.text.trim());
 
                       if (isVerified) {
-                        // تطبيق المعادلة الذكية للدخول الصامت على الفايربيز بدون كلمات مرور معقدة للمندوب
+                        // تنظيف وإعداد رقم الهاتف ليتطابق مع صيغة الحسابات التلقائية المسجلة
                         String cleanPhone = _phoneController.text.trim();
                         String standardPhone = cleanPhone.startsWith('0') ? cleanPhone : '0$cleanPhone';
-                        String generatedEmail = "${standardPhone}@aksab.com";
-                        String generatedPassword = "Rabia_${standardPhone}";
+                        
+                        // ✅ تعديل وتأكيد: ربط الحساب بالمعادلة الأصلية المتوافقة تماماً مع شاشة التسجيل دون أي تغيير
+                        String generatedEmail = "${standardPhone}@aksabship.com";
+                        String generatedPassword = "Aksab@${standardPhone}";
 
                         try {
                           // محاولة الدخول المباشر بالحساب الصامت الصادر من الفايربيز
@@ -209,7 +211,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             password: generatedPassword
                           );
                         } catch (firebaseError) {
-                          // في حال كان الكابتن تم الموافقة عليه وتوثيقه حديثاً ولم ينشأ له الحساب على الـ Auth نقوم بإنشائه فوراً
+                          // في حال كان الكابتن تم الموافقة عليه وتوثيقه حديثاً من الإدارة ولم ينشأ له الحساب على الـ Auth نقوم بإنشائه فوراً بنفس الهوية
                           await FirebaseAuth.instance.createUserWithEmailAndPassword(
                             email: generatedEmail, 
                             password: generatedPassword
