@@ -20,6 +20,8 @@ class AvailableOrdersScreen extends StatefulWidget {
 class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   Position? _myCurrentLocation;
   bool _isGettingLocation = true;
+  // ✅ إصلاح: تمييز فشل تحديد الموقع عن حالة التحميل العادية
+  bool _locationFailed = false;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   GoogleMapController? _mapController;
   Timer? _uiTimer;
@@ -59,6 +61,10 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   }
 
   Future<void> _updateLocationSnapshot() async {
+    setState(() {
+      _isGettingLocation = true;
+      _locationFailed = false;
+    });
     try {
       Position pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
@@ -78,7 +84,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         _mapController?.animateCamera(CameraUpdate.newLatLng(LatLng(pos.latitude, pos.longitude)));
       }
     } catch (e) {
-      if (mounted) setState(() => _isGettingLocation = false);
+      // ✅ إصلاح: توضيح فشل الموقع بشكل صريح بدل ما نعدي على شاشة فاضية تكراش بعدين
+      if (mounted) {
+        setState(() {
+          _isGettingLocation = false;
+          _locationFailed = true;
+        });
+      }
     }
   }
 
@@ -151,9 +163,24 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     }
   }
 
+  // ✅ إصلاح: حساب العهدة بنفس منطق الباك إند تمامًا (requestSource == 'retailer' فقط)
+  double _computeInsurance(Map<String, dynamic> data) {
+    if (data['requestSource'] != 'retailer') return 0.0;
+    double net = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
+    double orderAmt = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0;
+    double insurance = orderAmt - net;
+    return insurance < 0 ? 0.0 : insurance;
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_isGettingLocation) return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
+    if (_isGettingLocation) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
+    }
+    // ✅ إصلاح: شاشة واضحة لفشل تحديد الموقع مع زرار إعادة محاولة، بدل الدخول على شاشة هتكراش
+    if (_locationFailed || _myCurrentLocation == null) {
+      return _buildLocationErrorState();
+    }
     return Scaffold(
       body: Stack(
         children: [
@@ -161,6 +188,46 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           _buildTopOverlay(),
           _buildDraggableSheet(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLocationErrorState() {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8.w),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.location_off_rounded, size: 60.sp, color: Colors.grey[400]),
+              SizedBox(height: 2.h),
+              Text("تعذر تحديد موقعك الحالي", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 15.sp)),
+              SizedBox(height: 1.h),
+              Text("برجاء تفعيل خدمة الموقع (GPS) والسماح للتطبيق بالوصول إليه",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[600], fontSize: 12.sp)),
+              SizedBox(height: 3.h),
+              ElevatedButton.icon(
+                onPressed: _updateLocationSnapshot,
+                icon: const Icon(Icons.refresh),
+                label: const Text("إعادة المحاولة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange[800],
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 1.6.h),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+              SizedBox(height: 1.5.h),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("رجوع", style: TextStyle(fontFamily: 'Cairo', color: Colors.grey)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -239,8 +306,14 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                     builder: (context, dSnap) {
                       if (!dSnap.hasData) return const Center(child: CircularProgressIndicator());
                       double wallet = double.tryParse(dSnap.data?['walletBalance']?.toString() ?? '0') ?? 0.0;
-                      // نمرر البيانات الحية للمندوب لضمان الفلترة الصحيحة
-                      return _buildOrdersList(scrollController, wallet, dSnap.data!);
+                      // ✅ إصلاح: قراءة الحد الائتماني لمطابقة فحص الباك إند (walletBalance + creditLimit)
+                      double creditLimit = double.tryParse(dSnap.data?['creditLimit']?.toString() ?? '0') ?? 0.0;
+                      return Column(
+                        children: [
+                          _buildWalletSummary(wallet, creditLimit),
+                          Expanded(child: _buildOrdersList(scrollController, wallet, creditLimit, dSnap.data!)),
+                        ],
+                      );
                     },
                   ),
                 ),
@@ -248,6 +321,42 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  // ✅ عنصر UI جديد: يوضح للمندوب القوة الشرائية الحقيقية (كاش + حد ائتماني)
+  // اللي هتحدد فعليًا أي طلبات هيقدر يقبلها
+  Widget _buildWalletSummary(double wallet, double creditLimit) {
+    double purchasingPower = wallet + creditLimit;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.4.h),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF6F7F9),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.account_balance_wallet_rounded, size: 18.sp, color: Colors.green[700]),
+                SizedBox(width: 2.w),
+                Text("المحفظة: ${wallet.toStringAsFixed(0)} ج.م", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11.5.sp)),
+              ],
+            ),
+            if (creditLimit > 0)
+              Row(
+                children: [
+                  Icon(Icons.credit_score_rounded, size: 18.sp, color: Colors.blue[700]),
+                  SizedBox(width: 2.w),
+                  Text("القوة الشرائية: ${purchasingPower.toStringAsFixed(0)} ج.م", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold, fontSize: 11.5.sp, color: Colors.blue[800])),
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -262,7 +371,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
     );
   }
 
-  Widget _buildOrdersList(ScrollController sc, double wallet, DocumentSnapshot driverData) {
+  Widget _buildOrdersList(ScrollController sc, double wallet, double creditLimit, DocumentSnapshot driverData) {
     // التحقق من نوع المركبة من فايربيز مباشرة وليس من الذاكرة
     String liveConfig = driverData['vehicleConfig'] ?? widget.vehicleType;
     String cleanType = liveConfig.replaceAll('Config', '').trim();
@@ -271,7 +380,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       stream: FirebaseFirestore.instance
           .collection('specialRequests')
           .where('status', isEqualTo: 'pending')
-          .where('vehicleType', isEqualTo: cleanType) 
+          .where('vehicleType', isEqualTo: cleanType)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -317,45 +426,62 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         return ListView.builder(
           controller: sc, padding: EdgeInsets.symmetric(horizontal: 4.w),
           itemCount: nearby.length,
-          itemBuilder: (context, index) => _buildOrderCard(nearby[index], wallet),
+          itemBuilder: (context, index) => _buildOrderCard(nearby[index], wallet, creditLimit),
         );
       },
     );
   }
 
-  Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance) {
+  Widget _buildOrderCard(DocumentSnapshot doc, double walletBalance, double creditLimit) {
     var data = doc.data() as Map<String, dynamic>;
     double net = double.tryParse(data['driverNet']?.toString() ?? '0') ?? 0.0;
-    double orderAmt = double.tryParse(data['orderFinalAmount']?.toString() ?? '0') ?? 0.0;
-    double insurance = (orderAmt > 0) ? (orderAmt - net) : 0.0;
-    if (insurance < 0) insurance = 0;
-    bool canAccept = walletBalance >= insurance;
+    // ✅ إصلاح: استخدام دالة محسوبة بنفس منطق الباك إند (requestSource == retailer فقط)
+    double insurance = _computeInsurance(data);
+    // ✅ إصلاح: تضمين الحد الائتماني في فحص الكفاية زي الباك إند تمامًا
+    bool canAccept = (walletBalance + creditLimit) >= insurance;
     bool isMerchant = data['requestSource'] == 'retailer';
+    double distanceKm = _calculateDistance(data['pickupLocation'], data['dropoffLocation']);
 
     return Container(
       margin: EdgeInsets.only(bottom: 2.h),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey[100]!), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10)]),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey[100]!),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
+      ),
       child: Column(
         children: [
           Container(
-            padding: EdgeInsets.all(3.w),
+            padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.6.h),
             decoration: BoxDecoration(
-                gradient: isMerchant ? const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFA000)]) : LinearGradient(colors: [Colors.blueGrey[800]!, Colors.blueGrey[900]!]),
+                gradient: isMerchant
+                    ? const LinearGradient(colors: [Color(0xFFFFD54F), Color(0xFFFFA000)])
+                    : LinearGradient(colors: [Colors.blueGrey[700]!, Colors.blueGrey[900]!]),
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    isMerchant
-                        ? FaIcon(FontAwesomeIcons.solidStar, color: const Color(0xFF5D4037), size: 18.sp)
-                        : Icon(Icons.delivery_dining, color: Colors.white, size: 19.sp),
-                    SizedBox(width: 2.w),
-                    // تكبير خط الصافي
-                    Text("$net ج.م صافي", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white, fontWeight: FontWeight.bold, fontSize: 16.sp, fontFamily: 'Cairo')),
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), borderRadius: BorderRadius.circular(10)),
+                      child: isMerchant
+                          ? FaIcon(FontAwesomeIcons.solidStar, color: const Color(0xFF5D4037), size: 15.sp)
+                          : Icon(Icons.delivery_dining, color: Colors.white, size: 16.sp),
+                    ),
+                    SizedBox(width: 2.5.w),
+                    Text("${net.toStringAsFixed(0)} ج.م صافي",
+                        style: TextStyle(color: isMerchant ? const Color(0xFF4E342E) : Colors.white, fontWeight: FontWeight.w900, fontSize: 16.sp, fontFamily: 'Cairo')),
                   ],
                 ),
-                Text(isMerchant ? "طلب من تاجر" : "طلب مستهلك", style: TextStyle(color: isMerchant ? const Color(0xFF5D4037) : Colors.white70, fontSize: 12.sp, fontFamily: 'Cairo')),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
+                  child: Text(isMerchant ? "طلب من تاجر" : "طلب مستهلك",
+                      style: TextStyle(color: isMerchant ? const Color(0xFF4E342E) : Colors.white, fontSize: 11.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                ),
               ],
             ),
           ),
@@ -366,26 +492,42 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    // تكبير خط العهدة والمسافة
-                    _tag(Icons.security, "${insurance.toStringAsFixed(0)} عهدة", Colors.red),
-                    _tag(Icons.map, "${_calculateDistance(data['pickupLocation'], data['dropoffLocation']).toStringAsFixed(1)} كم", Colors.blue),
+                    if (insurance > 0) _tag(Icons.security, "${insurance.toStringAsFixed(0)} عهدة", Colors.red),
+                    _tag(Icons.map_outlined, "${distanceKm.toStringAsFixed(1)} كم", Colors.blue),
                   ],
                 ),
                 const Divider(height: 25),
-                // تكبير خط العناوين
                 _route(Icons.circle, "من: ${data['pickupAddress'] ?? 'الموقع'}", Colors.orange),
                 _route(Icons.location_on, "إلى: ${data['dropoffAddress'] ?? 'العميل'}", Colors.red),
-                const SizedBox(height: 15),
+                if (!canAccept)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(10)),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16.sp, color: Colors.red[700]),
+                        SizedBox(width: 2.w),
+                        Expanded(
+                          child: Text(
+                            "محتاج ${insurance.toStringAsFixed(0)} ج.م عهدة، وقوتك الشرائية الحالية ${(walletBalance + creditLimit).toStringAsFixed(0)} ج.م",
+                            style: TextStyle(fontSize: 10.5.sp, color: Colors.red[800], fontFamily: 'Cairo', fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 SizedBox(
-                  width: double.infinity, height: 8.h,
+                  width: double.infinity, height: 7.h,
                   child: ElevatedButton(
                     onPressed: canAccept ? () => _acceptOrder(doc.id) : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: canAccept ? (isMerchant ? const Color(0xFF5D4037) : Colors.green[700]) : Colors.grey, 
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+                      backgroundColor: canAccept ? (isMerchant ? const Color(0xFF5D4037) : Colors.green[700]) : Colors.grey[400],
+                      elevation: canAccept ? 2 : 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                     ),
-                    // تكبير خط زر القبول
-                    child: Text(canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد الكاش غير كافٍ", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15.sp, fontFamily: 'Cairo')),
+                    child: Text(canAccept ? "تأكيد العهدة وقبول الطلب" : "رصيد وحد ائتماني غير كافٍ",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14.sp, fontFamily: 'Cairo')),
                   ),
                 )
               ],

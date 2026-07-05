@@ -1,11 +1,28 @@
-import 'dart:async';                                 import 'dart:convert';
-import 'dart:ui';                                    import 'package:flutter/material.dart';              import 'package:flutter/services.dart';
-import 'package:firebase_core/firebase_core.dart';   import 'package:firebase_auth/firebase_auth.dart';   import 'package:cloud_firestore/cloud_firestore.dart';                                                    import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:sizer/sizer.dart';                   import 'package:flutter_localizations/flutter_localizations.dart';                                        import 'package:connectivity_plus/connectivity_plus.dart';                                                import 'package:flutter_local_notifications/flutter_local_notifications.dart';                            import 'package:flutter_background_service/flutter_background_service.dart';                              import 'package:firebase_messaging/firebase_messaging.dart';                                              import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'dart:async';
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:sizer/sizer.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:facebook_app_events/facebook_app_events.dart'; // 1. استيراد فيسبوك
+// ✅ إصلاح: dart:convert كان مستوردًا بدون استخدام فعلي في هذا الملف (unused_import warning)
 
 // استيراد الشاشات والخدمات الخاصة بك
-import 'screens/location_service_handler.dart';      import 'screens/login_screen.dart';                  import 'screens/register_screen.dart';               import 'screens/free_driver_home_screen.dart';       import 'screens/CompanyRepHomeScreen.dart';          import 'screens/delivery_admin_dashboard.dart';
+import 'screens/location_service_handler.dart';
+import 'screens/login_screen.dart';
+import 'screens/register_screen.dart';
+import 'screens/free_driver_home_screen.dart';
+import 'screens/CompanyRepHomeScreen.dart';
+import 'screens/delivery_admin_dashboard.dart';
 
 DateTime? _lastPressedAt;
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -44,8 +61,12 @@ void onStart(ServiceInstance service) async { DartPluginRegistrant.ensureInitial
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  
-  // 3. تهيئة 
+
+  // ⚠️ تنبيه (مش مصحح هنا، محتاج قرارك): تفعيل تتبع الإعلانات لفيسبوك
+  // بشكل مباشر من غير طلب صلاحية App Tracking Transparency (ATT) على iOS 14.5+
+  // ممكن يعرض التطبيق لرفض من App Store أو مخالفة لائحة الخصوصية.
+  // لو التطبيق بيستهدف iOS، محتاج تستخدم حزمة زي app_tracking_transparency
+  // وتطلب الصلاحية الأول قبل استدعاء setAdvertiserTracking(enabled: true).
   await facebookAppEvents.setAdvertiserTracking(enabled: true);
 
   await setupNotifications();
@@ -82,10 +103,20 @@ class AksabDriverApp extends StatelessWidget {
             if (didPop) return;
             final NavigatorState? navigator = navigatorKey.currentState;
             if (navigator != null && navigator.canPop()) { navigator.pop(); return; }
+
+            // ✅ إصلاح: كان محتمل يحصل null-check crash لو navigator كانت null
+            // هنا (حالة نادرة قبل ما الـ Navigator يتربط بالكامل، أو أثناء
+            // hot-reload) لأن الكود القديم كان بيستخدم navigator!.context
+            // مباشرة من غير ما يتأكد إنها ليست null في هذا الفرع.
+            if (navigator == null) {
+              SystemNavigator.pop();
+              return;
+            }
+
             final now = DateTime.now();
             if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
               _lastPressedAt = now;
-              ScaffoldMessenger.of(navigator!.context).showSnackBar(const SnackBar(content: Text('إضغط مرة أخرى للخروج من تطبيق أكسب', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')), backgroundColor: Colors.black87));
+              ScaffoldMessenger.of(navigator.context).showSnackBar(const SnackBar(content: Text('إضغط مرة أخرى للخروج من تطبيق أكسب', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Tajawal')), backgroundColor: Colors.black87));
               return;
             }
             SystemNavigator.pop();
@@ -178,6 +209,11 @@ class AuthWrapper extends StatelessWidget {
                 if (d['type'] == 'freeDriver' && d['status'] == 'approved') return const FreeDriverHomeScreen();
                 if (d['type'] == 'manager') return const DeliveryAdminDashboard();
               }
+              // ⚠️ ملاحظة (مش مصححة هنا، محتاجة قرار عندك): لو المستخدم موجود
+              // في deliveryReps أو freeDrivers بس status لسه 'pending' مثلاً،
+              // بيرجع هنا لـ LoginScreen بدون أي رسالة توضيحية. ده ممكن يحيّر
+              // المستخدم (يفتكر إن تسجيل الدخول غلط رغم إن حسابه موجود فعليًا
+              // ومنتظر موافقة). يفضل يكون فيه شاشة "حسابك قيد المراجعة" مستقلة.
               return const LoginScreen();
             },
           );
@@ -199,4 +235,3 @@ class AuthWrapper extends StatelessWidget {
     return null;
   }
 }
-

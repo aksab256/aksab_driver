@@ -1,30 +1,24 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+// ⚠️ ملاحظة مهمة: الاسم الصحيح للحزمة (package name) لازم يطابق قيمة
+// "name:" الموجودة في أول pubspec.yaml بتاعك. لو مختلف، غيّر السطر اللي تحت.
 import 'package:aksab_driver/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  // ✅ إصلاح: الكلاس الأساسي اسمه AksabDriverApp مش MyApp
+  // (MyApp كان اسم افتراضي من قالب Flutter الأصلي ومحصلش تحديث هنا)
+  testWidgets('App builds without throwing', (WidgetTester tester) async {
+    // ⚠️ تنبيه: التطبيق ده بيستخدم Firebase.initializeApp() و Firestore و
+    // FirebaseAuth.authStateChanges() داخل AuthWrapper. لازم يكون عندك
+    // firebase mocks متظبطة (زي حزمة firebase_auth_mocks أو fake_cloud_firestore)
+    // وإلا الاختبار ده هيفشل فعليًا وقت التشغيل مش وقت الـ compile بس.
+    // من غير Mocking، الأفضل إنك تحذف هذا التيست أو تستبدله بتيست Unit
+    // على منطق منفصل عن Firebase.
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(const AksabDriverApp());
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // مجرد تأكيد إن الشجرة بنت بدون Exception أثناء أول فريم
+    expect(find.byType(MaterialApp), findsOneWidget);
   });
 }
