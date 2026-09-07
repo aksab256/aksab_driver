@@ -310,7 +310,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
 
                   // ✅ إضافة أيقونة شروط الاستخدام والخصوصية
                   _drawerItem(Icons.policy_rounded, "شروط الاستخدام والخصوصية", Colors.blueGrey, () async {
-                    final Uri url = Uri.parse('https://aksab.shop');
+                    final Uri url = Uri.parse('https://aksabtech.com');
                     if (await canLaunchUrl(url)) {
                       await launchUrl(url, mode: LaunchMode.externalApplication);
                     }

@@ -29,7 +29,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _referralController = TextEditingController();
 
   Future<void> _launchPrivacyPolicy() async {            
-    final Uri url = Uri.parse('https://aksab.shop/');    
+    final Uri url = Uri.parse('https://aksabtech.com/');    
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {                                          
       _showMsg("تعذر فتح الرابط حالياً");                                                 
     }                                                                                  

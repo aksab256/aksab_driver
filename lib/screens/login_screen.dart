@@ -30,7 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _transactionReqID; // لتخزين معرف عملية التحقق المستلم من أكيدلي
 
   Future<void> _launchPrivacyPolicy() async {
-    final Uri url = Uri.parse('https://aksab.shop/');
+    final Uri url = Uri.parse('https://aksabtech.com/');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       _showError("تعذر فتح الرابط حالياً");
     }

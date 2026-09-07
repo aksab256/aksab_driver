@@ -57,7 +57,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String message = """
 انضم إليّ في فريق مناديب أكسب! 🚚
 استخدم كود الإحالة الخاص بي: ($code) عند التسجيل وابدأ في إدارة عهدتك وزيادة أرباحك.
-حمل التطبيق الآن من هنا: https://aksab.shop/
+حمل التطبيق الآن من هنا: https://aksabtech.com/
 """;
     Share.share(message);
   }

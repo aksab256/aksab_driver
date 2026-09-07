@@ -92,10 +92,10 @@ class SupportScreen extends StatelessWidget {
                   _buildSupportCard(
                     context,
                     title: "البريد الإلكتروني الرسمي",
-                    subtitle: "support@aksab.shop",
+                    subtitle: "support@aksabtech.com",
                     icon: Icons.alternate_email_rounded,
                     color: Colors.redAccent,
-                    onTap: () => _handleSupportAction(context, "mailto:support@aksab.shop"),
+                    onTap: () => _handleSupportAction(context, "mailto:support@aksabtech.com"),
                   ),
 
                   // ربط سياسة المنصة بالشاشة البرمجية التي أنشأناها

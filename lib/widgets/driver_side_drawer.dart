@@ -88,7 +88,7 @@ class DriverSideDrawer extends StatelessWidget {
                 style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)
               ),
               Text(
-                FirebaseAuth.instance.currentUser?.email ?? "driver@aksab.shop", 
+                FirebaseAuth.instance.currentUser?.email ?? "driver@aksabtech.com", 
                 style: const TextStyle(fontFamily: 'Cairo', color: Colors.white70, fontSize: 12)
               ),
             ],
@@ -126,7 +126,7 @@ class DriverSideDrawer extends StatelessWidget {
   }
 
   Future<void> _launchPrivacyPolicy() async {
-    final Uri url = Uri.parse('https://aksab.shop/');
+    final Uri url = Uri.parse('https://aksabtech.com/');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       debugPrint("Could not launch privacy policy URL");
     }

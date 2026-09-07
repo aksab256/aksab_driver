@@ -152,7 +152,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   }
 
   Future<void> _launchPrivacyPolicy() async {
-    final Uri url = Uri.parse('https://aksab.shop/'); 
+    final Uri url = Uri.parse('https://aksabtech.com/'); 
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       debugPrint("Could not launch $url");
     }
