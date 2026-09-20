@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';              
 import 'package:sizer/sizer.dart';                   
 import 'package:cloud_firestore/cloud_firestore.dart';                                                                    
-import 'package:firebase_auth/firebase_auth.dart';   
 import 'package:url_launcher/url_launcher.dart';                                                                          
+import 'package:aksab_driver/services/akedly_auth_service.dart';
 
 class RegisterScreen extends StatefulWidget {          
   const RegisterScreen({super.key});                                                                                        
@@ -24,15 +24,42 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _nameController = TextEditingController();                                                    
   final TextEditingController _phoneController = TextEditingController();                                                    
   final TextEditingController _addressController = TextEditingController();                                                 
-  final TextEditingController _passwordController = TextEditingController();                                                
-  final TextEditingController _confirmPasswordController = TextEditingController();                                         
   final TextEditingController _referralController = TextEditingController();
+  final AkedlyAuthService _authService = AkedlyAuthService();
 
   Future<void> _launchPrivacyPolicy() async {            
     final Uri url = Uri.parse('https://aksabtech.com/');    
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {                                          
       _showMsg("تعذر فتح الرابط حالياً");                                                 
     }                                                                                  
+  }
+
+  Future<String?> _promptOtpDialog() {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => AlertDialog(
+        title: const Text('كود التفعيل', textAlign: TextAlign.center),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          maxLength: 10,
+          textAlign: TextAlign.center,
+          decoration: const InputDecoration(hintText: 'أدخل الكود المرسل لهاتفك'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(c).pop(),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(c).pop(ctrl.text.trim()),
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleRegister() async {                 
@@ -65,55 +92,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
                                                            
       // 1. توليد البريد الإلكتروني تلقائياً بناءً على رقم الهاتف
-      String smartEmail = "${_phoneController.text.trim()}@aksabship.com";                                                                           
-      
-      // 2. توليد كلمة المرور تلقائياً وثابتة (مثل رقم الهاتف أو صيغة موحدة ترتبط بالتطبيق الأساسي)
-      // هنا قمنا بتثبيتها برقم الهاتف لسهولة المصادقة التلقائية عند الدخول بدون إدخال مستخدم
-      String smartPassword = "Aksab@${_phoneController.text.trim()}";
+      // F3: step 1 - backend OTP-proves the unknown phone and binds the role server-side.
+      final sendRes = await _authService.registerSend(_phoneController.text.trim(), _selectedRole);
+      if (!sendRes.isSuccess) {
+        _showMsg(sendRes.message ?? '❌ تعذّر بدء التسجيل');
+        return;
+      }
+      final txID = sendRes.data ?? '';
+      if (txID.isEmpty) {
+        _showMsg('❌ تعذّر بدء التسجيل');
+        return;
+      }
 
-      // 3. حقن الباسورد المتولدة في الحقول برمجياً لضمان عدم حدوث أخطاء validate ولتظهر في الحقل إن لزم الأمر
-      _passwordController.text = smartPassword;
-      _confirmPasswordController.text = smartPassword;
+      final otp = await _promptOtpDialog();
+      if (otp == null || otp.isEmpty) return;
 
-      // 4. إنشاء الحساب في Firebase Auth بالمصادقة الذكية المتولدة بالكامل
-      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(                 
-        email: smartEmail,                                                                  
-        password: smartPassword,                                
-      );
-
-      String collectionName = _getCollectionName(_selectedRole);                                                                                                
-      Map<String, dynamic> userData = {                       
-        'fullname': _nameController.text.trim(),             
-        'email': smartEmail,                                                                 
-        'phone': _phoneController.text.trim(),               
+      // F3: step 2 - server verifies OTP then creates the passwordless identity + role doc.
+      final profile = <String, dynamic>{
+        'fullname': _nameController.text.trim(),
         'address': _addressController.text.trim(),
-        'role': _selectedRole, 
-        'status': 'pending',                                                                 
-        'createdAt': FieldValue.serverTimestamp(),           
-        'uid': userCredential.user!.uid,
-        'appliedCampaignId': currentActiveCampaignId, 
-      };                                                                                                                     
-                                                           
-      if (_selectedRole == 'free_driver') {                  
-        userData['vehicleConfig'] = _vehicleConfig;
-        userData['referredBy'] = _referralController.text.trim(); 
-        userData['myReferralCode'] = "";                                                                 
-        userData['walletBalance'] = 0.0;               
-        userData['insurance_points'] = 0.0;                                                              
-        userData['totalReferralsCount'] = 0;
-        userData['rewardMilestonesReached'] = []; 
-      } else {                                                                              
-        userData['vehicleConfig'] = 'none';
-      }                                                                                                                      
-                                                           
-      await FirebaseFirestore.instance.collection(collectionName).doc(userCredential.user!.uid).set(userData);                                                                                                                      
+        'appliedCampaignId': currentActiveCampaignId,
+      };
+      if (_selectedRole == 'free_driver') {
+        profile['vehicleConfig'] = _vehicleConfig;
+        profile['referredBy'] = _referralController.text.trim();
+      }
+      await _authService.registerVerify(
+        transactionReqID: txID,
+        otp: otp,
+        phoneNumber: _phoneController.text.trim(),
+        profile: profile,
+      );
       _showSuccessDialog();                               
-    } on FirebaseAuthException catch (e) {                 
-      if (e.code == 'email-already-in-use') {                
-        _showMsg("❌ هذا الرقم مسجل مسبقاً في نظام المناديب");                                                                  
-      } else {                                                                               
-        _showMsg("خطأ: ${e.message}");                     
-      }                                                                                
+    } on RegisterException catch (e) {
+      if (e.statusCode == 409) {
+        _showMsg('❌ هذا الرقم مسجل مسبقًا. سجّل الدخول.');
+      } else if (e.statusCode == 410) {
+        _showMsg('❌ انتهت صلاحية الكود. أعد التسجيل.');
+      } else {
+        _showMsg('❌ تعذّر إتمام التسجيل: ${e.statusCode}');
+      }
     } finally {                                                                            
       if (mounted) setState(() => _isLoading = false);                                                                       
     }                                                                                  
@@ -167,7 +185,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Widget _buildHeaderCard() {                             return Column(                                                                         children: [                                                                           Text("انضم لعائلة أكسب", style: TextStyle(fontSize: 25.sp, fontWeight: FontWeight.w900, color: Colors.white, fontFamily: 'Cairo')),                            Text("سجل بياناتك للبدء في إدارة العهدة", style: TextStyle(fontSize: 13.sp, color: Colors.white.withOpacity(0.9), fontFamily: 'Cairo')),                     ],                                                                 );                                                                 }
 
-  Widget _buildInputSection() {                          return Container(                                                                     padding: EdgeInsets.all(6.w),                                                        decoration: BoxDecoration(                                                             color: Colors.white,                                                                 borderRadius: BorderRadius.circular(30),             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20)],                           ),                                                                                  child: Column(                                                                         children: [                                                                           _buildField(_nameController, "الاسم بالكامل", Icons.person_outline),                                                                     _buildField(_phoneController, "رقم الهاتف للدخول", Icons.phone_android_outlined, type: TextInputType.phone),                                                                                                                 _buildField(_addressController, "العنوان الحالي", Icons.location_on_outlined),                            _buildField(_passwordController, "كلمة المرور", Icons.lock_outline, isPass: true, passType: 1),           _buildField(_confirmPasswordController, "تأكيد كلمة المرور", Icons.lock_reset_outlined, isPass: true, passType: 2),                                                                          ],                                                                 ),                                                                 );                                                                 }
+  Widget _buildInputSection() {                          return Container(                                                                     padding: EdgeInsets.all(6.w),                                                        decoration: BoxDecoration(                                                             color: Colors.white,                                                                 borderRadius: BorderRadius.circular(30),             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20)],                           ),                                                                                  child: Column(                                                                         children: [                                                                           _buildField(_nameController, "الاسم بالكامل", Icons.person_outline),                                                                     _buildField(_phoneController, "رقم الهاتف للدخول", Icons.phone_android_outlined, type: TextInputType.phone),                                                                                                                 _buildField(_addressController, "العنوان الحالي", Icons.location_on_outlined),                                                                          ],                                                                 ),                                                                 );                                                                 }
 
   Widget _buildRoleSelection() {
     return Column(                                                                         crossAxisAlignment: CrossAxisAlignment.start,        children: [                                                                           Padding(                                                                              padding: EdgeInsets.only(right: 2.w, bottom: 1.5.h),                                                                     child: Text("حدد نوع الانضمام", style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo', color: Colors.orange[900])),             ),

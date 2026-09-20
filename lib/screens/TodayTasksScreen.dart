@@ -86,7 +86,7 @@ class _TodayTasksScreenState extends State<TodayTasksScreen> {
       };
 
       if (status == 'delivered') {
-        updateData['cashCollected'] = true; 
+        // F8: dropped client-declared cash proof (unread declaration, no backend consumer). 
         updateData['isSettled'] = false;    
       }
 

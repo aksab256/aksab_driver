@@ -140,7 +140,7 @@ class WalletScreen extends StatelessWidget {
   // --- فلترة الطلبات المعلقة يدوياً بدون إندكس ---
   Widget _buildPendingWithdrawalsSection(String? uid) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('withdrawRequests').snapshots(),
+      stream: FirebaseFirestore.instance.collection('withdrawRequests').where('driverId', isEqualTo: uid).snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox();
 

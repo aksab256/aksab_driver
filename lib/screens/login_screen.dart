@@ -78,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
       String phone = _phoneController.text.trim();
       
       // التجهيز للفحص الذكي لجميع صيغ إدخال رقم الهاتف في قواعد البيانات
-      bool userExists = false;
+      bool userExists = true; // F3-auth-compat: existence decided by backend /send (flow=driver).
       final collections = ['deliveryReps', 'freeDrivers', 'managers'];
 
       final String phoneWithZero = phone.startsWith('0') ? phone : '0$phone';
@@ -86,7 +86,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final String formattedPhone = phone.startsWith('0') ? '20${phone.substring(1)}' : (phone.startsWith('20') ? phone : '20$phone');
       final List<String> searchVariations = [phoneWithZero, phoneWithoutZero, formattedPhone];
 
-      // التأكد من وجود الكابتن مسجلاً في إحدى المجموعات قبل إرسال كود التفعيل لتقنين التكلفة والأمان
+      collections.clear(); // F3-auth-compat: pre-auth lookup disabled; backend /send (flow=driver) owns it.
       for (var col in collections) {
         var query = await FirebaseFirestore.instance
             .collection(col)
@@ -193,24 +193,32 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     try {
                       // التحقق من صحة الكود عبر خادم أكيدلي
-                      bool isVerified = await _akedlyService.verifyOtp(_transactionReqID!, otpController.text.trim());
+                      // F3: backend-mediated mint — identity comes from a server-minted custom token.
+                      String? customToken;
+                      try {
+                        customToken = await _akedlyService.mintTransaction(transactionReqID: _transactionReqID!, otp: otpController.text.trim());
+                      } catch (_) {
+                        customToken = null;
+                      }
 
-                      if (isVerified) {
+                      if (customToken != null) {
                         // تنظيف وإعداد رقم الهاتف ليتطابق مع صيغة الحسابات التلقائية المسجلة
-                        String cleanPhone = _phoneController.text.trim();
-                        String standardPhone = cleanPhone.startsWith('0') ? cleanPhone : '0$cleanPhone';
+
+
                         
                         // ✅ تعديل وتأكيد: ربط الحساب بالمعادلة الأصلية المتوافقة تماماً مع شاشة التسجيل دون أي تغيير
-                        String generatedEmail = "${standardPhone}@aksabship.com";
-                        String generatedPassword = "Aksab@${standardPhone}";
+
+
 
                         try {
                           // محاولة الدخول المباشر بالحساب الصامت الصادر من الفايربيز
-                          await FirebaseAuth.instance.signInWithEmailAndPassword(
+                          await FirebaseAuth.instance.signInWithCustomToken(customToken); /* F21: dead history below stays commented (no passwords): — dead lines below kept for history:
                             email: generatedEmail, 
                             password: generatedPassword
                           );
-                        } catch (firebaseError) {
+                          */
+                        } catch (firebaseError) { rethrow; } // F21: sign-in failure propagates to the outer catch. // F3: auto-provisioning removed — unknown identities stay rejected.
+/* F3: dead auto-provisioning block below (kept for history):
                           // في حال كان الكابتن تم الموافقة عليه وتوثيقه حديثاً من الإدارة ولم ينشأ له الحساب على الـ Auth نقوم بإنشائه فوراً بنفس الهوية
                           await FirebaseAuth.instance.createUserWithEmailAndPassword(
                             email: generatedEmail, 
@@ -219,6 +227,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         }
 
                         // فحص الأذونات والتوجه للشاشة الصحيحة طبقاً لدوره البرمجي المعتمد
+                        */ // F3: end of removed block.
                         _checkUserAccess();
                       } else {
                         setState(() => _isLoading = false);

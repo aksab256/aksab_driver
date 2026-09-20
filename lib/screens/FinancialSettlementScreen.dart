@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:aksab_driver/services/akedly_auth_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:sizer/sizer.dart';
 
@@ -18,6 +21,7 @@ class FinancialSettlementScreen extends StatefulWidget {
 
 class _FinancialSettlementScreenState extends State<FinancialSettlementScreen> {
   final TextEditingController _amountReceivedController = TextEditingController();
+  final AkedlyAuthService _settleService = AkedlyAuthService();
   bool _isProcessing = false;
 
   @override
@@ -139,46 +143,50 @@ class _FinancialSettlementScreenState extends State<FinancialSettlementScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("يرجى إدخال المبلغ المستلم أولاً")));
       return;
     }
-
+    final double received = double.tryParse(_amountReceivedController.text) ?? -1;
+    if (received < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("يرجى إدخال مبلغ صالح")));
+      return;
+    }
     setState(() => _isProcessing = true);
     try {
-      WriteBatch batch = FirebaseFirestore.instance.batch();
-
-      // 1. تحديث الطلبات داخل نفس المجموعة waitingdelivery
-      for (var doc in docs) {
-        batch.update(doc.reference, {
-          'isSettled': true, // تم توريد الكاش للمشرف
-          'settledAt': FieldValue.serverTimestamp(),
-        });
-      }
-
-      // 2. تسجيل العملية في جدول التسويات الكلي (للأرشيف المالي)
-      DocumentReference settlementRef = FirebaseFirestore.instance.collection('settlements').doc();
-      batch.set(settlementRef, {
-        'repCode': widget.repCode,
-        'repName': widget.repName,
-        'amountExpected': expected,
-        'amountReceived': double.tryParse(_amountReceivedController.text) ?? 0,
-        'settlementDate': FieldValue.serverTimestamp(),
-        'ordersCount': docs.length,
-        'orderIds': docs.map((d) => d.id).toList(),
-      });
-
-      await batch.commit();
-      
+      // Settlement runs server-side: the cap is recomputed from the orders
+      // truth and any received amount above it is rejected (never UI-only).
+      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (idToken == null || idToken.isEmpty) throw SettleException(401, "auth");
+      final result = await _settleService.settleDelivery(received: received, idToken: idToken);
       if (mounted) {
         _amountReceivedController.clear();
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("تم توريد المبلغ وتصفية حساب المندوب بنجاح ✅"),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("تم توريد المبلغ وتصفية ${result.count} طلبات بنجاح ✅"),
           backgroundColor: Colors.green,
         ));
       }
+    } on SettleException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_settleErrorMessage(e))));
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("حدث خطأ في النظام: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("حدث خطأ في النظام: $e")));
+      }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  String _settleErrorMessage(SettleException e) {
+    try {
+      final b = jsonDecode(e.body);
+      if (b is Map && b["message"] != null) {
+        final msg = b["message"].toString();
+        if (b["owed"] != null) return "$msg (المستحق: ${b["owed"]})";
+        return msg;
+      }
+    } catch (_) {}
+    if (e.statusCode == 409) return "تغيرت المهام أثناء التسوية. حدّث الصفحة وحاول مجددًا.";
+    return "تعذّرت التسوية. حاول مجددًا.";
   }
 
   Widget _buildNoDataState() {

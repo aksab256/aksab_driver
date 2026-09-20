@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:aksab_driver/services/akedly_auth_service.dart';
 import 'location_service_handler.dart';
 
 class ActiveOrderScreen extends StatefulWidget {
@@ -394,7 +395,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
                 const Divider(height: 30, thickness: 1),
                 if (status == 'accepted')
                   moneyLocked
-                      ? _mainButton(isMerchant ? "تأكيد استلام العهدة 📦" : "تأكيد بدء المهمة 📦", Colors.orange[900]!, () => _showProfessionalOTP(data['verificationCode'], status, isMerchant))
+                      ? _mainButton(isMerchant ? "تأكيد استلام العهدة 📦" : "تأكيد بدء المهمة 📦", Colors.orange[900]!, () => _showProfessionalOTP(status, isMerchant))
                       : Text("جاري معالجة تأمين العهدة...", style: TextStyle(fontFamily: 'Cairo', fontSize: 15.sp, color: Colors.orange[900], fontWeight: FontWeight.bold))
                 else if (status == 'picked_up')
                   isMerchant
@@ -409,7 +410,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
                     children: [
                       Text("يجب العودة للمصدر لإخلاء العهدة", style: TextStyle(fontFamily: 'Cairo', fontSize: 13.sp, color: Colors.red[900], fontWeight: FontWeight.w900)),
                       SizedBox(height: 10),
-                      _mainButton("تأكيد الإخلاء العكسي 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(data['returnVerificationCode'] ?? data['verificationCode'], status, isMerchant)),
+                      _mainButton("تأكيد الإخلاء العكسي 🔄", Colors.blueGrey[800]!, () => _showProfessionalOTP(status, isMerchant)),
                     ],
                   ),
               ],
@@ -420,7 +421,18 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     );
   }
 
-  void _showProfessionalOTP(String? correctCode, String currentStatus, bool isMerchant) {
+  final AkedlyAuthService _handoverService = AkedlyAuthService();
+
+  String _handoverErrorMessage(HandoverException e) {
+    try {
+      final b = jsonDecode(e.body);
+      if (b is Map && b['message'] != null) return b['message'].toString();
+    } catch (_) {}
+    if (e.statusCode == 409) return "تغيرت حالة الطلب. حدّث الصفحة وحاول مجددًا.";
+    return "تعذّر التأكيد. حاول مجددًا.";
+  }
+
+  void _showProfessionalOTP(String currentStatus, bool isMerchant) {
     final TextEditingController codeController = TextEditingController();
     bool isReturning = currentStatus.contains('returning');
     showDialog(
@@ -457,15 +469,28 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[900], padding: EdgeInsets.symmetric(horizontal: 25, vertical: 10)),
               onPressed: () async {
-                if (codeController.text.trim() == correctCode?.trim()) {
+                final otp = codeController.text.trim();
+                if (otp.isEmpty) return;
+                try {
+                  // F4: handover proof is verified server-side against the
+                  // creator-bound vault; the custody status flips only there.
+                  final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+                  if (idToken == null || idToken.isEmpty) throw HandoverException(401, 'auth');
+                  await _handoverService.verifyHandover(
+                    orderId: widget.orderId,
+                    otp: otp,
+                    idToken: idToken,
+                  );
                   Navigator.pop(context);
                   if (isReturning) {
                     await _finishReturnProcess();
-                  } else {
-                    _updateStatus('picked_up');
+                  } else if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تم تأكيد استلام العهدة ✅", textAlign: TextAlign.center)));
                   }
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("الكود غير صحيح، حاول ثانية", textAlign: TextAlign.center)));
+                } on HandoverException catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_handoverErrorMessage(e), textAlign: TextAlign.center)));
+                  }
                 }
               },
               child: Text("تأكيد", style: TextStyle(fontFamily: 'Cairo', color: Colors.white, fontSize: 13.sp)),
@@ -477,13 +502,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   }
 
   Future<void> _finishReturnProcess() async {
+    // F4: the return transition was flipped server-side by /verify-handover.
     setState(() => _isOrderStillActive = false);
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
     try {
-      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({
-        'status': 'returned_successfully',
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
       await _updateDriverStatus('online');
       await _stopBackgroundTracking();
       if (mounted) {
@@ -505,12 +527,47 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
               TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))
             ])));
     if (confirm == true) {
-      String generatedReturnCode = (1000 + Random().nextInt(8999)).toString();
-      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'returning_to_seller', 'returnVerificationCode': generatedReturnCode, 'updatedAt': FieldValue.serverTimestamp()});
+      // F4: the return code is issued by the receiving merchant (vault), never the driver.
+      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'returning_to_seller', 'updatedAt': FieldValue.serverTimestamp()});
     }
   }
 
   // ✅ الدالة المحدثة للتحصيل بناءً على لقطات الشاشة (Firebase)
+  Future<String?> _promptDeliveryCode() {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('كود التسليم', textAlign: TextAlign.center),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('اطلب كود التسليم من العميل', textAlign: TextAlign.center),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              maxLength: 10,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(hintText: 'أدخل الكود'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+            child: const Text('تأكيد التسليم'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _completeOrder(Map<String, dynamic> data) async {
     bool isMerchant = data['requestSource'] == 'retailer';
     
@@ -561,15 +618,27 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
 
     if (confirm != true) return;
 
+    // F4 option A: final delivery needs the customer-issued code.
+    final otp = await _promptDeliveryCode();
+    if (otp == null || otp.isEmpty) return;
+
     setState(() => _isOrderStillActive = false);
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
     try {
-      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'delivered', 'completedAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp()});
+      // F4: picked_up -> delivered flips only in /verify-handover after code proof.
+      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (idToken == null || idToken.isEmpty) throw HandoverException(401, 'auth');
+      await _handoverService.verifyHandover(orderId: widget.orderId, otp: otp, idToken: idToken);
       await _updateDriverStatus('online');
       await _stopBackgroundTracking();
       if (mounted) {
         Navigator.pop(context);
         Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      }
+    } on HandoverException catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_handoverErrorMessage(e))));
       }
     } catch (e) {
       if (mounted) Navigator.pop(context);
