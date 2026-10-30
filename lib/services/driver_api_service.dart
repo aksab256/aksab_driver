@@ -97,9 +97,11 @@ class DriverApiService {
     });
   }
 
-  // 4. مزامنة توكن الإشعارات
+  // 4. مزامنة توكن الإشعارات — للحسابات المعتمدة فقط (لا يمنح الحساب المعلق أي صلاحيات).
   static Future<void> _syncFcmToken(String uid) async {
     try {
+      final doc = await _db.collection('freeDrivers').doc(uid).get();
+      if (!doc.exists || doc.data()?['status'] != 'approved') return;
       String? token = await FirebaseMessaging.instance.getToken();
       if (token != null) {
         await http.post(

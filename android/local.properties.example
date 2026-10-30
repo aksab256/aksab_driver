@@ -1,0 +1,8 @@
+# Local-only keys for the Aksab Driver Android build. This file is a TEMPLATE —
+# copy it to `local.properties` (same folder, git-ignored) and fill real values.
+# Never commit real keys.
+#
+# Google Maps SDK key for package com.aksab.driver (Android-restricted:
+# package name + SHA-1 fingerprints, "Maps SDK for Android" API only).
+# The value is injected into AndroidManifest.xml at build time.
+MAPS_API_KEY=

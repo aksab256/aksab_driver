@@ -28,6 +28,18 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
+      # تزويد مفتاح خرائط Google وقت البناء فقط (سِر MAPS_API_KEY).
+      # اختياري: عند غيابه يستمر البناء بنجاح بدون مفتاح مضمّن.
+      - name: Inject Maps API key (optional)
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+        run: |
+          if [ -n "$MAPS_API_KEY" ]; then
+            echo "MAPS_API_KEY=$MAPS_API_KEY" >> android/local.properties
+          else
+            echo "MAPS_API_KEY secret not set; building without embedded maps key"
+          fi
+
       - name: Decode Keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 --decode > android/app/upload-keystore.jks
 

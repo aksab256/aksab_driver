@@ -1,15 +1,20 @@
 // lib/screens/location_service_handler.dart
+//
+// Background tracking isolate entry-point (`onStart`) — the REAL
+// implementation. `main.dart` uses this one (no local stub).
+//
+// Runs only while the driver has a server-confirmed active order:
+// armed by DriverTrackingService AFTER accept, stopped after the server
+// confirms delivery / return / cancellation.
+
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// ✅ استخدام أنواع البيانات المتوافقة مع النظام الجديد
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
@@ -46,31 +51,48 @@ void onStart(ServiceInstance service) async {
   String? activeOrderId = prefs.getString('active_order_id');
 
   // --- مراقبة حالة الطلب لإغلاق الخدمة آلياً ---
+  // (تُقرأ الحالة من الخادم فقط؛ الإيقاف هنا انعكاس لتأكيد الخادم وليس قراراً محلياً)
   if (uid != null && activeOrderId != null) {
     orderListener = FirebaseFirestore.instance
         .collection('specialRequests')
         .doc(activeOrderId)
         .snapshots()
         .listen((snapshot) async {
-      if (snapshot.exists) {
-        String status = snapshot.data()?['status'] ?? '';
-        
-        // الحالات التي تستوجب إخلاء العهدة وإيقاف التتبع
-        List<String> exitStatuses = [
-          'delivered',
-          'cancelled_by_user_after_accept',
-          'driver_cancelled_reseeking',
-          'returned_successfully'
-        ];
+      try {
+        if (snapshot.exists) {
+          String status = snapshot.data()?['status'] ?? '';
 
-        if (exitStatuses.contains(status)) {
-          await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
-            'currentStatus': 'online',
-            'activeOrderId': "",
-            'lastSeen': FieldValue.serverTimestamp(),
-          });
-          await stopEverything();
+          // الحالات التي تستوجب إخلاء العهدة وإيقاف التتبع
+          List<String> exitStatuses = [
+            'delivered',
+            'cancelled_by_user_after_accept',
+            'driver_cancelled_reseeking',
+            'returned_successfully'
+          ];
+
+          if (exitStatuses.contains(status)) {
+            try {
+              await FirebaseFirestore.instance.collection('freeDrivers').doc(uid).update({
+                'currentStatus': 'online',
+                'activeOrderId': "",
+                'lastSeen': FieldValue.serverTimestamp(),
+              });
+            } catch (e) {
+              debugPrint("Order-listener status reset failed (offline?): $e");
+            }
+            try {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('active_order_id');
+              await prefs.setBool('tracking_armed', false);
+            } catch (e) {
+              debugPrint("Order-listener disarm failed: $e");
+            }
+            await stopEverything();
+          }
         }
+      } catch (e) {
+        // فقد الاتصال أو خطأ قراءة: لا نوقف التتبع احترازياً، ننتظر تأكيد الخادم.
+        debugPrint("Order-listener error (tracking kept): $e");
       }
     });
   }
@@ -110,4 +132,3 @@ void onStart(ServiceInstance service) async {
     }
   });
 }
-

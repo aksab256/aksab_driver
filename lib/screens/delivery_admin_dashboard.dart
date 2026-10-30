@@ -6,6 +6,7 @@ import 'package:sizer/sizer.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart'; // تأكد من إضافة هذا المكتبة في pubspec.yaml
+import '../core/app_links.dart';
 
 // استدعاء الصفحات التابعة
 import 'delivery_management_screen.dart';
@@ -310,7 +311,7 @@ class _DeliveryAdminDashboardState extends State<DeliveryAdminDashboard> {
 
                   // ✅ إضافة أيقونة شروط الاستخدام والخصوصية
                   _drawerItem(Icons.policy_rounded, "شروط الاستخدام والخصوصية", Colors.blueGrey, () async {
-                    final Uri url = Uri.parse('https://aksabtech.com');
+                    final Uri url = Uri.parse(AppLinks.privacyPolicy);
                     if (await canLaunchUrl(url)) {
                       await launchUrl(url, mode: LaunchMode.externalApplication);
                     }

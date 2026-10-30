@@ -5,11 +5,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:convert';
 
 // استدعاء ملف خدمة أكيدلي الموحد
 //  السطر الجديد الصحيح
 import 'package:aksab_driver/services/akedly_auth_service.dart';
+import '../core/app_links.dart';
+import '../services/auth_error_messages.dart';
 
 import 'free_driver_home_screen.dart';
 import 'CompanyRepHomeScreen.dart';
@@ -30,7 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _transactionReqID; // لتخزين معرف عملية التحقق المستلم من أكيدلي
 
   Future<void> _launchPrivacyPolicy() async {
-    final Uri url = Uri.parse('https://aksabtech.com/');
+    final Uri url = Uri.parse(AppLinks.privacyPolicy);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       _showError("تعذر فتح الرابط حالياً");
     }
@@ -195,10 +196,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       // التحقق من صحة الكود عبر خادم أكيدلي
                       // F3: backend-mediated mint — identity comes from a server-minted custom token.
                       String? customToken;
+                      String? mintError;
                       try {
                         customToken = await _akedlyService.mintTransaction(transactionReqID: _transactionReqID!, otp: otpController.text.trim());
+                      } on MintException catch (e) {
+                        // تمييز أخطاء /mint حسب كود الاستجابة الفعلي (400/403/404/409/410/429)
+                        // دون إظهار أي تفاصيل داخلية أو رسائل خادم حساسة.
+                        customToken = null;
+                        mintError = AuthErrorMessages.mintMessage(e.statusCode);
                       } catch (_) {
                         customToken = null;
+                        mintError = AuthErrorMessages.mintMessage(-1);
                       }
 
                       if (customToken != null) {
@@ -231,7 +239,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         _checkUserAccess();
                       } else {
                         setState(() => _isLoading = false);
-                        _showError("رمز التحقق غير صحيح، يرجى المحاولة مرة أخرى");
+                        _showError(mintError ?? "تعذر تأكيد رمز التحقق، حاول مجدداً");
                       }
                     } catch (e) {
                       setState(() => _isLoading = false);

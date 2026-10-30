@@ -8,6 +8,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http; // إضافة http للربط مع AWS
 import 'dart:convert';
 
+import '../core/app_links.dart';
+
 // استيراد الصفحات التابعة
 import 'TodayTasksScreen.dart';
 import 'RepReportsScreen.dart'; 
@@ -40,8 +42,10 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   }
 
   // --- 🔗 دالة مزامنة التوكن مع AWS لضمان استلام المهام ---
+  // (للحسابات المعتمدة فقط؛ الحساب المعلق لا يصل لهذه الشاشة أصلاً)
   Future<void> _syncNotificationWithAWS() async {
     try {
+      if (_repData != null && _repData!['status'] != null && _repData!['status'] != 'approved') return;
       String? token = await FirebaseMessaging.instance.getToken();
       if (token != null && _uid != null) {
         const String apiUrl = "https://5uex7vzy64.execute-api.us-east-1.amazonaws.com/V2/new_nofiction";
@@ -152,7 +156,7 @@ class _CompanyRepHomeScreenState extends State<CompanyRepHomeScreen> {
   }
 
   Future<void> _launchPrivacyPolicy() async {
-    final Uri url = Uri.parse('https://aksabtech.com/'); 
+    final Uri url = Uri.parse(AppLinks.privacyPolicy);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       debugPrint("Could not launch $url");
     }

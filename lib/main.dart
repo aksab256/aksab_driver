@@ -12,7 +12,6 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:facebook_app_events/facebook_app_events.dart'; // 1. استيراد فيسبوك
 // ✅ إصلاح: dart:convert كان مستوردًا بدون استخدام فعلي في هذا الملف (unused_import warning)
 
@@ -20,6 +19,7 @@ import 'package:facebook_app_events/facebook_app_events.dart'; // 1. استير�
 import 'screens/location_service_handler.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
+import 'screens/pending_review_screen.dart';
 import 'screens/free_driver_home_screen.dart';
 import 'screens/CompanyRepHomeScreen.dart';
 import 'screens/delivery_admin_dashboard.dart';
@@ -42,6 +42,30 @@ Future<void> setupNotifications() async {
   await flutterLocalNotificationsPlugin.initialize(initializationSettings, onDidReceiveNotificationResponse: (NotificationResponse details) async {
     debugPrint('User tapped on notification: ${details.payload}');
   });
+
+  // عرض إشعارات FCM داخل التطبيق أثناء عمله في المقدمة،
+  // مع الحفاظ الكامل على إشعارات النظام (الخلفية) وسلوكها الحالي.
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+    final RemoteNotification? notification = message.notification;
+    if (notification == null) return;
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'high_importance_channel',
+      'إشعارات هامة',
+      channelDescription: 'هذه القناة مخصصة لإشعارات الطلبات والعهدة الهامة.',
+      importance: Importance.max,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+    );
+    const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
+    await flutterLocalNotificationsPlugin.show(
+      notification.hashCode,
+      notification.title,
+      notification.body,
+      platformDetails,
+      payload: message.data['orderId']?.toString(),
+    );
+  });
 }
 
 Future<void> initializeService() async {
@@ -55,8 +79,9 @@ Future<void> initializeService() async {
 @pragma('vm:entry-point')
 Future<bool> onIosBackground(ServiceInstance service) async { return true; }
 
-@pragma('vm:entry-point')
-void onStart(ServiceInstance service) async { DartPluginRegistrant.ensureInitialized(); }
+// NOTE: the background entry-point `onStart` lives ONLY in
+// location_service_handler.dart (single real implementation).
+// initializeService() above uses that import — no local stub here.
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,6 +102,7 @@ void main() async {
     return true;
   };
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  // عدم بدء أي تتبع عند فتح التطبيق: يُستعاد فقط عند وجود أوردر نشط مؤكد من الخادم.
   try { FlutterBackgroundService().invoke("stopService"); } catch (e) {}
   runApp(const AksabDriverApp());
 }
@@ -208,12 +234,16 @@ class AuthWrapper extends StatelessWidget {
                 if (d['type'] == 'deliveryRep' && d['status'] == 'approved') return const CompanyRepHomeScreen();
                 if (d['type'] == 'freeDriver' && d['status'] == 'approved') return const FreeDriverHomeScreen();
                 if (d['type'] == 'manager') return const DeliveryAdminDashboard();
+                // الحساب موجود لكنه غير معتمد (مثلاً قيد المراجعة):
+                // اعرض حالة واضحة بدل الرجوع الصامت لشاشة الدخول،
+                // سواء عند الدخول الأول أو عند إعادة فتح التطبيق.
+                if ((d['type'] == 'deliveryRep' || d['type'] == 'freeDriver') && d['status'] != 'approved') {
+                  return PendingReviewScreen(
+                    userType: d['type'] as String,
+                    status: (d['status'] ?? 'pending').toString(),
+                  );
+                }
               }
-              // ⚠️ ملاحظة (مش مصححة هنا، محتاجة قرار عندك): لو المستخدم موجود
-              // في deliveryReps أو freeDrivers بس status لسه 'pending' مثلاً،
-              // بيرجع هنا لـ LoginScreen بدون أي رسالة توضيحية. ده ممكن يحيّر
-              // المستخدم (يفتكر إن تسجيل الدخول غلط رغم إن حسابه موجود فعليًا
-              // ومنتظر موافقة). يفضل يكون فيه شاشة "حسابك قيد المراجعة" مستقلة.
               return const LoginScreen();
             },
           );
@@ -223,6 +253,8 @@ class AuthWrapper extends StatelessWidget {
     );
   }
 
+  // عند انقطاع الشبكة أو خطأ القراءة: نُبقي المستخدم على شاشة الدخول
+  // دون تسجيل خروج قسري (fail-open للقراءة فقط — لا يمنح أي صلاحيات).
   Future<Map<String, dynamic>?> _getUserRoleAndData(String uid) async {
     try {
       var repDoc = await FirebaseFirestore.instance.collection('deliveryReps').doc(uid).get();

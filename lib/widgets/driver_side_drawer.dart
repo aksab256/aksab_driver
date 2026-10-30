@@ -4,6 +4,7 @@ import 'package:sizer/sizer.dart';
 import '../screens/profile_screen.dart';
 import '../screens/support_screen.dart';
 import '../helpers/driver_security_helper.dart';
+import '../core/app_links.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class DriverSideDrawer extends StatelessWidget {
@@ -126,7 +127,7 @@ class DriverSideDrawer extends StatelessWidget {
   }
 
   Future<void> _launchPrivacyPolicy() async {
-    final Uri url = Uri.parse('https://aksabtech.com/');
+    final Uri url = Uri.parse(AppLinks.privacyPolicy);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       debugPrint("Could not launch privacy policy URL");
     }

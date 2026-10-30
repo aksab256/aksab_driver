@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';                          
 import '../widgets/driver_dashboard_widgets.dart';   import '../widgets/driver_side_drawer.dart';
 import '../helpers/driver_security_helper.dart';
 import '../services/driver_api_service.dart';
+import '../services/driver_tracking_service.dart';
 import 'available_orders_screen.dart';
 import 'active_order_screen.dart';
 import 'orders_history_screen.dart';
@@ -30,7 +31,8 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> with Single
     )..repeat(reverse: true);
 
     _syncStatusInstantly();                              _initListeners();
-    _fetchUserName(); 
+    _fetchUserName();
+    _restoreTrackingIfNeeded();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (uid.isNotEmpty) {
         DriverSecurityHelper.checkSecurityAndTerms(context, uid);
@@ -69,6 +71,16 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> with Single
       }
     } catch (e) {                                          debugPrint("Initial Sync Error: $e");
     }                                                  }
+
+  // استعادة التتبع عند إعادة فتح التطبيق فقط إذا أكد الخادم وجود أوردر نشط.
+  // لا يبدأ أي تتبع عند عدم وجود أوردر نشط.
+  void _restoreTrackingIfNeeded() async {
+    if (uid.isEmpty) return;
+    try {
+      final String? orderId = await DriverTrackingService.restoreIfActive(uid);
+      if (mounted && orderId != null) setState(() => _activeOrderId = orderId);
+    } catch (_) {}
+  }
 
   void _initListeners() {
     DriverApiService.listenToStatus(uid, (status) {

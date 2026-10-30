@@ -42,9 +42,12 @@
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
 
+        <!-- Maps API key is injected at build time via manifestPlaceholders
+             (MAPS_API_KEY from android/local.properties or the MAPS_API_KEY
+             CI secret). No key is committed to the repository. -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyDkKyX-w0P1SBgOCmqjfZVMOGUiAiCbhLA" />
+            android:value="${MAPS_API_KEY}" />
 
         <meta-data
             android:name="com.google.android.gms.version"

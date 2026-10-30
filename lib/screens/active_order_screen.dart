@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -9,10 +8,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sizer/sizer.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:aksab_driver/services/akedly_auth_service.dart';
-import 'location_service_handler.dart';
+import '../services/driver_tracking_service.dart';
+import '../services/route_proxy.dart';
+import '../services/auth_error_messages.dart';
 
 class ActiveOrderScreen extends StatefulWidget {
   final String orderId;
@@ -38,7 +37,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _updateDriverStatus('busy');
-    _configureBackgroundServiceOnly();
+    // تسليح التتبع للأوردر النشط فقط (بدون بدء الخدمة هنا).
+    _armTracking();
     _initInitialLocation();
   }
 
@@ -49,7 +49,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     _orderSubscription?.cancel();
     _mapController?.dispose();
     if (!_isOrderStillActive) {
-      _stopBackgroundTracking();
+      // شبكة أمان فقط: الإيقاف الدائم تم بعد تأكيد الخادم في مسارات الإتمام.
+      unawaited(DriverTrackingService.stopAfterServerConfirm());
     }
     super.dispose();
   }
@@ -101,41 +102,24 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     if (shouldExit && mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
   }
 
-  Future<void> _configureBackgroundServiceOnly() async {
-    if (_uid != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('driver_uid', _uid!);
-      await prefs.setString('active_order_id', widget.orderId);
-      final service = FlutterBackgroundService();
-      await service.configure(
-        androidConfiguration: AndroidConfiguration(
-          onStart: onStart,
-          autoStart: false,
-          isForegroundMode: true,
-          notificationChannelId: 'high_importance_channel',
-          initialNotificationTitle: 'رابية أحلى: إدارة العهدة نشطة 🛡️',
-          initialNotificationContent: 'جاري تحديث المسار لضمان استرداد نقاط التأمين',
-          foregroundServiceNotificationId: 888,
-        ),
-        iosConfiguration: IosConfiguration(autoStart: false, onForeground: onStart),
-      );
-    }
+  // تسليح واحد مركزي للأوردر النشط (يُستدعى بعد قبول مؤكد من الخادم).
+  // لا يبدأ الخدمة بنفسه ولا ينشئ نسخاً مكررة — البدء عبر startIfArmed فقط.
+  Future<void> _armTracking() async {
+    try {
+      if (_uid != null) {
+        await DriverTrackingService.armForOrder(uid: _uid, orderId: widget.orderId);
+      }
+    } catch (_) {}
   }
 
   Future<void> _startBackgroundTracking() async {
-    final service = FlutterBackgroundService();
-    bool isRunning = await service.isRunning();
-    if (!isRunning && _isOrderStillActive) {
-      service.startService();
-    }
+    if (!_isOrderStillActive) return;
+    await DriverTrackingService.startIfArmed();
   }
 
+  // إيقاف مؤقت (عودة للمقدمة: البث الحي يتولى المهمة) مع بقاء التسليح.
   Future<void> _stopBackgroundTracking() async {
-    final service = FlutterBackgroundService();
-    bool isRunning = await service.isRunning();
-    if (isRunning) {
-      service.invoke("stopService");
-    }
+    await DriverTrackingService.stopBackgroundKeepArmed();
   }
 
   Future<void> _initInitialLocation() async {
@@ -257,7 +241,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
 
   void _updateDriverLocationInFirestore(Position pos) {
     if (_uid != null) {
-      FirebaseFirestore.instance.collection('freeDrivers').doc(_uid!).update({'location': GeoPoint(pos.latitude, pos.longitude), 'lat': pos.latitude, 'lng': pos.longitude, 'heading': pos.heading, 'lastSeen': FieldValue.serverTimestamp()});
+      FirebaseFirestore.instance.collection('freeDrivers').doc(_uid).update({'location': GeoPoint(pos.latitude, pos.longitude), 'lat': pos.latitude, 'lng': pos.longitude, 'heading': pos.heading, 'lastSeen': FieldValue.serverTimestamp()});
     }
   }
 
@@ -288,33 +272,27 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     return points;
   }
 
+  // المسار يُجلب عبر بروكسي الخادم فقط — لا يوجد أي مفتاح Google داخل التطبيق.
+  // عند تعذر البروكسي (لم يُنشر بعد / انقطاع الشبكة) نرسم خطاً مباشراً كحل احتياطي.
   Future<void> _updateRoute(LatLng dest) async {
     if (_currentLocation == null) return;
-    final String url = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-    final Map<String, dynamic> requestBody = {
-      "origin": {
-        "location": {
-          "latLng": {"latitude": _currentLocation!.latitude, "longitude": _currentLocation!.longitude}
-        }
-      },
-      "destination": {
-        "location": {
-          "latLng": {"latitude": dest.latitude, "longitude": dest.longitude}
-        }
-      },
-      "travelMode": "DRIVE",
-      "routingPreference": "TRAFFIC_AWARE",
-    };
     try {
-      final res = await http.post(
-        Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': 'AIzaSyDkKyX-w0P1SBgOCmqjfZVMOGUiAiCbhLA',
-          'X-Goog-FieldMask': 'routes.polyline.encodedPolyline'
-        },
-        body: json.encode(requestBody),
-      );
+      final String idToken = await FirebaseAuth.instance.currentUser?.getIdToken() ?? '';
+      final res = await http
+          .post(
+            Uri.parse(RouteProxy.endpoint),
+            headers: {
+              'Content-Type': 'application/json',
+              if (idToken.isNotEmpty) 'Authorization': 'Bearer $idToken',
+            },
+            body: json.encode(RouteProxy.buildRequest(
+              originLat: _currentLocation!.latitude,
+              originLng: _currentLocation!.longitude,
+              destLat: dest.latitude,
+              destLng: dest.longitude,
+            )),
+          )
+          .timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         if (data['routes'] != null && data['routes'].isNotEmpty) {
@@ -322,12 +300,16 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
           if (mounted) {
             setState(() => _routePoints = _decodePolyline(encodedPoints));
           }
+          return;
         }
-      } else {
-        debugPrint("Routes API Error: ${res.body}");
       }
+      debugPrint("RouteProxy unavailable: ${res.statusCode}");
     } catch (e) {
-      debugPrint("Network Error: $e");
+      debugPrint("RouteProxy Error: $e");
+    }
+    // Fallback: straight segment so the map keeps working until the proxy is deployed.
+    if (mounted) {
+      setState(() => _routePoints = [_currentLocation!, dest]);
     }
   }
 
@@ -423,13 +405,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
 
   final AkedlyAuthService _handoverService = AkedlyAuthService();
 
+  // رسائل مفهومة حسب كود الاستجابة الفعلي — لا تعرض نص الخادم الخام أبداً.
   String _handoverErrorMessage(HandoverException e) {
-    try {
-      final b = jsonDecode(e.body);
-      if (b is Map && b['message'] != null) return b['message'].toString();
-    } catch (_) {}
-    if (e.statusCode == 409) return "تغيرت حالة الطلب. حدّث الصفحة وحاول مجددًا.";
-    return "تعذّر التأكيد. حاول مجددًا.";
+    return AuthErrorMessages.handoverMessage(e.statusCode);
   }
 
   void _showProfessionalOTP(String currentStatus, bool isMerchant) {
@@ -507,7 +485,8 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
     try {
       await _updateDriverStatus('online');
-      await _stopBackgroundTracking();
+      // الإرجاع تم تأكيده من الخادم في verify-handover قبل الوصول هنا.
+      await DriverTrackingService.stopAfterServerConfirm();
       if (mounted) {
         Navigator.pop(context);
         Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
@@ -622,15 +601,17 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
     final otp = await _promptDeliveryCode();
     if (otp == null || otp.isEmpty) return;
 
-    setState(() => _isOrderStillActive = false);
+    // الإيقاف الدائم فقط بعد نجاح تأكيد التسليم من الخادم — وليس بمجرد الضغط.
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
     try {
       // F4: picked_up -> delivered flips only in /verify-handover after code proof.
       final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (idToken == null || idToken.isEmpty) throw HandoverException(401, 'auth');
       await _handoverService.verifyHandover(orderId: widget.orderId, otp: otp, idToken: idToken);
+      if (!mounted) return;
+      setState(() => _isOrderStillActive = false);
+      await DriverTrackingService.stopAfterServerConfirm();
       await _updateDriverStatus('online');
-      await _stopBackgroundTracking();
       if (mounted) {
         Navigator.pop(context);
         Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
@@ -727,11 +708,19 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   Future<void> _driverCancelOrder() async {
     bool? confirm = await showDialog(context: context, builder: (c) => Directionality(textDirection: TextDirection.rtl, child: AlertDialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), title: const Text("اعتذار عن المهمة", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)), content: const Text("هل أنت متأكد؟ لن يتم خصم نقاط تأمين إذا لم يتم استلام العهدة بعد.", style: TextStyle(fontFamily: 'Cairo')), actions: [TextButton(onPressed: () => Navigator.pop(c, false), child: const Text("تراجع")), TextButton(onPressed: () => Navigator.pop(c, true), child: const Text("تأكيد الاعتذار", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)))])));
     if (confirm == true) {
-      setState(() => _isOrderStillActive = false);
-      await _stopBackgroundTracking();
-      await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'driver_cancelled_reseeking', 'lastDriverId': _uid, 'driverId': FieldValue.delete()});
-      await _updateDriverStatus('online');
-      if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      // الإيقاف الدائم فقط بعد نجاح تأكيد الإلغاء من الخادم — وليس بمجرد الضغط.
+      try {
+        await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': 'driver_cancelled_reseeking', 'lastDriverId': _uid, 'driverId': FieldValue.delete()});
+        if (!mounted) return;
+        setState(() => _isOrderStillActive = false);
+        await DriverTrackingService.stopAfterServerConfirm();
+        await _updateDriverStatus('online');
+        if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("تعذر الاعتذار عن المهمة، حاول مجدداً", textAlign: TextAlign.center)));
+        }
+      }
     }
   }
 

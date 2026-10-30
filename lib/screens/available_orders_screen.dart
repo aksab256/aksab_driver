@@ -8,6 +8,7 @@ import 'package:sizer/sizer.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart'; // يحتاج إضافة في pubspec.yaml
 import 'active_order_screen.dart';
+import '../services/driver_tracking_service.dart';
 
 class AvailableOrdersScreen extends StatefulWidget {
   final String vehicleType;
@@ -151,6 +152,13 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
           throw "الطلب لم يعد متاحاً";
         }
       });
+      // التتبع يبدأ فقط بعد تأكيد الخادم لإسناد الأوردر (نجاح الـ transaction أعلاه).
+      // رفض القبول أو فشل العملية لا يصل لهذا السطر إطلاقاً فلا يبدأ أي تتبع.
+      try {
+        if (_uid != null) {
+          await DriverTrackingService.armForOrder(uid: _uid, orderId: orderId);
+        }
+      } catch (_) {}
       if (mounted) {
         Navigator.pop(context);
         Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (c) => ActiveOrderScreen(orderId: orderId)), (r) => false);

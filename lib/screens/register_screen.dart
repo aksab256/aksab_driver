@@ -3,6 +3,8 @@ import 'package:sizer/sizer.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';                                                                    
 import 'package:url_launcher/url_launcher.dart';                                                                          
 import 'package:aksab_driver/services/akedly_auth_service.dart';
+import '../core/app_links.dart';
+import '../services/auth_error_messages.dart';
 
 class RegisterScreen extends StatefulWidget {          
   const RegisterScreen({super.key});                                                                                        
@@ -27,11 +29,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _referralController = TextEditingController();
   final AkedlyAuthService _authService = AkedlyAuthService();
 
-  Future<void> _launchPrivacyPolicy() async {            
-    final Uri url = Uri.parse('https://aksabtech.com/');    
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {                                          
-      _showMsg("تعذر فتح الرابط حالياً");                                                 
-    }                                                                                  
+  Future<void> _launchPrivacyPolicy() async {
+    final Uri url = Uri.parse(AppLinks.privacyPolicy);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      _showMsg("تعذر فتح الرابط حالياً");
+    }
   }
 
   Future<String?> _promptOtpDialog() {
@@ -125,13 +127,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
       _showSuccessDialog();                               
     } on RegisterException catch (e) {
-      if (e.statusCode == 409) {
-        _showMsg('❌ هذا الرقم مسجل مسبقًا. سجّل الدخول.');
-      } else if (e.statusCode == 410) {
-        _showMsg('❌ انتهت صلاحية الكود. أعد التسجيل.');
-      } else {
-        _showMsg('❌ تعذّر إتمام التسجيل: ${e.statusCode}');
-      }
+      // رسائل مفهومة حسب كود الاستجابة الفعلي (400/403/404/409/410/429) دون تفاصيل داخلية.
+      _showMsg('❌ ${AuthErrorMessages.registerMessage(e.statusCode)}');
     } finally {                                                                            
       if (mounted) setState(() => _isLoading = false);                                                                       
     }                                                                                  
