@@ -36,34 +36,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  Future<String?> _promptOtpDialog() {
-    final ctrl = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (c) => AlertDialog(
-        title: const Text('كود التفعيل', textAlign: TextAlign.center),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          maxLength: 10,
-          textAlign: TextAlign.center,
-          decoration: const InputDecoration(hintText: 'أدخل الكود المرسل لهاتفك'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(c).pop(),
-            child: const Text('إلغاء'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(c).pop(ctrl.text.trim()),
-            child: const Text('تأكيد'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _handleRegister() async {                 
     if (!_formKey.currentState!.validate()) return;
                                                            
@@ -93,58 +65,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
         print("Error fetching active campaign: $e");       
       }
                                                            
-      // 1. توليد البريد الإلكتروني تلقائياً بناءً على رقم الهاتف
-      // F3: step 1 - backend OTP-proves the unknown phone and binds the role server-side.
-      final sendRes = await _authService.registerSend(_phoneController.text.trim(), _selectedRole);
-      if (!sendRes.isSuccess) {
-        _showMsg(sendRes.message ?? '❌ تعذّر بدء التسجيل');
-        return;
-      }
-      final txID = sendRes.data ?? '';
-      if (txID.isEmpty) {
-        _showMsg('❌ تعذّر بدء التسجيل');
-        return;
-      }
-
-      final otp = await _promptOtpDialog();
-      if (otp == null || otp.isEmpty) return;
-
-      // F3: step 2 - server verifies OTP then creates the passwordless identity + role doc.
-      final profile = <String, dynamic>{
-        'fullname': _nameController.text.trim(),
-        'address': _addressController.text.trim(),
-        'appliedCampaignId': currentActiveCampaignId,
-      };
-      if (_selectedRole == 'free_driver') {
-        profile['vehicleConfig'] = _vehicleConfig;
-        profile['referredBy'] = _referralController.text.trim();
-      }
-      await _authService.registerVerify(
-        transactionReqID: txID,
-        otp: otp,
+      // Phase 1 of the new flow: pending request only - no OTP is
+      // sent before admin approval. Vehicle/referral ride along for
+      // the admin review; the OTP arrives at first login after approval.
+      final profile = AkedlyAuthService.buildRequestProfile(
+        role: _selectedRole,
+        fullname: _nameController.text.trim(),
+        address: _addressController.text.trim(),
+        vehicleConfig: _vehicleConfig,
+        referredBy: _referralController.text,
+        appliedCampaignId: currentActiveCampaignId,
+      );
+      final reqRes = await _authService.registerRequest(
         phoneNumber: _phoneController.text.trim(),
+        role: _selectedRole,
         profile: profile,
       );
+      if (!reqRes.isSuccess) {
+        _showMsg(reqRes.message ?? '❌ تعذّر إرسال الطلب');
+        return;
+      }
       _showSuccessDialog();                               
     } on RegisterException catch (e) {
       // رسائل مفهومة حسب كود الاستجابة الفعلي (400/403/404/409/410/429) دون تفاصيل داخلية.
       _showMsg('❌ ${AuthErrorMessages.registerMessage(e.statusCode)}');
     } finally {                                                                            
       if (mounted) setState(() => _isLoading = false);                                                                       
-    }                                                                                  
-  }
-
-  String _getCollectionName(String role) {               
-    switch (role) {                                        
-      case 'free_driver':
-        return 'pendingFreeDrivers';                        
-      case 'delivery_rep':                                    
-        return 'pendingReps';                              
-      case 'delivery_supervisor':                          
-      case 'delivery_manager':                               
-        return 'pendingManagers';                                                              
-      default:                                               
-        return 'pendingManagers';                        
     }                                                                                  
   }
 

@@ -71,6 +71,71 @@ class AkedlyAuthService {
 
   /// F3 registration: step 2 — server verifies OTP then creates the
   /// passwordless Auth identity + role doc in the bound collection.
+  /// New flow, phase 1 — create a pending request, no OTP.
+  /// The server stores a pending doc for admin review and sends the OTP
+  /// only after approval, at first login. Returns success carrying the
+  /// requestId, or failure carrying the server message.
+  Future<AuthResult> registerRequest({
+    required String phoneNumber,
+    required String role,
+    required Map<String, dynamic> profile,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/register-request'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'phoneNumber': phoneNumber,
+          'role': role,
+          'profile': profile,
+        }),
+      );
+      final resData =
+          response.body.isNotEmpty ? jsonDecode(response.body) : null;
+      if (response.statusCode == 200) {
+        final data = resData is Map ? resData['data'] : null;
+        String? requestId;
+        if (data is Map && data['requestId'] != null) {
+          requestId = data['requestId'].toString();
+        }
+        return AuthResult.success(data: requestId ?? '');
+      }
+      String? message;
+      if (resData is Map && resData['message'] != null) {
+        message = resData['message'].toString();
+      }
+      return AuthResult.failure(message: message ?? 'فشل إرسال الطلب');
+    } catch (e) {
+      return AuthResult.failure(message: 'خطأ تقني في شبكة الاتصال: $e');
+    }
+  }
+
+  /// Builds the phase-1 request profile for [role]. Pure and testable:
+  /// vehicle/referral ride along only for free_driver (kept for the admin
+  /// review); other roles send the minimal profile.
+  static Map<String, dynamic> buildRequestProfile({
+    required String role,
+    required String fullname,
+    required String address,
+    String? vehicleConfig,
+    String? referredBy,
+    String appliedCampaignId = 'default_launch',
+  }) {
+    final profile = <String, dynamic>{
+      'fullname': fullname.trim(),
+      'address': address.trim(),
+      'appliedCampaignId': appliedCampaignId,
+    };
+    if (role == 'free_driver') {
+      if (vehicleConfig != null && vehicleConfig.isNotEmpty) {
+        profile['vehicleConfig'] = vehicleConfig;
+      }
+      final ref = referredBy?.trim() ?? '';
+      if (ref.isNotEmpty) profile['referredBy'] = ref;
+    }
+    return profile;
+  }
+
   /// Throws [RegisterException] with the backend status (400/403/404/409/410/429).
   Future<RegisterResult> registerVerify({
     required String transactionReqID,
