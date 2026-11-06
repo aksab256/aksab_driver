@@ -48,5 +48,30 @@ void main() {
         expect(AuthErrorMessages.handoverMessage(code), isNot(contains('$code')));
       }
     });
+
+    test('splits 400s by backend code without leaking internals', () {
+      String msg(String code) => AuthErrorMessages.handoverMessageFor(
+          400, '{"message":"x","code":"$code"}');
+      expect(msg('CODE_MISMATCH'), contains('غير صحيح'));
+      expect(msg('INVALID_FORMAT'), contains('إنجليزية'));
+      expect(msg('VAULT_MISSING'), contains('لا يوجد إثبات'));
+      expect(msg('VAULT_UNTRUSTED'), contains('لا يوجد إثبات'));
+      expect(msg('CODE_NOT_ISSUED'), contains('لم يصدر'));
+      expect(msg('INVALID_ORDER_ID'), contains('غير صالح'));
+      // Unknown/garbage bodies fall back to the generic 400 line.
+      expect(AuthErrorMessages.handoverMessageFor(400, 'not-json'),
+          contains('الكود'));
+      expect(AuthErrorMessages.handoverMessageFor(400, '{}'), contains('الكود'));
+      for (final code in [
+        'VAULT_MISSING',
+        'VAULT_UNTRUSTED',
+        'CODE_NOT_ISSUED',
+        'CODE_MISMATCH',
+        'INVALID_FORMAT'
+      ]) {
+        expect(msg(code), isNot(contains(code)));
+        expect(msg(code), isNot(contains('uid')));
+      }
+    });
   });
 }

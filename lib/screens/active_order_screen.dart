@@ -405,9 +405,9 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
 
   final AkedlyAuthService _handoverService = AkedlyAuthService();
 
-  // رسائل مفهومة حسب كود الاستجابة الفعلي — لا تعرض نص الخادم الخام أبداً.
+  // رسائل مفهومة حسب كود الاستجابة الفعلي + كود الباك اند — لا تعرض نص الخادم الخام أبداً.
   String _handoverErrorMessage(HandoverException e) {
-    return AuthErrorMessages.handoverMessage(e.statusCode);
+    return AuthErrorMessages.handoverMessageFor(e.statusCode, e.body);
   }
 
   void _showProfessionalOTP(String currentStatus, bool isMerchant) {
@@ -430,10 +430,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
                 controller: codeController,
                 textAlign: TextAlign.center,
                 keyboardType: TextInputType.number,
-                maxLength: 4,
+                maxLength: 10,
                 style: TextStyle(fontSize: 25.sp, fontWeight: FontWeight.bold, letterSpacing: 20),
                 decoration: InputDecoration(
                   hintText: "----",
+                  helperText: "كود بدء المهمة من صاحب الطلب — أرقام إنجليزية",
                   counterText: "",
                   filled: true,
                   fillColor: Colors.grey[100],
@@ -529,7 +530,10 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
               keyboardType: TextInputType.number,
               maxLength: 10,
               textAlign: TextAlign.center,
-              decoration: const InputDecoration(hintText: 'أدخل الكود'),
+              decoration: const InputDecoration(
+                hintText: 'أدخل الكود',
+                helperText: 'كود التسليم من العميل المستلم — أرقام إنجليزية',
+              ),
             ),
           ],
         ),

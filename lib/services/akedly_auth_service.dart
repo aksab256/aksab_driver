@@ -176,6 +176,18 @@ class AkedlyAuthService {
   /// Server-side custody-handover proof: the server compares the submitted
   /// code against the creator-bound vault and flips the status atomically.
   /// Returns the new status. Throws [HandoverException] with backend status.
+  /// Normalizes typed OTPs the same way the backend does: Arabic-Indic
+  /// (٠-٩) and Persian (۰-۹) digits become ASCII 0-9, whitespace removed.
+  static String normalizeOtp(String raw) {
+    const indic = '٠١٢٣٤٥٦٧٨٩';
+    const persian = '۰۱۲۳۴۵۶۷۸۹';
+    var out = raw.trim().replaceAll(RegExp(r'\s+'), '');
+    out = out.replaceAllMapped(
+        RegExp('[٠-٩]'), (m) => indic.indexOf(m.group(0)!).toString());
+    return out.replaceAllMapped(
+        RegExp('[۰-۹]'), (m) => persian.indexOf(m.group(0)!).toString());
+  }
+
   Future<String> verifyHandover({
     required String orderId,
     required String otp,
@@ -187,7 +199,7 @@ class AkedlyAuthService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $idToken',
       },
-      body: jsonEncode({'orderId': orderId, 'otp': otp}),
+      body: jsonEncode({'orderId': orderId, 'otp': normalizeOtp(otp)}),
     );
     if (response.statusCode == 200) {
       final resData =

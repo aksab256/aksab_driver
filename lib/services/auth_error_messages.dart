@@ -1,8 +1,10 @@
 // lib/services/auth_error_messages.dart
 //
 // Pure, testable Arabic user-facing messages for backend auth/handover
-// failures. Maps HTTP status codes only — never echoes server bodies,
-// tokens, or internal details to the UI.
+// failures. Maps HTTP status codes plus the backend's machine-readable
+// `code` field only — never echoes server bodies, tokens, or internal
+// details to the UI.
+import 'dart:convert';
 
 class AuthErrorMessages {
   AuthErrorMessages._();
@@ -48,8 +50,29 @@ class AuthErrorMessages {
   }
 
   /// User-facing message for POST /verifyHandover failures.
-  /// Never includes the raw server body.
-  static String handoverMessage(int statusCode) {
+  /// Never includes the raw server body. When the backend supplies a
+  /// machine-readable `code`, 400s are split into distinct safe messages
+  /// (missing proof vs wrong code vs bad format) instead of one generic line.
+  static String handoverMessage(int statusCode) =>
+      handoverMessageFor(statusCode, '');
+
+  static String handoverMessageFor(int statusCode, String body) {
+    if (statusCode == 400) {
+      final code = _backendCode(body);
+      switch (code) {
+        case 'INVALID_FORMAT':
+          return 'صيغة الكود غير صالحة — أدخل 4 إلى 10 أرقام إنجليزية';
+        case 'VAULT_MISSING':
+        case 'VAULT_UNTRUSTED':
+          return 'لا يوجد إثبات معتمد لهذه المرحلة — اطلب من صاحب الطلب إصدار الكود';
+        case 'CODE_NOT_ISSUED':
+          return 'لم يصدر كود معتمد لهذه المرحلة بعد — اطلب من صاحب الطلب إصداره';
+        case 'CODE_MISMATCH':
+          return 'كود التحقق غير صحيح، تحقق من الكود وحاول مجدداً';
+        case 'INVALID_ORDER_ID':
+          return 'الطلب غير صالح — حدّث الصفحة وحاول مجدداً';
+      }
+    }
     switch (statusCode) {
       case 400:
         return 'كود التحقق غير صحيح، تحقق من الكود وحاول مجدداً';
@@ -66,5 +89,17 @@ class AuthErrorMessages {
       default:
         return 'تعذر التأكيد، حاول مجدداً';
     }
+  }
+
+  /// Extracts the backend's machine-readable error code (if any) without
+  /// ever surfacing the raw body. Unknown/unparseable bodies yield ''.
+  static String _backendCode(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['code'] is String) {
+        return decoded['code'] as String;
+      }
+    } catch (_) {}
+    return '';
   }
 }
