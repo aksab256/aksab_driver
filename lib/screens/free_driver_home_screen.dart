@@ -38,6 +38,12 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> with Single
     _syncStatusInstantly();                              _initListeners();
     _fetchUserName();
     _restoreTrackingIfNeeded();
+    // Consume a tapped nearby-order push: open the radar/mission tab once.
+    if (DriverApiService.pendingNotificationOrderId != null &&
+        DriverApiService.pendingNotificationOrderId!.isNotEmpty) {
+      DriverApiService.pendingNotificationOrderId = null;
+      _selectedIndex = 2;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (uid.isNotEmpty) {
         DriverSecurityHelper.checkSecurityAndTerms(context, uid);

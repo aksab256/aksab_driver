@@ -52,6 +52,11 @@ class _LoginScreenState extends State<LoginScreen> {
               'insurance_points_token': token, // متوافق مع المسميات اللوجستية المعتمدة لمتطلبات مراجعة جوجل
               'last_login': FieldValue.serverTimestamp(),
             });
+            // Canonical binding for the Firebase-only nearby notifier.
+            await docRef.set({
+              'fcmToken': token,
+              'fcmUpdatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
             break;
           }
         }

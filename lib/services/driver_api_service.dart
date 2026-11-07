@@ -9,6 +9,32 @@ import 'package:shared_preferences/shared_preferences.dart';
 class DriverApiService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  /// Canonical FCM token binding for the Firebase-only nearby notifier.
+  /// Writes {fcmToken, fcmUpdatedAt} on the driver's own doc (client-write
+  /// allowed: neither field is rules-protected). Separate from the legacy
+  /// insurance_points_token / AWS registration, which are left untouched.
+  /// Also records the orderId of a tapped push so home can open the radar.
+  static String? pendingNotificationOrderId;
+
+  static Future<void> saveDriverFcmToken(String uid, String token) async {
+    if (uid.isEmpty || token.isEmpty) return;
+    // Write only where the account doc already exists: set(merge:) would
+    // otherwise fabricate a phantom doc in the sibling collection.
+    for (final col in ['freeDrivers', 'deliveryReps']) {
+      try {
+        final doc = await _db.collection(col).doc(uid).get();
+        if (!doc.exists) continue;
+        await doc.reference.set({
+          'fcmToken': token,
+          'fcmUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        return;
+      } catch (e) {
+        debugPrint('Save driver FCM token failed ($col): $e');
+      }
+    }
+  }
+
   // 1. الاستماع لحالة المندوب (محسّنة مع منع الارتداد)
   static void listenToStatus(String uid, Function(String) onStatusChange) {
     if (uid.isEmpty) return;
@@ -113,6 +139,8 @@ class DriverApiService {
             "role": "free_driver"
           }),
         ).timeout(const Duration(seconds: 10));
+        // Firebase-only nearby notifier binding (legacy AWS call above kept).
+        await saveDriverFcmToken(uid, token);
       }
     } catch (e) {
       debugPrint("AWS Sync Token Error: $e");

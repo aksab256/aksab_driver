@@ -17,6 +17,7 @@ import 'package:facebook_app_events/facebook_app_events.dart'; // 1. استير�
 
 // استيراد الشاشات والخدمات الخاصة بك
 import 'screens/location_service_handler.dart';
+import 'services/driver_api_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/pending_review_screen.dart';
@@ -41,7 +42,35 @@ Future<void> setupNotifications() async {
   await flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(channel);
   await flutterLocalNotificationsPlugin.initialize(initializationSettings, onDidReceiveNotificationResponse: (NotificationResponse details) async {
     debugPrint('User tapped on notification: ${details.payload}');
+    // Nearby-order push (foreground tap): record the order and open home;
+    // FreeDriverHomeScreen consumes it and switches to the radar tab.
+    if (details.payload != null && details.payload!.isNotEmpty) {
+      DriverApiService.pendingNotificationOrderId = details.payload;
+      AksabDriverApp.navigatorKey.currentState?.pushNamedAndRemoveUntil('/', (r) => false);
+    }
   });
+
+  // Token refresh rebinding for the Firebase-only nearby notifier: without
+  // this, a rotated token silently stops all pushes to the device.
+  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      await DriverApiService.saveDriverFcmToken(uid, newToken);
+    } catch (e) {
+      debugPrint('FCM token refresh save failed: $e');
+    }
+  });
+
+  // Cold start from a tapped push (terminated app): same handoff as above.
+  try {
+    final initial = await FirebaseMessaging.instance.getInitialMessage();
+    final orderId = initial?.data['orderId']?.toString();
+    if (orderId != null && orderId.isNotEmpty) {
+      DriverApiService.pendingNotificationOrderId = orderId;
+    }
+  } catch (e) {
+    debugPrint('getInitialMessage failed: $e');
+  }
 
   // عرض إشعارات FCM داخل التطبيق أثناء عمله في المقدمة،
   // مع الحفاظ الكامل على إشعارات النظام (الخلفية) وسلوكها الحالي.
