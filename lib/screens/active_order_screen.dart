@@ -30,11 +30,22 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
   GoogleMapController? _mapController;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
 
+  // F-map: hoisted order stream — created once in initState and shared by
+  // the map, bottom panel, and app bar. Creating snapshots() inline in
+  // build() resubscribes on EVERY setState (position fixes arrive every
+  // ~10m while en route), flashing the loader and destroying/recreating
+  // the GoogleMap platform view — i.e. the map "disappears" after accept.
+  late final Stream<DocumentSnapshot> _orderStream;
+
   bool _isOrderStillActive = true;
 
   @override
   void initState() {
     super.initState();
+    _orderStream = FirebaseFirestore.instance
+        .collection('specialRequests')
+        .doc(widget.orderId)
+        .snapshots();
     WidgetsBinding.instance.addObserver(this);
     _updateDriverStatus('busy');
     // تسليح التتبع للأوردر النشط فقط (بدون بدء الخدمة هنا).
@@ -315,7 +326,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
 
   Widget _buildBottomPanel() {
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
+      stream: _orderStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData || !snapshot.data!.exists) return const SizedBox();
         var data = snapshot.data!.data() as Map<String, dynamic>;
@@ -661,9 +672,11 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
 
   Widget _buildMap() {
     return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(),
+      stream: _orderStream,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const Center(child: CircularProgressIndicator());
+        }
         var data = snapshot.data!.data() as Map<String, dynamic>;
         String status = data['status'];
         GeoPoint pickup = data['pickupLocation'];
@@ -700,7 +713,7 @@ class _ActiveOrderScreenState extends State<ActiveOrderScreen> with WidgetsBindi
 
   Widget _mainButton(String label, Color color, VoidCallback onTap) => SizedBox(width: double.infinity, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: color, padding: EdgeInsets.symmetric(vertical: 2.2.h), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))), onPressed: onTap, child: Text(label, style: TextStyle(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo'))));
   Widget _buildCircleAction({required IconData icon, required String label, required Color color, required VoidCallback onTap}) => InkWell(onTap: onTap, child: Column(children: [Container(padding: EdgeInsets.all(12.sp), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: color, size: 26.sp)), Text(label, style: TextStyle(color: color, fontSize: 12.sp, fontFamily: 'Cairo', fontWeight: FontWeight.bold))]));
-  Widget _buildCustomAppBar() => SafeArea(child: Container(margin: EdgeInsets.all(10.sp), padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)]), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(onPressed: _handleBackAction, icon: const Icon(Icons.arrow_back_ios_new)), Text("إدارة المسار والعهدة", style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')), StreamBuilder<DocumentSnapshot>(stream: FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).snapshots(), builder: (context, snap) { if (snap.hasData && snap.data!.exists && snap.data!['status'] == 'accepted') return IconButton(onPressed: _driverCancelOrder, icon: const Icon(Icons.cancel_outlined, color: Colors.red)); return SizedBox(width: 40.sp); })])));
+  Widget _buildCustomAppBar() => SafeArea(child: Container(margin: EdgeInsets.all(10.sp), padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)]), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(onPressed: _handleBackAction, icon: const Icon(Icons.arrow_back_ios_new)), Text("إدارة المسار والعهدة", style: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.bold, fontFamily: 'Cairo')), StreamBuilder<DocumentSnapshot>(stream: _orderStream, builder: (context, snap) { if (snap.hasData && snap.data!.exists && snap.data!['status'] == 'accepted') return IconButton(onPressed: _driverCancelOrder, icon: const Icon(Icons.cancel_outlined, color: Colors.red)); return SizedBox(width: 40.sp); })])));
   void _updateStatus(String nextStatus) async => await FirebaseFirestore.instance.collection('specialRequests').doc(widget.orderId).update({'status': nextStatus, 'updatedAt': FieldValue.serverTimestamp()});
   Future<void> _launchGoogleMaps(GeoPoint point) async {
     final url = 'google.navigation:q=${point.latitude},${point.longitude}';

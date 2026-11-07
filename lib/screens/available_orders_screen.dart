@@ -26,6 +26,10 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   GoogleMapController? _mapController;
   Timer? _uiTimer;
+  // Set when this screen hands off to ActiveOrderScreen after a confirmed
+  // accept: ActiveOrder owns the status from here ('busy'), so dispose must
+  // NOT write 'online' and win the last-writer race against it.
+  bool _handedOffOrder = false;
 
   // المصدر الأساسي للإعدادات (تم تعديله ليطابق الفايربيز مباشرة)
   String get _heatmapDoc => widget.vehicleType;
@@ -42,7 +46,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
   @override
   void dispose() {
-    _updateDriverStatus('online');
+    if (!_handedOffOrder) _updateDriverStatus('online');
     _uiTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
@@ -161,6 +165,7 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
       } catch (_) {}
       if (mounted) {
         Navigator.pop(context);
+        _handedOffOrder = true;
         Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (c) => ActiveOrderScreen(orderId: orderId)), (r) => false);
       }
     } catch (e) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';              import 'package:firebase_au
 import 'package:cloud_firestore/cloud_firestore.dart';                                                    import 'package:sizer/sizer.dart'; 
 import '../widgets/driver_dashboard_widgets.dart';   import '../widgets/driver_side_drawer.dart';
 import '../helpers/driver_security_helper.dart';
+import '../services/driver_presence.dart';
 import '../services/driver_api_service.dart';
 import '../services/driver_tracking_service.dart';
 import 'available_orders_screen.dart';
@@ -19,8 +20,12 @@ class FreeDriverHomeScreen extends StatefulWidget {
 class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;                              String _currentStatus = 'offline';
   bool _isStatusChanging = false;
-  String? _activeOrderId;                              String _userName = "كابتن أكسب"; 
-  final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";                                          final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  String? _activeOrderId;                              String _userName = "كابتن أكسب";
+  // Live auth lookup (not a final captured at State creation): after a
+  // background process restart the State can be created before FirebaseAuth
+  // restores the user; a stale '' uid would silently disable every status
+  // sync/write and wedge the UI on 'offline'.
+  String get uid => FirebaseAuth.instance.currentUser?.uid ?? "";                                          final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   late AnimationController _pulseController;
                                                        @override
@@ -116,11 +121,17 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> with Single
             DriverSecurityHelper.showOnlineHint(context);
           }
         } catch (e) {
-          if (mounted) setState(() => _isStatusChanging = false);
+          // Never fail silently: an unwritten 'online' would be snapped back
+          // to the server value by the listener and look like a self-flip.
+          if (mounted) {
+            setState(() => _isStatusChanging = false);
+            DriverSecurityHelper.showErrorSnackBar(context, "تعذر تفعيل الحالة — تحقق من الاتصال وحاول مجدداً");
+          }
         }
       } else {
         if (mounted) setState(() => _isStatusChanging = false);
-      }                                                  } else {
+      }
+    } else {
       try {                                                  await DriverApiService.updateStatus(uid, 'offline');
         await DriverApiService.saveLocalStatus('offline');                                                        if (mounted) {
           setState(() {                                          _currentStatus = 'offline';
@@ -128,10 +139,13 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> with Single
           });
         }
       } catch (e) {
-        if (mounted) setState(() => _isStatusChanging = false);
+        if (mounted) {
+          setState(() => _isStatusChanging = false);
+          DriverSecurityHelper.showErrorSnackBar(context, "تعذر تحديث الحالة — تحقق من الاتصال وحاول مجدداً");
+        }
       }
     }
-  }                                                  
+  }
 
   void _onStepTapped(int index) async {
     if (index == 2) {                                      showDialog(
@@ -142,7 +156,13 @@ class _FreeDriverHomeScreenState extends State<FreeDriverHomeScreen> with Single
         if (!mounted) return;
         Navigator.pop(context);
         String serverStatus = doc.data()?['currentStatus'] ?? 'offline';
-        if (serverStatus != 'online') {
+        // A busy driver WITH an active order may always open his mission tab;
+        // only order-less non-online drivers are sent back to go online.
+        final bool mayOpen = DriverPresence.canOpenMissionTab(
+          serverStatus: serverStatus,
+          activeOrderId: _activeOrderId,
+        );
+        if (!mayOpen) {
           DriverSecurityHelper.showErrorSnackBar(context, "برجاء تفعيل الحالة إلى 'متصل' أولاً");
           setState(() => _currentStatus = serverStatus);
           return;
